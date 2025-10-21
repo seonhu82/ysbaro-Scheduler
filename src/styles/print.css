@@ -1,0 +1,19 @@
+/* 인쇄 전용 스타일 */
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-page-break {
+    page-break-after: always;
+  }
+
+  body {
+    font-size: 12pt;
+  }
+
+  table {
+    page-break-inside: avoid;
+  }
+}
