@@ -263,7 +263,7 @@ model SlotLimit {
   id              String          @id @default(cuid())
   linkId          String
   link            ApplicationLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  date            DateTime        @db.Date
+  date            DateTime  @db.Date
   dayType         DayType
   maxSlots        Int             // 최대 인원
   currentSlots    Int             @default(0)
