@@ -43,14 +43,13 @@ export async function GET(request: NextRequest) {
         month: parseInt(month),
       },
       include: {
-        entries: {
+        staffAssignments: {
           include: {
             staff: {
               select: {
                 id: true,
                 name: true,
                 rank: true,
-                color: true,
               },
             },
           },

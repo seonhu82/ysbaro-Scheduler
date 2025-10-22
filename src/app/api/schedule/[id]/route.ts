@@ -31,14 +31,13 @@ export async function GET(
     const schedule = await prisma.schedule.findUnique({
       where: { id: params.id },
       include: {
-        entries: {
+        staffAssignments: {
           include: {
             staff: {
               select: {
                 id: true,
                 name: true,
                 rank: true,
-                color: true,
               },
             },
           },
@@ -100,7 +99,7 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { status, entries } = body
+    const { status, assignments } = body
 
     const existing = await prisma.schedule.findUnique({
       where: { id: params.id },
@@ -127,9 +126,9 @@ export async function PATCH(
       if (status) {
         updateData.status = status
 
-        // PUBLISHED 상태로 변경 시 publishedAt 업데이트
-        if (status === 'PUBLISHED') {
-          updateData.publishedAt = new Date()
+        // DEPLOYED 상태로 변경 시 deployedAt 업데이트
+        if (status === 'DEPLOYED') {
+          updateData.deployedAt = new Date()
         }
       }
 
@@ -138,7 +137,7 @@ export async function PATCH(
         where: { id: params.id },
         data: updateData,
         include: {
-          entries: {
+          staffAssignments: {
             include: {
               staff: {
                 select: {
@@ -156,35 +155,34 @@ export async function PATCH(
         },
       })
 
-      // 엔트리 업데이트가 있는 경우
-      if (entries && Array.isArray(entries)) {
-        // 기존 엔트리 삭제
-        await tx.scheduleEntry.deleteMany({
+      // 직원 배치 업데이트가 있는 경우
+      if (assignments && Array.isArray(assignments)) {
+        // 기존 배치 삭제
+        await tx.staffAssignment.deleteMany({
           where: { scheduleId: params.id },
         })
 
-        // 새 엔트리 생성
-        if (entries.length > 0) {
-          await tx.scheduleEntry.createMany({
-            data: entries.map((entry: any) => ({
+        // 새 배치 생성
+        if (assignments.length > 0) {
+          await tx.staffAssignment.createMany({
+            data: assignments.map((assignment: any) => ({
               scheduleId: params.id,
-              clinicId,
-              date: new Date(entry.date),
-              staffId: entry.staffId,
-              shiftType: entry.shiftType || 'FULL',
+              date: new Date(assignment.date),
+              staffId: assignment.staffId,
+              shiftType: assignment.shiftType || 'DAY',
             })),
           })
         }
       }
 
-      // PUBLISHED 상태로 변경 시 알림 생성
-      if (status === 'PUBLISHED' && existing.status !== 'PUBLISHED') {
+      // DEPLOYED 상태로 변경 시 알림 생성
+      if (status === 'DEPLOYED' && existing.status !== 'DEPLOYED') {
         await tx.notification.create({
           data: {
             clinicId,
-            type: 'SCHEDULE_PUBLISHED',
-            title: '스케줄 발행',
-            message: `${existing.year}년 ${existing.month}월 스케줄이 발행되었습니다.`,
+            type: 'SCHEDULE_DEPLOYED',
+            title: '스케줄 배포',
+            message: `${existing.year}년 ${existing.month}월 스케줄이 배포되었습니다.`,
           },
         })
       }
@@ -246,18 +244,18 @@ export async function DELETE(
       )
     }
 
-    // 발행된 스케줄은 삭제 불가
-    if (existing.status === 'PUBLISHED') {
+    // 배포된 스케줄은 삭제 불가
+    if (existing.status === 'DEPLOYED') {
       return NextResponse.json(
-        { success: false, error: 'Cannot delete published schedule' },
+        { success: false, error: 'Cannot delete deployed schedule' },
         { status: 400 }
       )
     }
 
     // 트랜잭션으로 삭제
     await prisma.$transaction(async (tx) => {
-      // 엔트리 먼저 삭제
-      await tx.scheduleEntry.deleteMany({
+      // 직원 배치 먼저 삭제
+      await tx.staffAssignment.deleteMany({
         where: { scheduleId: params.id },
       })
 
