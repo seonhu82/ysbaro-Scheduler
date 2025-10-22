@@ -24,7 +24,10 @@
       "Bash(npm run dev:*)",
       "Bash(npx tsc:*)",
       "Bash(npm install:*)",
-      "Bash(node fix-auth-imports.js:*)"
+      "Bash(node fix-auth-imports.js:*)",
+      "Bash(npx shadcn@latest init -y)",
+      "Bash(npx shadcn@latest add dialog button input select)",
+      "Bash(npx shadcn@latest add:*)"
     ],
     "deny": [],
     "ask": []

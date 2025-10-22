@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { MonthNavigator } from './MonthNavigator'
 import { CalendarGrid } from './CalendarGrid'
+import { DayDetailPopup } from './DayDetailPopup'
+import { PatternApplyButton } from './PatternApplyButton'
 
 interface Doctor {
   id: string
@@ -21,6 +23,8 @@ interface CalendarViewProps {
 }
 
 export function CalendarView({ onDateClick }: CalendarViewProps) {
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [isPopupOpen, setIsPopupOpen] = useState(false)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [scheduleData, setScheduleData] = useState<Record<string, { doctors: Doctor[]; staffCount: number }>>({})
   const [loading, setLoading] = useState(false)
@@ -67,15 +71,45 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
     setCurrentDate(new Date())
   }
 
+  const handleDateClick = (date: Date) => {
+    setSelectedDate(date)
+    setIsPopupOpen(true)
+    onDateClick?.(date)
+  }
+
+  const handleClosePopup = () => {
+    setIsPopupOpen(false)
+    setSelectedDate(null)
+  }
+
+  const handleSaveSchedule = async (schedule: any) => {
+    // TODO: API 호출로 스케줄 저장
+    console.log('Saving schedule:', schedule)
+  }
+
+  const handleApplyPattern = async (year: number, month: number) => {
+    // 패턴 적용 후 스케줄 데이터 새로고침
+    const response = await fetch(`/api/schedule?year=${year}&month=${month}`)
+    const result = await response.json()
+    if (result.success && result.data) {
+      setScheduleData({})
+    }
+  }
+
   return (
     <div>
-      <MonthNavigator
-        year={year}
-        month={month}
-        onPrevMonth={handlePrevMonth}
-        onNextMonth={handleNextMonth}
-        onToday={handleToday}
-      />
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex-1">
+          <MonthNavigator
+            year={year}
+            month={month}
+            onPrevMonth={handlePrevMonth}
+            onNextMonth={handleNextMonth}
+            onToday={handleToday}
+          />
+        </div>
+        <PatternApplyButton onApply={handleApplyPattern} />
+      </div>
 
       {loading && (
         <div className="text-center py-8">
@@ -85,12 +119,21 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
       )}
 
       {!loading && (
-        <CalendarGrid
-          year={year}
-          month={month}
-          scheduleData={scheduleData}
-          onDateClick={onDateClick}
-        />
+        <>
+          <CalendarGrid
+            year={year}
+            month={month}
+            scheduleData={scheduleData}
+            onDateClick={handleDateClick}
+          />
+
+          <DayDetailPopup
+            date={selectedDate}
+            isOpen={isPopupOpen}
+            onClose={handleClosePopup}
+            onSave={handleSaveSchedule}
+          />
+        </>
       )}
     </div>
   )

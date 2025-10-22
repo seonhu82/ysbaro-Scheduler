@@ -58,13 +58,22 @@
   - CalendarCell (날짜 셀)
   - CalendarView (메인 컴포넌트, 데이터 fetch)
   - date-utils (캘린더 그리드 날짜 계산)
+- ✅ 스케줄 편집 UI 구현 완료
+  - DayDetailPopup (날짜 상세 팝업)
+  - 원장/직원 배치 현황 표시
+  - 편집 모드 토글
+- ✅ 원장 패턴 UI 구현 완료
+  - PatternApplyButton (패턴 적용 버튼)
+  - 월 선택 및 일괄 적용
+- ✅ shadcn/ui 컴포넌트 설치
+  - Dialog, Button, Input, Select, Badge, Card, Checkbox, Label, Tabs, Toast
 - 🔄 프론트엔드 UI 컴포넌트 구현 (진행 중)
 
 ---
 
 ## 📋 다음 단계
 
-### Phase 1: 핵심 기능 구현 (65% 완료)
+### Phase 1: 핵심 기능 구현 (75% 완료)
 
 **우선순위 1 - 인증 시스템:** ✅ **완료**
 - [x] NextAuth 설정 완성 (src/lib/auth.ts)
@@ -95,8 +104,9 @@
 
 **우선순위 5 - 프론트엔드 UI:** (진행 중)
 - [x] 캘린더 뷰 컴포넌트 ✅
+- [x] 스케줄 편집 UI (DayDetailPopup) ✅
+- [x] 원장 패턴 적용 UI ✅
 - [ ] 연차 신청 폼 UI
-- [ ] 스케줄 편집 UI
 - [ ] 직원 관리 UI
 - [ ] 설정 페이지
 
@@ -104,9 +114,9 @@
 
 ## 📈 진행률
 
-- **전체 진행률**: 40% (Phase 0 완료 + Phase 1 65%)
+- **전체 진행률**: 45% (Phase 0 완료 + Phase 1 75%)
 - **Phase 0**: 100% ✅
-- **Phase 1**: 65% 🔄
+- **Phase 1**: 75% 🔄
 - **Phase 2**: 0%
 - **Phase 3**: 0%
 

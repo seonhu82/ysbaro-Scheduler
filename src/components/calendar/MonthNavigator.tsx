@@ -18,7 +18,7 @@ export function MonthNavigator({
   onToday,
 }: MonthNavigatorProps) {
   return (
-    <div className="flex items-center justify-between mb-6">
+    <div className="flex items-center justify-between">
       <div className="flex items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-900">
           {year}년 {month}월
