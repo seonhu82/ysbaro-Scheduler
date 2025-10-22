@@ -1,6 +1,6 @@
-import { NextAuthOptions } from 'next-auth'
+import NextAuth from 'next-auth'
+import type { NextAuthConfig } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { PrismaAdapter } from '@next-auth/prisma-adapter'
 import { compare } from 'bcryptjs'
 import { prisma } from './prisma'
 
@@ -8,8 +8,7 @@ import { prisma } from './prisma'
  * NextAuth configuration
  * Handles authentication for 연세바로치과 스케줄러
  */
-export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+export const authConfig: NextAuthConfig = {
   session: {
     strategy: 'jwt',
   },
@@ -25,14 +24,13 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        // TODO: Implement authentication logic
         if (!credentials?.email || !credentials?.password) {
           throw new Error('이메일과 비밀번호를 입력해주세요.')
         }
 
         // Find user by email
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: credentials.email as string },
           include: { clinic: true },
         })
 
@@ -41,7 +39,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         // Verify password
-        const isPasswordValid = await compare(credentials.password, user.password)
+        const isPasswordValid = await compare(credentials.password as string, user.password)
 
         if (!isPasswordValid) {
           throw new Error('비밀번호가 일치하지 않습니다.')
@@ -53,8 +51,8 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.name,
           role: user.role,
-          clinicId: user.clinicId,
-          clinicName: user.clinic?.name,
+          clinicId: user.clinicId || '',
+          clinicName: user.clinic?.name || '',
         }
       },
     }),
@@ -63,20 +61,20 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       // Add custom fields to JWT token
       if (user) {
-        token.id = user.id
-        token.role = user.role
-        token.clinicId = user.clinicId
-        token.clinicName = user.clinicName
+        token.id = user.id as string
+        token.role = (user as any).role
+        token.clinicId = (user as any).clinicId
+        token.clinicName = (user as any).clinicName
       }
       return token
     },
     async session({ session, token }) {
       // Add custom fields to session
       if (session.user) {
-        session.user.id = token.id as string
-        session.user.role = token.role as string
-        session.user.clinicId = token.clinicId as string
-        session.user.clinicName = token.clinicName as string
+        (session.user as any).id = token.id as string
+        (session.user as any).role = token.role as string
+        (session.user as any).clinicId = token.clinicId as string
+        (session.user as any).clinicName = token.clinicName as string
       }
       return session
     },
@@ -84,6 +82,11 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV === 'development',
 }
+
+export const { handlers, auth, signIn, signOut } = NextAuth(authConfig)
+
+// Legacy export for backward compatibility
+export const authOptions = authConfig
 
 /**
  * Get current user from session

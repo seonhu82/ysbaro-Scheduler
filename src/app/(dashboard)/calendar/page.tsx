@@ -1,9 +1,17 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
+import { useState } from 'react'
+import { CalendarView } from '@/components/calendar/CalendarView'
+import { formatDateWithDay } from '@/lib/date-utils'
 
 export default function CalendarPage() {
-  const { data: session } = useSession()
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+
+  const handleDateClick = (date: Date) => {
+    setSelectedDate(date)
+    // TODO: 날짜 상세 팝업 열기
+    console.log('Selected date:', formatDateWithDay(date))
+  }
 
   return (
     <div>
@@ -12,27 +20,15 @@ export default function CalendarPage() {
         <p className="text-gray-600 mt-2">월간 스케줄을 확인하고 관리합니다</p>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="text-center py-12">
-          <div className="text-6xl mb-4">📅</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            캘린더 뷰
-          </h2>
-          <p className="text-gray-600 mb-4">
-            월간 스케줄 캘린더를 구현 예정입니다
+      <CalendarView onDateClick={handleDateClick} />
+
+      {selectedDate && (
+        <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+          <p className="text-sm text-gray-700">
+            <span className="font-medium">선택된 날짜:</span> {formatDateWithDay(selectedDate)}
           </p>
-          {session && (
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg inline-block">
-              <p className="text-sm text-gray-700">
-                <span className="font-medium">로그인:</span> {session.user.name}
-              </p>
-              <p className="text-sm text-gray-700">
-                <span className="font-medium">역할:</span> {session.user.role}
-              </p>
-            </div>
-          )}
         </div>
-      </div>
+      )}
     </div>
   )
 }

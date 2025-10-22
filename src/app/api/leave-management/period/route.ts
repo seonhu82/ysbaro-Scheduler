@@ -1,14 +1,13 @@
 // 연차 신청 기간 생성/조회
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { auth } from '@/lib/auth'
 import { generateToken } from '@/lib/utils'
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
 
     if (!session || !['ADMIN', 'MANAGER'].includes(session.user.role)) {
       return NextResponse.json(
@@ -62,7 +61,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
 
     if (!session || !['ADMIN', 'MANAGER'].includes(session.user.role)) {
       return NextResponse.json(

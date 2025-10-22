@@ -1,11 +1,10 @@
 // Server-Sent Events for Real-time Notifications ⭐⭐
 
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { auth } from '@/lib/auth'
 
 export async function GET(request: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
 
   if (!session || !session.user.clinicId) {
     return new Response('Unauthorized', { status: 401 })

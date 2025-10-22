@@ -190,3 +190,37 @@ export function getDaysDifference(date1: Date, date2: Date): number {
 export function isInMonth(date: Date, year: number, month: number): boolean {
   return date.getFullYear() === year && date.getMonth() === month - 1
 }
+
+/**
+ * Get calendar grid dates (including previous and next month dates)
+ * Returns 42 dates (6 weeks x 7 days) for display in a calendar grid
+ */
+export function getCalendarGridDates(year: number, month: number): Date[] {
+  const firstDay = new Date(year, month - 1, 1)
+  const lastDay = new Date(year, month, 0)
+  const firstDayOfWeek = firstDay.getDay() // 0 (일요일) ~ 6 (토요일)
+  const daysInMonth = lastDay.getDate()
+
+  const dates: Date[] = []
+
+  // 이전 달의 날짜들 (첫 주를 채우기 위해)
+  if (firstDayOfWeek > 0) {
+    const prevMonthLastDay = new Date(year, month - 1, 0).getDate()
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+      dates.push(new Date(year, month - 2, prevMonthLastDay - i))
+    }
+  }
+
+  // 현재 달의 날짜들
+  for (let day = 1; day <= daysInMonth; day++) {
+    dates.push(new Date(year, month - 1, day))
+  }
+
+  // 다음 달의 날짜들 (마지막 주를 채우기 위해)
+  const remainingDays = 42 - dates.length
+  for (let day = 1; day <= remainingDays; day++) {
+    dates.push(new Date(year, month, day))
+  }
+
+  return dates
+}
