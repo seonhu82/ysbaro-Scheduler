@@ -152,6 +152,7 @@ model DoctorCombination {
   dayOfWeek     String // MONDAY, TUESDAY 등
   requiredStaff Int // 필요 인원 수
   doctors       String[] // ["박원장(상담)", "구원장", "윤원장"] 형태
+  hasNightShift Boolean  @default(false) // 야간 진료 여부
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
