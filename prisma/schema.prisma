@@ -80,15 +80,16 @@ model Clinic {
   scheduleViewLinks    ScheduleViewLink[]
   deploymentSettings   DeploymentSettings?
   ruleSettings         RuleSettings?
-  fairnessSettings     FairnessSettings?
-  notificationSettings NotificationSettings?
-  backupConfigs        BackupConfig[]
-  backups              Backup[]
-  notifications        Notification[]
-  activityLogs         ActivityLog[]
-  weekInfos            WeekInfo[]
-  qrTokens             QRToken[]
-  attendanceRecords    AttendanceRecord[]
+  fairnessSettings      FairnessSettings?
+  categoryRatioSettings CategoryRatioSettings?
+  notificationSettings  NotificationSettings?
+  backupConfigs         BackupConfig[]
+  backups               Backup[]
+  notifications         Notification[]
+  activityLogs          ActivityLog[]
+  weekInfos             WeekInfo[]
+  qrTokens              QRToken[]
+  attendanceRecords     AttendanceRecord[]
 }
 
 // ============================================
@@ -132,7 +133,8 @@ model DoctorCategory {
   clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   doctorId  String
   doctor    Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  name      String // 상담, 진료 등
+  name      String   // 상담, 진료 등
+  shortName String   @default("") // 조합명용 줄임표시 (예: "박(상담)")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -170,6 +172,16 @@ model ClosedDaySettings {
   updatedAt       DateTime @updatedAt
 }
 
+// 구분별 필요인원 비율 설정
+model CategoryRatioSettings {
+  id        String   @id @default(cuid())
+  clinicId  String   @unique
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  ratios    Json     // { "팀장/실장": 15, "고년차": 30, "중간년차": 35, "저년차": 20 }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ============================================
 // 3. 원장 및 패턴 관리
 // ============================================
@@ -179,6 +191,7 @@ model Doctor {
   clinicId       String
   clinic         Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   name           String
+  shortName      String   @default("") // 조합명용 줄임표시 (예: "박", "황")
   specialization String?
   useCategory    Boolean  @default(false) // 구분 사용 여부
   isActive       Boolean  @default(true)
@@ -243,12 +256,15 @@ model Staff {
   clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   // 기본 정보
-  name           String
-  rank           StaffRank?
-  departmentName String? // 부서명
-  categoryName   String? // 구분명 (스케줄 배치용)
-  phoneNumber    String?
-  email          String?
+  name                  String
+  rank                  StaffRank?
+  departmentName        String?  // 부서명
+  categoryName          String?  // 구분명 (스케줄 배치용)
+  position              String   @default("") // 직급
+  flexibleForCategories String[] // 배치 유연성 (다른 구분으로도 배치 가능)
+  flexibilityPriority   Int      @default(0) // 유연 배치 우선순위
+  phoneNumber           String?
+  email                 String?
 
   // 근무 정보
   birthDate    DateTime // 생년월일 (필수) - PIN 생성용
@@ -448,8 +464,10 @@ model DailySlot {
 }
 
 enum ApplicationStatus {
-  PENDING // 대기중
+  PENDING   // 대기중 (관리자 확인 전)
+  ON_HOLD   // 보류 (구분별 슬롯 부족, 스케줄 배치 후 결정)
   CONFIRMED // 확정
+  REJECTED  // 반려
   CANCELLED // 취소됨
 }
 
@@ -459,18 +477,19 @@ enum LeaveType {
 }
 
 model LeaveApplication {
-  id        String            @id @default(cuid())
-  clinicId  String
-  clinic    Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  linkId    String
-  link      ApplicationLink   @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  staffId   String
-  staff     Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  date      DateTime          @db.Date
-  leaveType LeaveType
-  status    ApplicationStatus @default(PENDING)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id         String            @id @default(cuid())
+  clinicId   String
+  clinic     Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  linkId     String
+  link       ApplicationLink   @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  staffId    String
+  staff      Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date       DateTime          @db.Date
+  leaveType  LeaveType
+  status     ApplicationStatus @default(PENDING)
+  holdReason String?           // 보류 사유 (ON_HOLD 상태일 때)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
 
   @@index([clinicId])
   @@index([linkId])
