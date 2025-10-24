@@ -18,8 +18,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface Doctor {
   name: string
+  shortName: string
   useCategory: boolean
-  categories: string[]
+  categories: Array<{
+    name: string
+    shortName: string
+  }>
 }
 
 interface Combination {
@@ -89,7 +93,7 @@ export function CombinationStep({
     doctors.forEach((doctor) => {
       if (doctor.useCategory && doctor.categories.length > 0) {
         doctor.categories.forEach((category) => {
-          options.push(`${doctor.name}(${category})`)
+          options.push(`${doctor.name}(${category.name})`)
         })
       } else {
         options.push(doctor.name)
@@ -128,6 +132,7 @@ export function CombinationStep({
         dayOfWeek: 'MONDAY',
         requiredStaff: 2,
         doctors: [],
+        hasNightShift: false,
       })
     }
   }
@@ -279,11 +284,15 @@ export function CombinationStep({
             return
           }
 
+          // 야간 진료 여부 (구분 컬럼에서 확인)
+          const hasNightShift = String(row['구분'] || '').trim() === '야간'
+
           newCombinations.push({
             name: String(row['조합명']).trim(),
             dayOfWeek,
             requiredStaff,
             doctors: combinationDoctors,
+            hasNightShift,
           })
         })
 

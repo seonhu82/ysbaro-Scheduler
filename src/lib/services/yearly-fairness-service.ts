@@ -84,7 +84,7 @@ export class YearlyFairnessService {
       const startDate = new Date(year, m - 1, 1);
       const endDate = new Date(year, m, 0); // 해당 월의 마지막 날
 
-      let schedules;
+      let schedules: any[] = [];
 
       if (shiftType === 'night') {
         // 해당 월의 야간 진료일 조회

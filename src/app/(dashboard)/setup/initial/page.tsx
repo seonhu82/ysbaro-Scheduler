@@ -30,8 +30,12 @@ interface SetupData {
   // 3단계: 원장 정보
   doctors: {
     name: string
+    shortName: string
     useCategory: boolean
-    categories: string[]
+    categories: Array<{
+      name: string
+      shortName: string
+    }>
   }[]
 
   // 4단계: 직원
@@ -42,6 +46,8 @@ interface SetupData {
     categoryName: string
     position: string
     workType: 'WEEK_4' | 'WEEK_5'
+    flexibleForCategories: string[]
+    flexibilityPriority: number
   }[]
 
   // 5단계: 조합
@@ -50,7 +56,13 @@ interface SetupData {
     dayOfWeek: string
     requiredStaff: number
     doctors: string[]
+    hasNightShift: boolean
   }[]
+
+  // 구분별 비율 설정
+  categoryRatios: {
+    [categoryName: string]: number
+  }
 
   // 6단계: 휴업일
   closedDays: {
@@ -100,6 +112,12 @@ export default function InitialSetupPage() {
     doctors: [],
     staff: [],
     combinations: [],
+    categoryRatios: {
+      '팀장/실장': 15,
+      '고년차': 30,
+      '중간년차': 35,
+      '저년차': 20,
+    },
     closedDays: {
       includeHolidays: false,
       years: [],
@@ -301,8 +319,11 @@ export default function InitialSetupPage() {
                 data={setupData.combinations}
                 doctors={setupData.doctors}
                 fairness={setupData.fairness}
+                categoryRatios={setupData.categoryRatios}
+                categories={setupData.categories.map(c => c.name)}
                 onChange={(data) => updateSetupData('combinations', data)}
                 onFairnessChange={(data) => updateSetupData('fairness', data)}
+                onCategoryRatiosChange={(data) => updateSetupData('categoryRatios', data)}
               />
             )}
             {currentStep === 6 && (
