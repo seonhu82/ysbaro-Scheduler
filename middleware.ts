@@ -10,8 +10,8 @@ export default auth((req) => {
     return NextResponse.next()
   }
 
-  // 로그인 페이지
-  if (path === '/login') {
+  // 로그인, 회원가입 페이지
+  if (path === '/login' || path === '/register') {
     // 이미 로그인한 사용자가 로그인 페이지 접근 시 리다이렉트
     if (token) {
       return NextResponse.redirect(new URL('/calendar', req.url))

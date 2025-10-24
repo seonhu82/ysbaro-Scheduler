@@ -104,10 +104,17 @@ export async function POST(request: NextRequest) {
       data: {
         clinicId,
         name,
+        birthDate: new Date(),
+        birthDateStr: '000101',
+        departmentName: '미지정',
+        categoryName: '미지정',
+        workType: 'WEEK_5',
+        workDays: 5,
         rank,
         pin,
         phoneNumber,
         email,
+        isActive: true,
       },
     })
 

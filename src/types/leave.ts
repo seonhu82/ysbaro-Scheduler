@@ -1,6 +1,6 @@
 // 연차 관련 타입 정의
 
-import type { LeaveApplication, Staff, ApplicationLink, SlotLimit } from '@prisma/client'
+import type { LeaveApplication, Staff, ApplicationLink } from '@prisma/client'
 
 /**
  * 연차 신청 (관계 포함)
@@ -15,7 +15,7 @@ export interface LeaveApplicationWithStaff extends LeaveApplication {
  */
 export interface ApplicationLinkWithRelations extends ApplicationLink {
   applications: LeaveApplicationWithStaff[]
-  slotLimits: SlotLimit[]
+  
 }
 
 /**

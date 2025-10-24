@@ -1,5 +1,17 @@
 // 패턴 서비스
-
 import { prisma } from '@/lib/prisma'
 
-// TODO: 패턴 서비스 함수들 구현
+export class PatternService {
+  constructor(private clinicId: string) {}
+
+  async getDayPatterns() {
+    return prisma.doctorPattern.findMany({
+      where: { 
+        doctor: {
+          clinicId: this.clinicId
+        }
+      },
+      include: { days: true, doctor: true }
+    })
+  }
+}

@@ -27,7 +27,17 @@
       "Bash(node fix-auth-imports.js:*)",
       "Bash(npx shadcn@latest init -y)",
       "Bash(npx shadcn@latest add dialog button input select)",
-      "Bash(npx shadcn@latest add:*)"
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(awk:*)",
+      "Bash(timeout /t 2)",
+      "Bash(ls:*)",
+      "Bash(timeout /t 5)",
+      "Read(//d/**)",
+      "Bash(npm run build:*)",
+      "Bash(npx next build:*)",
+      "Bash(timeout 180 npm run build)"
     ],
     "deny": [],
     "ask": []

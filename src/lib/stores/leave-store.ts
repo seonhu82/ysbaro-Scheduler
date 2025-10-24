@@ -1,5 +1,16 @@
-// 연차 상태
+// 연차/오프 스토어
+import { create } from 'zustand'
 
-import { prisma } from '@/lib/prisma'
+interface LeaveStore {
+  applications: any[]
+  setApplications: (apps: any[]) => void
+  addApplication: (app: any) => void
+}
 
-// TODO: 연차 상태 함수들 구현
+export const useLeaveStore = create<LeaveStore>((set) => ({
+  applications: [],
+  setApplications: (apps) => set({ applications: apps }),
+  addApplication: (app) => set((state) => ({
+    applications: [...state.applications, app]
+  })),
+}))

@@ -1,5 +1,16 @@
-// 설정 상태
+// 설정 스토어
+import { create } from 'zustand'
 
-import { prisma } from '@/lib/prisma'
+interface SettingsStore {
+  theme: 'light' | 'dark'
+  language: string
+  setTheme: (theme: 'light' | 'dark') => void
+  setLanguage: (lang: string) => void
+}
 
-// TODO: 설정 상태 함수들 구현
+export const useSettingsStore = create<SettingsStore>((set) => ({
+  theme: 'light',
+  language: 'ko',
+  setTheme: (theme) => set({ theme }),
+  setLanguage: (lang) => set({ language: lang }),
+}))

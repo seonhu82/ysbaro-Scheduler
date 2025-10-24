@@ -1,0 +1,105 @@
+
+> dental-scheduler@1.0.0 dev
+> next dev
+
+  ▲ Next.js 14.2.17
+  - Local:        http://localhost:3000
+  - Environments: .env.local, .env
+
+ ✓ Starting...
+ ✓ Ready in 2.5s
+ ○ Compiling / ...
+ ✓ Compiled / in 3.6s (546 modules)
+ GET / 307 in 4115ms
+ ✓ Compiled in 463ms (279 modules)
+ ✓ Compiled /login in 476ms (614 modules)
+ GET /login 200 in 687ms
+ GET / 307 in 99ms
+ GET /login 200 in 77ms
+ GET / 307 in 100ms
+ ✓ Compiled in 391ms (323 modules)
+ ✓ Compiled in 339ms (323 modules)
+ ⨯ TypeError: __webpack_modules__[moduleId] is not a function
+    at Object.__webpack_require__ [as require] (D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\webpack-runtime.js:33:42)
+    at JSON.parse (<anonymous>)
+digest: "3349314449"
+TypeError: __webpack_modules__[moduleId] is not a function
+    at Object.__webpack_require__ [as require] (D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\webpack-runtime.js:33:42)
+    at require (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:39:19927)
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108279
+    at eo (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108464)
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:110693
+    at Object._fromJSON (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:111249)
+    at JSON.parse (<anonymous>)
+    at eu (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108958)
+    at en (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108026)
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115168
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115185
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115218
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115235
+    at t (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115458)
+ ⨯ TypeError: __webpack_modules__[moduleId] is not a function
+    at Object.__webpack_require__ [as require] (D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\webpack-runtime.js:33:42)
+    at require (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:39:19927)
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108279
+    at eo (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108464)
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:110693
+    at Object._fromJSON (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:111249)
+    at JSON.parse (<anonymous>)
+    at eu (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108958)
+    at en (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108026)
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115168
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115185
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115218
+    at D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115235
+    at t (D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115458) {
+  page: '/'
+}
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 1734ms (793 modules)
+ GET / 500 in 2183ms
+ ○ Compiling /_not-found ...
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled /_not-found in 817ms (796 modules)
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 1042ms
+ GET / 307 in 388ms
+ ✓ Compiled /login in 157ms (347 modules)
+ GET /login 200 in 450ms
+ GET /.well-known/appspecific/com.chrome.devtools.json 404 in 49ms
+ GET /_next/static/css/app/layout.css?v=1761286514523 404 in 50ms
+ GET /_next/static/chunks/main-app.js?v=1761286514523 404 in 87ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 85ms
+ GET /_next/static/chunks/app/(auth)/login/page.js 404 in 82ms
+ GET /_next/static/chunks/app/layout.js 404 in 82ms
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, lstat 'D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\vendor-chunks\clsx.js'
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/clsx' in D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server for build dependencies doesn't lead to expected result 'D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\vendor-chunks\clsx.js', but to 'Error: Can't resolve './vendor-chunks/clsx' in 'D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/clsx (expected D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\vendor-chunks\clsx.js)
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\webpack-runtime.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\webpack-runtime.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\app\_not-found\page.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\app\_not-found\page.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\server\require.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\server\require.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\server\load-components.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\utils.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\utils.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/class-variance-authority' in D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server for build dependencies doesn't lead to expected result 'D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\vendor-chunks\class-variance-authority.js', but to 'Error: Can't resolve './vendor-chunks/class-variance-authority' in 'D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/class-variance-authority (expected D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\vendor-chunks\class-variance-authority.js)
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\webpack-runtime.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\webpack-runtime.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\app\_not-found\page.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\.next\server\app\_not-found\page.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\server\require.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\server\require.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\server\load-components.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\utils.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\utils.js
+<w>  at file dependencies D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs D:\작업\프로그램 만들기\연세바로치과 스케줄러\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+[?25h

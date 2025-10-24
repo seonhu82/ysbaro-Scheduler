@@ -15,72 +15,178 @@ generator client {
 // ============================================
 
 enum UserRole {
-  ADMIN       // 시스템 관리자
-  MANAGER     // 병원 관리자
-  STAFF       // 일반 직원
+  ADMIN // 시스템 관리자
+  MANAGER // 병원 관리자
+  STAFF // 일반 직원
 }
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  password      String
-  name          String
-  role          UserRole @default(STAFF)
-  clinicId      String?
-  clinic        Clinic?  @relation(fields: [clinicId], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(STAFF)
+  clinicId  String?
+  clinic    Clinic?  @relation(fields: [clinicId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // 관계
-  notifications Notification[]
-  activityLogs  ActivityLog[]
+  notifications       Notification[]
+  activityLogs        ActivityLog[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([clinicId])
   @@index([email])
 }
 
+// 비밀번호 재설정 토큰
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
 model Clinic {
-  id                     String   @id @default(cuid())
-  name                   String
-  address                String?
-  phone                  String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  address         String?
+  phone           String?
+  setupCompleted  Boolean  @default(false) // 초기 설정 완료 여부
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   // 관계
-  users                  User[]
-  doctors                Doctor[]
-  staff                  Staff[]
-  schedules              Schedule[]
-  holidays               Holiday[]
-  leaveApplications      LeaveApplication[]
-  applicationLinks       ApplicationLink[]
-  scheduleViewLinks      ScheduleViewLink[]
-  deploymentSettings     DeploymentSettings?
-  ruleSettings           RuleSettings?
-  fairnessSettings       FairnessSettings?
-  notificationSettings   NotificationSettings?
-  backupConfigs          BackupConfig[]
-  backups                Backup[]
-  notifications          Notification[]
-  activityLogs           ActivityLog[]
+  users                User[]
+  doctors              Doctor[]
+  staff                Staff[]
+  departments          Department[]
+  staffCategories      StaffCategory[]
+  doctorCategories     DoctorCategory[]
+  doctorCombinations   DoctorCombination[]
+  closedDaySettings    ClosedDaySettings?
+  schedules            Schedule[]
+  holidays             Holiday[]
+  leaveApplications    LeaveApplication[]
+  applicationLinks     ApplicationLink[]
+  scheduleViewLinks    ScheduleViewLink[]
+  deploymentSettings   DeploymentSettings?
+  ruleSettings         RuleSettings?
+  fairnessSettings     FairnessSettings?
+  notificationSettings NotificationSettings?
+  backupConfigs        BackupConfig[]
+  backups              Backup[]
+  notifications        Notification[]
+  activityLogs         ActivityLog[]
+  weekInfos            WeekInfo[]
+  qrTokens             QRToken[]
+  attendanceRecords    AttendanceRecord[]
 }
 
 // ============================================
-// 2. 원장 및 패턴 관리
+// 2. 부서 및 구분 설정
+// ============================================
+
+// 부서 (직원 소속)
+model Department {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name      String
+  order     Int      @default(0) // 표시 순서
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+// 직원 구분 (스케줄 배치 우선순위용)
+model StaffCategory {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name      String // 팀장/실장, 고년차, 중간년차, 저년차
+  priority  Int // 우선순위 (낮을수록 먼저 배치)
+  order     Int      @default(0) // 표시 순서
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+  @@index([priority])
+}
+
+// 원장 구분 (선택적 사용)
+model DoctorCategory {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  doctorId  String
+  doctor    Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  name      String // 상담, 진료 등
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([doctorId, name])
+  @@index([clinicId])
+  @@index([doctorId])
+}
+
+// 의사 조합 (일 패턴)
+model DoctorCombination {
+  id            String   @id @default(cuid())
+  clinicId      String
+  clinic        Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name          String // 조합명 (예: 박(상담)구윤)
+  dayOfWeek     String // MONDAY, TUESDAY 등
+  requiredStaff Int // 필요 인원 수
+  doctors       String[] // ["박원장(상담)", "구원장", "윤원장"] 형태
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([clinicId])
+  @@index([dayOfWeek])
+}
+
+// 휴업일 설정
+model ClosedDaySettings {
+  id              String   @id @default(cuid())
+  clinicId        String   @unique
+  clinic          Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  includeHolidays Boolean  @default(true) // 공휴일 포함 여부
+  years           Int[] // 공휴일 조회 연도들
+  regularDays     Json // [{dayOfWeek: "SUNDAY", weekOfMonth: 2}, ...] 형태
+  specificDates   String[] // ["2025-01-01", "2025-12-25"] 형태
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================
+// 3. 원장 및 패턴 관리
 // ============================================
 
 model Doctor {
-  id              String          @id @default(cuid())
-  clinicId        String
-  clinic          Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  name            String
-  specialization  String?
-  isActive        Boolean         @default(true)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id             String   @id @default(cuid())
+  clinicId       String
+  clinic         Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name           String
+  specialization String?
+  useCategory    Boolean  @default(false) // 구분 사용 여부
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // 관계
+  categories      DoctorCategory[]
   patterns        DoctorPattern[]
   scheduleDoctors ScheduleDoctor[]
 
@@ -88,61 +194,86 @@ model Doctor {
 }
 
 model DoctorPattern {
-  id          String              @id @default(cuid())
+  id          String   @id @default(cuid())
   doctorId    String
-  doctor      Doctor              @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  patternName String              // "기본 패턴", "여름 패턴" 등
-  isActive    Boolean             @default(true)
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  doctor      Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patternName String // "기본 패턴", "여름 패턴" 등
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // 관계
-  days        DoctorPatternDay[]
+  days DoctorPatternDay[]
 
   @@index([doctorId])
 }
 
 model DoctorPatternDay {
-  id              String        @id @default(cuid())
-  patternId       String
-  pattern         DoctorPattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
-  dayOfWeek       Int           // 0=일, 1=월, ..., 6=토
-  isWorkday       Boolean       @default(true)
-  hasNightShift   Boolean       @default(false)
+  id            String        @id @default(cuid())
+  patternId     String
+  pattern       DoctorPattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+  dayOfWeek     Int // 0=일, 1=월, ..., 6=토
+  isWorkday     Boolean       @default(true)
+  hasNightShift Boolean       @default(false)
 
   @@unique([patternId, dayOfWeek])
   @@index([patternId])
 }
 
 // ============================================
-// 3. 직원 관리
+// 4. 직원 관리
 // ============================================
 
 enum StaffRank {
-  HYGIENIST      // 위생사
-  ASSISTANT      // 어시스턴트
-  COORDINATOR    // 코디네이터
-  NURSE          // 간호조무사
-  OTHER          // 기타
+  HYGIENIST // 위생사
+  ASSISTANT // 어시스턴트
+  COORDINATOR // 코디네이터
+  NURSE // 간호조무사
+  OTHER // 기타
+}
+
+enum WorkType {
+  WEEK_4 // 주4일 근무
+  WEEK_5 // 주5일 근무
 }
 
 model Staff {
-  id                 String              @id @default(cuid())
-  clinicId           String
-  clinic             Clinic              @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  name               String
-  rank               StaffRank
-  pin                String              // 4자리 PIN
-  phoneNumber        String?
-  email              String?
-  isActive           Boolean             @default(true)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // 기본 정보
+  name           String
+  rank           StaffRank?
+  departmentName String? // 부서명
+  categoryName   String? // 구분명 (스케줄 배치용)
+  phoneNumber    String?
+  email          String?
+
+  // 근무 정보
+  birthDate    DateTime // 생년월일 (필수) - PIN 생성용
+  birthDateStr String? // 생년월일 문자열 (YYMMDD, 신규)
+  hireDate     DateTime? // 입사일 - 연차 계산용
+  workDays     Int       @default(4) // 주당 근무일수 (기존 호환)
+  workType     WorkType? // 근무 형태 (신규)
+  pin          String? // 6자리 PIN (초기: YYMMDD)
+
+  // 연차 정보
+  totalAnnualDays Int @default(15) // 총 연차 일수
+  usedAnnualDays  Int @default(0) // 사용한 연차 일수
+
+  // 보안 정보
+  registeredDevices Json? // 등록된 기기 목록
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // 관계
-  assignments        StaffAssignment[]
-  leaveApplications  LeaveApplication[]
-  fairnessScores     FairnessScore[]
+  assignments       StaffAssignment[]
+  leaveApplications LeaveApplication[]
+  fairnessScores    FairnessScore[]
+  attendanceRecords AttendanceRecord[]
 
   @@index([clinicId])
   @@index([pin])
@@ -151,8 +282,8 @@ model Staff {
 model StaffRankSettings {
   id               String    @id @default(cuid())
   rank             StaffRank @unique
-  requiredCount    Int       // 필수 인원 수
-  distributionRate Float     // 배치 비율 (0.0 ~ 1.0)
+  requiredCount    Int // 필수 인원 수
+  distributionRate Float // 배치 비율 (0.0 ~ 1.0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
@@ -162,25 +293,25 @@ model StaffRankSettings {
 // ============================================
 
 enum ScheduleStatus {
-  DRAFT           // 작성중
-  PENDING         // 배치 대기
-  CONFIRMED       // 확정
-  DEPLOYED        // 배포됨
+  DRAFT // 작성중
+  PENDING // 배치 대기
+  CONFIRMED // 확정
+  DEPLOYED // 배포됨
 }
 
 model Schedule {
-  id              String            @id @default(cuid())
-  clinicId        String
-  clinic          Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  year            Int
-  month           Int
-  status          ScheduleStatus    @default(DRAFT)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  deployedAt      DateTime?
+  id         String         @id @default(cuid())
+  clinicId   String
+  clinic     Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  year       Int
+  month      Int
+  status     ScheduleStatus @default(DRAFT)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  deployedAt DateTime?
 
   // 관계
-  doctors         ScheduleDoctor[]
+  doctors          ScheduleDoctor[]
   staffAssignments StaffAssignment[]
 
   @@unique([clinicId, year, month])
@@ -189,13 +320,13 @@ model Schedule {
 }
 
 model ScheduleDoctor {
-  id              String    @id @default(cuid())
-  scheduleId      String
-  schedule        Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  doctorId        String
-  doctor          Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  date            DateTime  @db.Date
-  hasNightShift   Boolean   @default(false)
+  id            String   @id @default(cuid())
+  scheduleId    String
+  schedule      Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  doctorId      String
+  doctor        Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  date          DateTime @db.Date
+  hasNightShift Boolean  @default(false)
 
   @@unique([scheduleId, doctorId, date])
   @@index([scheduleId])
@@ -203,20 +334,20 @@ model ScheduleDoctor {
 }
 
 enum ShiftType {
-  DAY            // 주간
-  NIGHT          // 야간
-  OFF            // 오프
+  DAY // 주간
+  NIGHT // 야간
+  OFF // 오프
 }
 
 model StaffAssignment {
-  id          String    @id @default(cuid())
-  scheduleId  String
-  schedule    Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  staffId     String
-  staff       Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  date        DateTime  @db.Date
-  shiftType   ShiftType
-  createdAt   DateTime  @default(now())
+  id         String    @id @default(cuid())
+  scheduleId String
+  schedule   Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  staffId    String
+  staff      Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date       DateTime  @db.Date
+  shiftType  ShiftType
+  createdAt  DateTime  @default(now())
 
   @@unique([scheduleId, staffId, date])
   @@index([scheduleId])
@@ -229,25 +360,24 @@ model StaffAssignment {
 // ============================================
 
 enum LinkStatus {
-  ACTIVE         // 활성
-  EXPIRED        // 만료
-  CLOSED         // 닫힘
+  ACTIVE // 활성
+  EXPIRED // 만료
+  CLOSED // 닫힘
 }
 
 model ApplicationLink {
-  id                String             @id @default(cuid())
-  clinicId          String
-  clinic            Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  token             String             @unique
-  year              Int
-  month             Int
-  expiresAt         DateTime
-  status            LinkStatus         @default(ACTIVE)
-  createdAt         DateTime           @default(now())
+  id        String     @id @default(cuid())
+  clinicId  String
+  clinic    Clinic     @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  token     String     @unique
+  year      Int
+  month     Int
+  expiresAt DateTime
+  status    LinkStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
 
   // 관계
-  slotLimits        SlotLimit[]
-  applications      LeaveApplication[]
+  applications LeaveApplication[]
 
   @@index([clinicId])
   @@index([token])
@@ -255,48 +385,92 @@ model ApplicationLink {
 }
 
 enum DayType {
-  WEEKDAY        // 평일
-  SATURDAY       // 토요일
+  WEEKDAY // 평일 (월-금)
+  SATURDAY // 토요일
+  SUNDAY // 일요일 (전원 휴무)
 }
 
-model SlotLimit {
-  id              String          @id @default(cuid())
-  linkId          String
-  link            ApplicationLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  date            DateTime  @db.Date
-  dayType         DayType
-  maxSlots        Int             // 최대 인원
-  currentSlots    Int             @default(0)
+// 주차 정보 테이블 (주별 슬롯 계산)
+model WeekInfo {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
-  @@unique([linkId, date])
-  @@index([linkId])
+  year       Int
+  month      Int
+  weekNumber Int // 해당 월의 주차 (1, 2, 3, ...)
+  weekStart  DateTime @db.Date // 월요일
+  weekEnd    DateTime @db.Date // 토요일
+
+  // 주별 슬롯 계산 결과
+  totalSlots      Int // 주당 총 휴무 가능 자리 (평일6 + 토요일14 등)
+  offTarget       Int // 오프 배정 목표 (보통 20명 × 2일 = 40자리)
+  annualAvailable Int // 연차 가능 자리 (total - off)
+  hasHoliday      Boolean @default(false) // 주 중 휴무일 포함 여부
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 관계
+  dailySlots DailySlot[]
+
+  @@unique([clinicId, year, month, weekNumber])
+  @@index([clinicId])
+  @@index([year, month])
+}
+
+// 날짜별 슬롯 정보 테이블
+model DailySlot {
+  id     String   @id @default(cuid())
+  weekId String
+  week   WeekInfo @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  date    DateTime @db.Date
+  dayType DayType // WEEKDAY / SATURDAY / SUNDAY
+
+  // 원장 스케줄
+  doctorSchedule Json // { doctors: [...], night_shift: true }
+
+  // 슬롯 계산
+  requiredStaff  Int // 필요 배치 인원 (14 or 6)
+  availableSlots Int // 휴무 가능 자리 (20 - required)
+
+  // 사용 현황
+  offAssigned    Int @default(0) // 배정된 오프
+  annualAssigned Int @default(0) // 배정된 연차
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([weekId, date])
+  @@index([weekId])
   @@index([date])
 }
 
 enum ApplicationStatus {
-  PENDING        // 대기중
-  CONFIRMED      // 확정
-  CANCELLED      // 취소됨
+  PENDING // 대기중
+  CONFIRMED // 확정
+  CANCELLED // 취소됨
 }
 
 enum LeaveType {
-  ANNUAL         // 연차
-  OFF            // 오프
+  ANNUAL // 연차
+  OFF // 오프
 }
 
 model LeaveApplication {
-  id           String            @id @default(cuid())
-  clinicId     String
-  clinic       Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  linkId       String
-  link         ApplicationLink   @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  staffId      String
-  staff        Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  date         DateTime          @db.Date
-  leaveType    LeaveType
-  status       ApplicationStatus @default(PENDING)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id        String            @id @default(cuid())
+  clinicId  String
+  clinic    Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  linkId    String
+  link      ApplicationLink   @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  staffId   String
+  staff     Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      DateTime          @db.Date
+  leaveType LeaveType
+  status    ApplicationStatus @default(PENDING)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
   @@index([clinicId])
   @@index([linkId])
@@ -310,14 +484,14 @@ model LeaveApplication {
 // ============================================
 
 model ScheduleViewLink {
-  id         String   @id @default(cuid())
-  clinicId   String
-  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  token      String   @unique
-  year       Int
-  month      Int
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  year      Int
+  month     Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
   @@index([clinicId])
   @@index([token])
@@ -358,37 +532,49 @@ model Holiday {
 // ============================================
 
 model RuleSettings {
-  id                     String   @id @default(cuid())
-  clinicId               String   @unique
-  clinic                 Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  maxWeeklyOffs          Int      @default(2)    // 주 최대 오프 횟수
-  preventSundayOff       Boolean  @default(true) // 일요일 오프 방지
-  preventHolidayOff      Boolean  @default(true) // 공휴일 오프 방지
-  maxConsecutiveNights   Int      @default(3)    // 최대 연속 야간 근무
-  minRestAfterNight      Int      @default(1)    // 야간 후 최소 휴식일
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id       String @id @default(cuid())
+  clinicId String @unique
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // 주 영업일 및 근무일 기본값
+  weekBusinessDays Int @default(6) // 주 영업일 (1~7)
+  defaultWorkDays  Int @default(4) // 신규 직원 기본 근무일수
+
+  // 배치 구분 설정 (사용자 정의)
+  staffCategories String[] @default(["실팀장", "고년차", "중년차", "저년차"])
+
+  // 오프 관련 규칙
+  maxWeeklyOffs     Int     @default(2) // 주 최대 오프 횟수
+  preventSundayOff  Boolean @default(true) // 일요일 오프 방지
+  preventHolidayOff Boolean @default(true) // 공휴일 오프 방지
+
+  // 근무 관련 규칙
+  maxConsecutiveNights Int @default(3) // 최대 연속 야간 근무
+  minRestAfterNight    Int @default(1) // 야간 후 최소 휴식일
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model FairnessSettings {
-  id                       String   @id @default(cuid())
-  clinicId                 String   @unique
-  clinic                   Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  nightShiftWeight         Float    @default(2.0)    // 야간 가중치
-  weekendWeight            Float    @default(1.5)    // 주말 가중치
-  holidayWeight            Float    @default(2.0)    // 공휴일 가중치
-  enableFairnessCheck      Boolean  @default(true)
-  fairnessThreshold        Float    @default(0.2)    // 형평성 허용 오차 (20%)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  clinicId            String   @unique
+  clinic              Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  nightShiftWeight    Float    @default(2.0) // 야간 가중치
+  weekendWeight       Float    @default(1.5) // 주말 가중치
+  holidayWeight       Float    @default(2.0) // 공휴일 가중치
+  enableFairnessCheck Boolean  @default(true)
+  fairnessThreshold   Float    @default(0.2) // 형평성 허용 오차 (20%)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 model SpecialCondition {
   id          String   @id @default(cuid())
   name        String
   description String?
-  condition   Json     // 조건 (JSON 형식)
-  action      Json     // 액션 (JSON 형식)
+  condition   Json // 조건 (JSON 형식)
+  action      Json // 액션 (JSON 형식)
   isActive    Boolean  @default(true)
   priority    Int      @default(0)
   createdAt   DateTime @default(now())
@@ -417,27 +603,27 @@ model NotificationSettings {
 // ============================================
 
 model BackupConfig {
-  id                String   @id @default(cuid())
-  clinicId          String
-  clinic            Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  enableAutoBackup  Boolean  @default(true)
-  backupFrequency   String   @default("daily") // daily, weekly, monthly
-  retentionDays     Int      @default(30)
-  lastBackupAt      DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String    @id @default(cuid())
+  clinicId         String
+  clinic           Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  enableAutoBackup Boolean   @default(true)
+  backupFrequency  String    @default("daily") // daily, weekly, monthly
+  retentionDays    Int       @default(30)
+  lastBackupAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([clinicId])
 }
 
 model Backup {
-  id          String   @id @default(cuid())
-  clinicId    String
-  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  fileName    String
-  fileSize    Int      // bytes
-  backupType  String   // auto, manual
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  clinicId   String
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  fileName   String
+  fileSize   Int // bytes
+  backupType String // auto, manual
+  createdAt  DateTime @default(now())
 
   @@index([clinicId])
   @@index([createdAt])
@@ -448,17 +634,17 @@ model Backup {
 // ============================================
 
 model FairnessScore {
-  id               String   @id @default(cuid())
-  staffId          String
-  staff            Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  year             Int
-  month            Int
-  nightShiftCount  Int      @default(0)
-  weekendCount     Int      @default(0)
-  holidayCount     Int      @default(0)
-  totalScore       Float    @default(0)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default(cuid())
+  staffId         String
+  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  year            Int
+  month           Int
+  nightShiftCount Int      @default(0)
+  weekendCount    Int      @default(0)
+  holidayCount    Int      @default(0)
+  totalScore      Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@unique([staffId, year, month])
   @@index([staffId])
@@ -470,24 +656,24 @@ model FairnessScore {
 // ============================================
 
 enum NotificationType {
-  LEAVE_SUBMITTED     // 연차 신청
-  LEAVE_CONFIRMED     // 연차 확정
-  LEAVE_CANCELLED     // 연차 취소
-  SCHEDULE_DEPLOYED   // 스케줄 배포
-  SYSTEM_ALERT        // 시스템 알림
+  LEAVE_SUBMITTED // 연차 신청
+  LEAVE_CONFIRMED // 연차 확정
+  LEAVE_CANCELLED // 연차 취소
+  SCHEDULE_DEPLOYED // 스케줄 배포
+  SYSTEM_ALERT // 시스템 알림
 }
 
 model Notification {
-  id         String           @id @default(cuid())
-  clinicId   String
-  clinic     Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  userId     String?
-  user       User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
-  type       NotificationType
-  title      String
-  message    String
-  isRead     Boolean          @default(false)
-  createdAt  DateTime         @default(now())
+  id        String           @id @default(cuid())
+  clinicId  String
+  clinic    Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
 
   @@index([clinicId])
   @@index([userId])
@@ -507,19 +693,93 @@ enum ActivityType {
 }
 
 model ActivityLog {
-  id          String       @id @default(cuid())
-  clinicId    String
-  clinic      Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  userId      String?
-  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id           String       @id @default(cuid())
+  clinicId     String
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   activityType ActivityType
-  description String
-  metadata    Json?
-  ipAddress   String?
-  userAgent   String?
-  createdAt   DateTime     @default(now())
+  description  String
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime     @default(now())
 
   @@index([clinicId])
   @@index([userId])
   @@index([createdAt])
+}
+
+// ============================================
+// 13. QR 출퇴근 시스템
+// ============================================
+
+// QR 토큰
+model QRToken {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  token     String    @unique // UUID v4
+  expiresAt DateTime // 생성 시간 + 5분
+  used      Boolean   @default(false) // 사용 여부
+  usedAt    DateTime? // 사용 시간
+  usedBy    String? // 사용한 직원 ID (Staff)
+
+  createdAt DateTime @default(now())
+
+  @@index([clinicId])
+  @@index([token])
+  @@index([expiresAt])
+  @@index([used])
+}
+
+// 출퇴근 기록
+enum CheckType {
+  IN // 출근
+  OUT // 퇴근
+}
+
+model AttendanceRecord {
+  id       String @id @default(cuid())
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  checkType CheckType // IN (출근) / OUT (퇴근)
+  checkTime DateTime // 체크 시간
+  date      DateTime  @db.Date // 체크 날짜 (검색용)
+
+  // QR 토큰 정보
+  tokenUsed String? // 사용한 QR 토큰
+
+  // 디바이스 정보
+  deviceFingerprint String // 디바이스 고유 ID
+  userAgent         String?
+  ipAddress         String?
+  wifiSSID          String? // WiFi 이름 (선택)
+
+  // 위치 정보 (선택)
+  gpsLatitude  Float?
+  gpsLongitude Float?
+
+  // 사진 (선택)
+  photoPath String?
+
+  // 이상 패턴
+  isSuspicious     Boolean @default(false)
+  suspiciousReason String? // 의심 사유
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
+  @@index([staffId])
+  @@index([date])
+  @@index([checkType])
+  @@index([isSuspicious])
 }

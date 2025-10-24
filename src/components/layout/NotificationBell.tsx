@@ -1,9 +1,13 @@
-// 알림 벨
+'use client'
 
-export function NotificationBell() {
+import { Bell } from 'lucide-react'
+import { NotificationBadge } from '@/components/notifications/NotificationBadge'
+
+export function NotificationBell({ count }: { count: number }) {
   return (
-    <div>
-      {/* TODO: 알림 벨 구현 */}
-    </div>
+    <button className="relative p-2 hover:bg-gray-100 rounded-full">
+      <Bell className="w-6 h-6" />
+      <NotificationBadge count={count} />
+    </button>
   )
 }

@@ -1,0 +1,510 @@
+'use client'
+
+import { useState, useRef } from 'react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Plus, X, Users, Upload, Download, AlertCircle } from 'lucide-react'
+import * as XLSX from 'xlsx'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+
+interface Staff {
+  name: string
+  birthDate: string
+  departmentName: string
+  categoryName: string
+  workType: 'WEEK_4' | 'WEEK_5'
+}
+
+interface StaffRegistrationStepProps {
+  data: Staff[]
+  departments: { name: string; order: number }[]
+  categories: { name: string; priority: number; order: number }[]
+  onChange: (data: Staff[]) => void
+}
+
+export function StaffRegistrationStep({
+  data,
+  departments,
+  categories,
+  onChange,
+}: StaffRegistrationStepProps) {
+  const [selectedIndices, setSelectedIndices] = useState<number[]>([])
+  const [uploadError, setUploadError] = useState<string>('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [newStaff, setNewStaff] = useState<Staff>({
+    name: '',
+    birthDate: '',
+    departmentName: departments[0]?.name || '',
+    categoryName: categories[0]?.name || '',
+    workType: 'WEEK_4',
+  })
+
+  const addStaff = () => {
+    if (newStaff.name.trim() && newStaff.birthDate.length === 6) {
+      onChange([...data, { ...newStaff }])
+      setNewStaff({
+        name: '',
+        birthDate: '',
+        departmentName: departments[0]?.name || '',
+        categoryName: categories[0]?.name || '',
+        workType: 'WEEK_4',
+      })
+    }
+  }
+
+  const removeStaff = (index: number) => {
+    onChange(data.filter((_, i) => i !== index))
+    setSelectedIndices(selectedIndices.filter((i) => i !== index))
+  }
+
+  const toggleSelection = (index: number) => {
+    if (selectedIndices.includes(index)) {
+      setSelectedIndices(selectedIndices.filter((i) => i !== index))
+    } else {
+      setSelectedIndices([...selectedIndices, index])
+    }
+  }
+
+  const applyWorkTypeToSelected = (workType: 'WEEK_4' | 'WEEK_5') => {
+    const updated = data.map((staff, index) =>
+      selectedIndices.includes(index) ? { ...staff, workType } : staff
+    )
+    onChange(updated)
+    setSelectedIndices([])
+  }
+
+  // 엑셀 템플릿 다운로드
+  const downloadTemplate = () => {
+    const templateData = [
+      {
+        이름: '홍길동',
+        생년월일: '950101',
+        부서: departments[0]?.name || '',
+        구분: categories[0]?.name || '',
+        근무형태: '주4일',
+      },
+      {
+        이름: '김철수',
+        생년월일: '960215',
+        부서: departments[0]?.name || '',
+        구분: categories[1]?.name || '',
+        근무형태: '주5일',
+      },
+    ]
+
+    const ws = XLSX.utils.json_to_sheet(templateData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '직원목록')
+
+    // 컬럼 너비 설정
+    ws['!cols'] = [
+      { wch: 10 }, // 이름
+      { wch: 12 }, // 생년월일
+      { wch: 15 }, // 부서
+      { wch: 15 }, // 구분
+      { wch: 10 }, // 근무형태
+    ]
+
+    XLSX.writeFile(wb, '직원등록_템플릿.xlsx')
+  }
+
+  // 엑셀 파일 업로드 처리
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadError('')
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const workbook = XLSX.read(event.target?.result, { type: 'binary' })
+        const sheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[sheetName]
+        const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[]
+
+        if (jsonData.length === 0) {
+          setUploadError('엑셀 파일에 데이터가 없습니다.')
+          return
+        }
+
+        const newStaffList: Staff[] = []
+        const errors: string[] = []
+
+        jsonData.forEach((row, index) => {
+          const rowNum = index + 2 // 엑셀 행 번호 (헤더 제외)
+
+          // 필수 필드 검증
+          if (!row['이름']) {
+            errors.push(`${rowNum}행: 이름이 누락되었습니다.`)
+            return
+          }
+
+          if (!row['생년월일']) {
+            errors.push(`${rowNum}행: 생년월일이 누락되었습니다.`)
+            return
+          }
+
+          // 생년월일 형식 검증 및 변환
+          let birthDate = String(row['생년월일']).replace(/\D/g, '')
+          if (birthDate.length === 8) {
+            // YYYYMMDD 형식인 경우 YYMMDD로 변환
+            birthDate = birthDate.substring(2)
+          }
+          if (birthDate.length !== 6) {
+            errors.push(`${rowNum}행: 생년월일 형식이 올바르지 않습니다. (YYMMDD 6자리 필요)`)
+            return
+          }
+
+          // 부서 검증
+          const deptName = row['부서'] || departments[0]?.name
+          if (!departments.find((d) => d.name === deptName)) {
+            errors.push(`${rowNum}행: 존재하지 않는 부서입니다. (${deptName})`)
+            return
+          }
+
+          // 구분 검증
+          const catName = row['구분'] || categories[0]?.name
+          if (!categories.find((c) => c.name === catName)) {
+            errors.push(`${rowNum}행: 존재하지 않는 구분입니다. (${catName})`)
+            return
+          }
+
+          // 근무형태 변환
+          let workType: 'WEEK_4' | 'WEEK_5' = 'WEEK_4'
+          const workTypeStr = String(row['근무형태'] || '주4일')
+          if (workTypeStr.includes('5') || workTypeStr.includes('5일')) {
+            workType = 'WEEK_5'
+          }
+
+          newStaffList.push({
+            name: String(row['이름']).trim(),
+            birthDate,
+            departmentName: deptName,
+            categoryName: catName,
+            workType,
+          })
+        })
+
+        if (errors.length > 0) {
+          setUploadError(errors.join('\n'))
+          return
+        }
+
+        // 기존 데이터에 추가
+        onChange([...data, ...newStaffList])
+
+        // 성공 메시지
+        alert(`${newStaffList.length}명의 직원이 추가되었습니다.`)
+
+        // 파일 입력 초기화
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
+      } catch (error) {
+        console.error('Excel upload error:', error)
+        setUploadError('엑셀 파일을 읽는 중 오류가 발생했습니다.')
+      }
+    }
+
+    reader.readAsBinaryString(file)
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center mb-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">직원 등록</h2>
+        <p className="text-gray-600">
+          직원 정보를 입력하고 근무 형태를 설정해주세요
+        </p>
+      </div>
+
+      {/* 엑셀 업로드 섹션 */}
+      <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Upload className="w-5 h-5 text-green-600" />
+            <div>
+              <h3 className="font-semibold text-gray-900">엑셀로 일괄 등록</h3>
+              <p className="text-sm text-gray-600">
+                여러 명의 직원을 한 번에 등록할 수 있습니다
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadTemplate}
+              className="h-9 border-green-300 hover:bg-green-50"
+            >
+              <Download className="w-4 h-4 mr-1" />
+              템플릿 다운로드
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <Button
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="h-9 bg-green-600 hover:bg-green-700"
+            >
+              <Upload className="w-4 h-4 mr-1" />
+              엑셀 업로드
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* 업로드 에러 메시지 */}
+      {uploadError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="whitespace-pre-line">
+            {uploadError}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* 직원 목록 테이블 */}
+      {data.length > 0 && (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  선택
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  이름
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  생년월일
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  부서
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  구분
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  근무형태
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  삭제
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y">
+              {data.map((staff, index) => (
+                <tr key={index} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <Checkbox
+                      checked={selectedIndices.includes(index)}
+                      onCheckedChange={() => toggleSelection(index)}
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-medium">{staff.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {staff.birthDate}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {staff.departmentName}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {staff.categoryName}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                        staff.workType === 'WEEK_4'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-green-100 text-green-700'
+                      }`}
+                    >
+                      {staff.workType === 'WEEK_4' ? '주4일' : '주5일'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeStaff(index)}
+                      className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 직원 추가 폼 */}
+      <div className="p-5 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 mb-4">
+          <Users className="w-5 h-5 text-blue-600" />
+          <h3 className="font-semibold">새 직원 추가</h3>
+        </div>
+
+        <div className="grid md:grid-cols-6 gap-3 mb-3">
+          <div className="space-y-1">
+            <Label className="text-xs">이름 *</Label>
+            <Input
+              value={newStaff.name}
+              onChange={(e) =>
+                setNewStaff({ ...newStaff, name: e.target.value })
+              }
+              placeholder="홍길동"
+              className="h-9"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">생년월일 (YYMMDD) *</Label>
+            <Input
+              value={newStaff.birthDate}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '').slice(0, 6)
+                setNewStaff({ ...newStaff, birthDate: value })
+              }}
+              placeholder="950101"
+              maxLength={6}
+              className="h-9"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">부서</Label>
+            <Select
+              value={newStaff.departmentName}
+              onValueChange={(value) =>
+                setNewStaff({ ...newStaff, departmentName: value })
+              }
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {departments.map((dept) => (
+                  <SelectItem key={dept.name} value={dept.name}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">구분</Label>
+            <Select
+              value={newStaff.categoryName}
+              onValueChange={(value) =>
+                setNewStaff({ ...newStaff, categoryName: value })
+              }
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((cat) => (
+                  <SelectItem key={cat.name} value={cat.name}>
+                    {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">근무형태</Label>
+            <div className="flex gap-2 items-center h-9">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={newStaff.workType === 'WEEK_4'}
+                  onChange={() =>
+                    setNewStaff({ ...newStaff, workType: 'WEEK_4' })
+                  }
+                  className="w-3 h-3"
+                />
+                <span className="text-sm">주4일</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  checked={newStaff.workType === 'WEEK_5'}
+                  onChange={() =>
+                    setNewStaff({ ...newStaff, workType: 'WEEK_5' })
+                  }
+                  className="w-3 h-3"
+                />
+                <span className="text-sm">주5일</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex items-end">
+            <Button
+              onClick={addStaff}
+              disabled={!newStaff.name.trim() || newStaff.birthDate.length !== 6}
+              className="h-9 w-full bg-blue-600"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              추가
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* 일괄 적용 */}
+      {selectedIndices.length > 0 && (
+        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-blue-900">
+              선택한 {selectedIndices.length}명에게 일괄 적용:
+            </span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => applyWorkTypeToSelected('WEEK_4')}
+                className="h-8 bg-blue-600"
+              >
+                주4일로 변경
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => applyWorkTypeToSelected('WEEK_5')}
+                className="h-8 bg-green-600"
+              >
+                주5일로 변경
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+        <p className="text-sm text-blue-900">
+          💡 <strong>안내:</strong> 생년월일은 연차/오프 신청 및 출퇴근 체크
+          시 본인 확인용으로 사용됩니다. (YYMMDD 형식, 6자리)
+        </p>
+      </div>
+    </div>
+  )
+}

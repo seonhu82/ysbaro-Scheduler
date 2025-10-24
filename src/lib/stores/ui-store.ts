@@ -1,5 +1,16 @@
-// UI 상태
+// UI 스토어
+import { create } from 'zustand'
 
-import { prisma } from '@/lib/prisma'
+interface UIStore {
+  sidebarOpen: boolean
+  modalOpen: boolean
+  setSidebarOpen: (open: boolean) => void
+  setModalOpen: (open: boolean) => void
+}
 
-// TODO: UI 상태 함수들 구현
+export const useUIStore = create<UIStore>((set) => ({
+  sidebarOpen: true,
+  modalOpen: false,
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  setModalOpen: (open) => set({ modalOpen: open }),
+}))

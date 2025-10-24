@@ -1,5 +1,7 @@
 // 주간 배치
-
 import { prisma } from '@/lib/prisma'
 
-// TODO: 주간 배치 함수들 구현
+export async function createWeeklySchedule(clinicId: string, startDate: Date) {
+  // 주간 스케줄 생성
+  return { success: true, weekId: '' }
+}

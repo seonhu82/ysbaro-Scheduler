@@ -1,5 +1,14 @@
-// 인증 상태
+// 인증 스토어
+import { create } from 'zustand'
 
-import { prisma } from '@/lib/prisma'
+interface AuthStore {
+  user: any | null
+  setUser: (user: any) => void
+  logout: () => void
+}
 
-// TODO: 인증 상태 함수들 구현
+export const useAuthStore = create<AuthStore>((set) => ({
+  user: null,
+  setUser: (user) => set({ user }),
+  logout: () => set({ user: null }),
+}))

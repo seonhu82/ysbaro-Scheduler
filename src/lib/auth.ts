@@ -14,7 +14,6 @@ export const authConfig: NextAuthConfig = {
   },
   pages: {
     signIn: '/login',
-    error: '/login',
   },
   providers: [
     CredentialsProvider({
@@ -24,35 +23,40 @@ export const authConfig: NextAuthConfig = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error('이메일과 비밀번호를 입력해주세요.')
-        }
+        try {
+          if (!credentials?.email || !credentials?.password) {
+            return null
+          }
 
-        // Find user by email
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-          include: { clinic: true },
-        })
+          // Find user by email
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email as string },
+            include: { clinic: true },
+          })
 
-        if (!user || !user.password) {
-          throw new Error('존재하지 않는 계정입니다.')
-        }
+          if (!user || !user.password) {
+            return null
+          }
 
-        // Verify password
-        const isPasswordValid = await compare(credentials.password as string, user.password)
+          // Verify password
+          const isPasswordValid = await compare(credentials.password as string, user.password)
 
-        if (!isPasswordValid) {
-          throw new Error('비밀번호가 일치하지 않습니다.')
-        }
+          if (!isPasswordValid) {
+            return null
+          }
 
-        // Return user object
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          clinicId: user.clinicId || '',
-          clinicName: user.clinic?.name || '',
+          // Return user object
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            clinicId: user.clinicId || '',
+            clinicName: user.clinic?.name || '',
+          }
+        } catch (error) {
+          console.error('Auth error:', error)
+          return null
         }
       },
     }),
