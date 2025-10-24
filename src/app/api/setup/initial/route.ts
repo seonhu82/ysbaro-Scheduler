@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await request.json()
-    const { clinicInfo, departments, categories, doctors, staff, combinations, closedDays, fairness } = data
+    const { clinicInfo, departments, categories, doctors, staff, combinations, closedDays, fairness, categoryRatios } = data
 
     // 트랜잭션으로 모든 데이터 저장
     await prisma.$transaction(async (tx) => {
@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
           data: {
             clinicId: clinicId,
             name: doctor.name,
+            shortName: doctor.shortName || doctor.name.charAt(0),
             useCategory: doctor.useCategory,
             isActive: true,
           },
@@ -66,12 +67,13 @@ export async function POST(request: NextRequest) {
 
         // 원장 구분 생성
         if (doctor.useCategory && doctor.categories.length > 0) {
-          for (const categoryName of doctor.categories) {
+          for (const category of doctor.categories) {
             await tx.doctorCategory.create({
               data: {
                 clinicId: clinicId,
                 doctorId: createdDoctor.id,
-                name: categoryName,
+                name: category.name,
+                shortName: category.shortName || `${doctor.shortName}(${category.name})`,
               },
             })
           }
@@ -94,9 +96,12 @@ export async function POST(request: NextRequest) {
             birthDateStr: staffMember.birthDate,
             departmentName: staffMember.departmentName,
             categoryName: staffMember.categoryName,
+            position: staffMember.position || '사원',
             workType: staffMember.workType,
             workDays: staffMember.workType === 'WEEK_4' ? 4 : 5,
             pin: staffMember.birthDate,
+            flexibleForCategories: staffMember.flexibleForCategories || [],
+            flexibilityPriority: staffMember.flexibilityPriority || 0,
             isActive: true,
           },
         })
@@ -111,6 +116,17 @@ export async function POST(request: NextRequest) {
             dayOfWeek: combination.dayOfWeek,
             requiredStaff: combination.requiredStaff,
             doctors: combination.doctors,
+            hasNightShift: combination.hasNightShift || false,
+          },
+        })
+      }
+
+      // 6.5 구분별 비율 설정 생성
+      if (categoryRatios) {
+        await tx.categoryRatioSettings.create({
+          data: {
+            clinicId: clinicId,
+            ratios: categoryRatios,
           },
         })
       }
