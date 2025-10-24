@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, X, Users, Upload, Download, AlertCircle } from 'lucide-react'
+import { Plus, X, Users, Upload, Download, AlertCircle, Trash2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
@@ -21,6 +21,7 @@ interface Staff {
   birthDate: string
   departmentName: string
   categoryName: string
+  position: string
   workType: 'WEEK_4' | 'WEEK_5'
 }
 
@@ -46,6 +47,7 @@ export function StaffRegistrationStep({
     birthDate: '',
     departmentName: departments[0]?.name || '',
     categoryName: categories[0]?.name || '',
+    position: '사원',
     workType: 'WEEK_4',
   })
 
@@ -62,6 +64,7 @@ export function StaffRegistrationStep({
         birthDate: '',
         departmentName: departments[0]?.name || '',
         categoryName: categories[0]?.name || '',
+        position: '사원',
         workType: 'WEEK_4',
       })
     }
@@ -70,6 +73,19 @@ export function StaffRegistrationStep({
   const removeStaff = (index: number) => {
     onChange(data.filter((_, i) => i !== index))
     setSelectedIndices(selectedIndices.filter((i) => i !== index))
+  }
+
+  const removeSelectedStaff = () => {
+    if (selectedIndices.length === 0) return
+
+    const confirmed = window.confirm(
+      `선택한 ${selectedIndices.length}명의 직원을 삭제하시겠습니까?`
+    )
+
+    if (confirmed) {
+      onChange(data.filter((_, index) => !selectedIndices.includes(index)))
+      setSelectedIndices([])
+    }
   }
 
   const toggleSelectAll = () => {
@@ -104,6 +120,7 @@ export function StaffRegistrationStep({
         생년월일: '950101',
         부서: departments[0]?.name || '',
         구분: categories[0]?.name || '',
+        직급: '사원',
         근무형태: '주4일',
       },
       {
@@ -111,6 +128,7 @@ export function StaffRegistrationStep({
         생년월일: '960215',
         부서: departments[0]?.name || '',
         구분: categories[1]?.name || '',
+        직급: '대리',
         근무형태: '주5일',
       },
     ]
@@ -125,6 +143,7 @@ export function StaffRegistrationStep({
       { wch: 12 }, // 생년월일
       { wch: 15 }, // 부서
       { wch: 15 }, // 구분
+      { wch: 10 }, // 직급
       { wch: 10 }, // 근무형태
     ]
 
@@ -193,6 +212,9 @@ export function StaffRegistrationStep({
             return
           }
 
+          // 직급
+          const position = row['직급'] || '사원'
+
           // 근무형태 변환
           let workType: 'WEEK_4' | 'WEEK_5' = 'WEEK_4'
           const workTypeStr = String(row['근무형태'] || '주4일')
@@ -205,6 +227,7 @@ export function StaffRegistrationStep({
             birthDate,
             departmentName: deptName,
             categoryName: catName,
+            position: String(position).trim(),
             workType,
           })
         })
@@ -320,6 +343,9 @@ export function StaffRegistrationStep({
                   부서
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  구분
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   직급
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -347,16 +373,21 @@ export function StaffRegistrationStep({
                     {staff.departmentName}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">
                       {staff.categoryName}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                      {staff.position}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
                         staff.workType === 'WEEK_4'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-green-100 text-green-700'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-amber-100 text-amber-700'
                       }`}
                     >
                       {staff.workType === 'WEEK_4' ? '주4일' : '주5일'}
@@ -386,7 +417,7 @@ export function StaffRegistrationStep({
           <h3 className="font-semibold">새 직원 추가</h3>
         </div>
 
-        <div className="grid md:grid-cols-6 gap-3 mb-3">
+        <div className="grid md:grid-cols-7 gap-3 mb-3">
           <div className="space-y-1">
             <Label className="text-xs">이름 *</Label>
             <Input
@@ -435,7 +466,7 @@ export function StaffRegistrationStep({
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">직급</Label>
+            <Label className="text-xs">구분</Label>
             <Select
               value={newStaff.categoryName}
               onValueChange={(value) =>
@@ -453,6 +484,18 @@ export function StaffRegistrationStep({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">직급</Label>
+            <Input
+              value={newStaff.position}
+              onChange={(e) =>
+                setNewStaff({ ...newStaff, position: e.target.value })
+              }
+              placeholder="사원"
+              className="h-9"
+            />
           </div>
 
           <div className="space-y-1">
@@ -506,15 +549,24 @@ export function StaffRegistrationStep({
             <div className="flex gap-2">
               <Button
                 size="sm"
+                variant="destructive"
+                onClick={removeSelectedStaff}
+                className="h-8"
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                선택 삭제
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => applyWorkTypeToSelected('WEEK_4')}
-                className="h-8 bg-blue-600"
+                className="h-8 bg-green-600"
               >
                 주4일로 변경
               </Button>
               <Button
                 size="sm"
                 onClick={() => applyWorkTypeToSelected('WEEK_5')}
-                className="h-8 bg-green-600"
+                className="h-8 bg-amber-600"
               >
                 주5일로 변경
               </Button>

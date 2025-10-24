@@ -40,6 +40,7 @@ interface SetupData {
     birthDate: string
     departmentName: string
     categoryName: string
+    position: string
     workType: 'WEEK_4' | 'WEEK_5'
   }[]
 
