@@ -332,11 +332,11 @@ async function main() {
     update: {},
     create: {
       clinicId: clinic.id,
-      nightShiftWeight: 2.0,
-      weekendWeight: 1.5,
-      holidayWeight: 2.0,
-      enableFairnessCheck: true,
-      fairnessThreshold: 0.2,
+      enableNightShiftFairness: true,
+        enableWeekendFairness: true,
+        enableHolidayFairness: true,
+        enableHolidayAdjacentFairness: false,
+            fairnessThreshold: 0.2,
     },
   })
 

@@ -30,8 +30,10 @@ interface Combination {
 }
 
 interface Fairness {
-  enabled: boolean
-  includeHolidays: boolean
+  enableNightShiftFairness: boolean
+  enableWeekendFairness: boolean
+  enableHolidayFairness: boolean
+  enableHolidayAdjacentFairness: boolean
 }
 
 interface CombinationStepProps {
@@ -542,38 +544,82 @@ export function CombinationStep({
 
       {/* 형평성 설정 */}
       <div className="p-5 bg-gray-50 rounded-lg border border-gray-200">
-        <h3 className="font-semibold mb-3">형평성 기반 근무 배치</h3>
+        <h3 className="font-semibold mb-4 text-gray-900">형평성 기반 근무 배치</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          사용할 형평성 항목을 선택하세요. 각 항목은 독립적으로 관리됩니다.
+        </p>
         <div className="space-y-3">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-200">
             <Checkbox
-              id="fairness-enabled"
-              checked={fairness.enabled}
+              id="fairness-night"
+              checked={fairness.enableNightShiftFairness}
               onCheckedChange={(checked) =>
-                onFairnessChange({ ...fairness, enabled: checked as boolean })
+                onFairnessChange({ ...fairness, enableNightShiftFairness: checked as boolean })
               }
             />
-            <Label htmlFor="fairness-enabled" className="cursor-pointer">
-              형평성 기반 근무 배치 사용
-            </Label>
+            <div className="flex-1">
+              <Label htmlFor="fairness-night" className="cursor-pointer font-medium text-gray-900">
+                야간 근무 형평성
+              </Label>
+              <p className="text-xs text-gray-500 mt-1">
+                평일 야간 진료 근무 횟수를 추적합니다
+              </p>
+            </div>
           </div>
 
-          {fairness.enabled && (
-            <div className="ml-6 flex items-center space-x-2">
-              <Checkbox
-                id="fairness-holidays"
-                checked={fairness.includeHolidays}
-                onCheckedChange={(checked) =>
-                  onFairnessChange({
-                    ...fairness,
-                    includeHolidays: checked as boolean,
-                  })
-                }
-              />
-              <Label htmlFor="fairness-holidays" className="cursor-pointer">
-                공휴일 근무도 형평성에 포함
+          <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-200">
+            <Checkbox
+              id="fairness-weekend"
+              checked={fairness.enableWeekendFairness}
+              onCheckedChange={(checked) =>
+                onFairnessChange({ ...fairness, enableWeekendFairness: checked as boolean })
+              }
+            />
+            <div className="flex-1">
+              <Label htmlFor="fairness-weekend" className="cursor-pointer font-medium text-gray-900">
+                주말 근무 형평성
               </Label>
+              <p className="text-xs text-gray-500 mt-1">
+                토요일 근무 횟수를 추적합니다
+              </p>
             </div>
-          )}
+          </div>
+
+          <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-200">
+            <Checkbox
+              id="fairness-holiday"
+              checked={fairness.enableHolidayFairness}
+              onCheckedChange={(checked) =>
+                onFairnessChange({ ...fairness, enableHolidayFairness: checked as boolean })
+              }
+            />
+            <div className="flex-1">
+              <Label htmlFor="fairness-holiday" className="cursor-pointer font-medium text-gray-900">
+                공휴일 근무 형평성
+              </Label>
+              <p className="text-xs text-gray-500 mt-1">
+                공휴일 근무 횟수를 추적합니다 (일요일 제외, 단 공휴일과 붙어있는 일요일은 포함)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-200">
+            <Checkbox
+              id="fairness-holiday-adjacent"
+              checked={fairness.enableHolidayAdjacentFairness}
+              onCheckedChange={(checked) =>
+                onFairnessChange({ ...fairness, enableHolidayAdjacentFairness: checked as boolean })
+              }
+            />
+            <div className="flex-1">
+              <Label htmlFor="fairness-holiday-adjacent" className="cursor-pointer font-medium text-gray-900">
+                공휴일 전후 근무 형평성
+              </Label>
+              <p className="text-xs text-gray-500 mt-1">
+                공휴일 전날/다음날 근무 횟수를 추적합니다 (예: 5월 3일(토), 5월 6일(화) 등)
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

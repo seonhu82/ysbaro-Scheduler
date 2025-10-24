@@ -130,15 +130,18 @@ export async function POST(request: NextRequest) {
       await tx.fairnessSettings.upsert({
         where: { clinicId: clinicId },
         update: {
-          enableFairnessCheck: fairness.enabled,
-          holidayWeight: fairness.includeHolidays ? 2.0 : 1.0,
+          enableNightShiftFairness: fairness.enableNightShiftFairness ?? true,
+          enableWeekendFairness: fairness.enableWeekendFairness ?? true,
+          enableHolidayFairness: fairness.enableHolidayFairness ?? true,
+          enableHolidayAdjacentFairness: fairness.enableHolidayAdjacentFairness ?? false,
+          fairnessThreshold: 0.2,
         },
         create: {
           clinicId: clinicId,
-          enableFairnessCheck: fairness.enabled,
-          holidayWeight: fairness.includeHolidays ? 2.0 : 1.0,
-          nightShiftWeight: 2.0,
-          weekendWeight: 1.5,
+          enableNightShiftFairness: fairness.enableNightShiftFairness ?? true,
+          enableWeekendFairness: fairness.enableWeekendFairness ?? true,
+          enableHolidayFairness: fairness.enableHolidayFairness ?? true,
+          enableHolidayAdjacentFairness: fairness.enableHolidayAdjacentFairness ?? false,
           fairnessThreshold: 0.2,
         },
       })

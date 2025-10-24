@@ -557,16 +557,16 @@ model RuleSettings {
 }
 
 model FairnessSettings {
-  id                  String   @id @default(cuid())
-  clinicId            String   @unique
-  clinic              Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  nightShiftWeight    Float    @default(2.0) // 야간 가중치
-  weekendWeight       Float    @default(1.5) // 주말 가중치
-  holidayWeight       Float    @default(2.0) // 공휴일 가중치
-  enableFairnessCheck Boolean  @default(true)
-  fairnessThreshold   Float    @default(0.2) // 형평성 허용 오차 (20%)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                            String   @id @default(cuid())
+  clinicId                      String   @unique
+  clinic                        Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  enableNightShiftFairness      Boolean  @default(true) // 야간 근무 형평성 사용
+  enableWeekendFairness         Boolean  @default(true) // 주말 근무 형평성 사용
+  enableHolidayFairness         Boolean  @default(true) // 공휴일 근무 형평성 사용
+  enableHolidayAdjacentFairness Boolean  @default(false) // 공휴일 전후 근무 형평성 사용
+  fairnessThreshold             Float    @default(0.2) // 형평성 허용 오차 (20%)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 }
 
 model SpecialCondition {
@@ -634,17 +634,17 @@ model Backup {
 // ============================================
 
 model FairnessScore {
-  id              String   @id @default(cuid())
-  staffId         String
-  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  year            Int
-  month           Int
-  nightShiftCount Int      @default(0)
-  weekendCount    Int      @default(0)
-  holidayCount    Int      @default(0)
-  totalScore      Float    @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  staffId              String
+  staff                Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  year                 Int
+  month                Int
+  nightShiftCount      Int      @default(0) // 야간 근무 횟수
+  weekendCount         Int      @default(0) // 주말(토요일) 근무 횟수
+  holidayCount         Int      @default(0) // 공휴일 근무 횟수
+  holidayAdjacentCount Int      @default(0) // 공휴일 전후 근무 횟수
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@unique([staffId, year, month])
   @@index([staffId])

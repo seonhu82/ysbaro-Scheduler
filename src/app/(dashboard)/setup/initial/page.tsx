@@ -65,8 +65,10 @@ interface SetupData {
 
   // 형평성 설정
   fairness: {
-    enabled: boolean
-    includeHolidays: boolean
+    enableNightShiftFairness: boolean
+    enableWeekendFairness: boolean
+    enableHolidayFairness: boolean
+    enableHolidayAdjacentFairness: boolean
   }
 }
 
@@ -105,8 +107,10 @@ export default function InitialSetupPage() {
       specificDates: [],
     },
     fairness: {
-      enabled: true,
-      includeHolidays: false,
+      enableNightShiftFairness: true,
+      enableWeekendFairness: true,
+      enableHolidayFairness: true,
+      enableHolidayAdjacentFairness: false,
     },
   })
 

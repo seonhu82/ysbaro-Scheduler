@@ -297,7 +297,8 @@ export class FairnessValidationService {
       where: { clinicId },
     });
 
-    if (!settings?.enableFairnessCheck) {
+    // 모든 형평성 옵션이 비활성화되어 있으면 체크 불필요
+    if (!settings || (!settings.enableNightShiftFairness && !settings.enableWeekendFairness && !settings.enableHolidayFairness && !settings.enableHolidayAdjacentFairness)) {
       return { allowed: true, requiresFairnessCheck: false };
     }
 

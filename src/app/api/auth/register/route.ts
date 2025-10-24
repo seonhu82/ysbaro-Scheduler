@@ -68,10 +68,10 @@ export async function POST(request: NextRequest) {
       await tx.fairnessSettings.create({
         data: {
           clinicId: clinic.id,
-          nightShiftWeight: 2.0,
-          weekendWeight: 1.5,
-          holidayWeight: 2.0,
-          enableFairnessCheck: false,
+          enableNightShiftFairness: true,
+          enableWeekendFairness: true,
+          enableHolidayFairness: true,
+          enableHolidayAdjacentFairness: false,
           fairnessThreshold: 0.2,
         },
       })
