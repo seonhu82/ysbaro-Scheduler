@@ -8,11 +8,19 @@ export async function POST(
   { params }: { params: { token: string } }
 ) {
   try {
-    const { date, type } = await request.json()
+    const { date, type, pin } = await request.json()
+
+    if (!pin) {
+      return NextResponse.json(
+        { success: false, error: 'PIN is required' },
+        { status: 400 }
+      )
+    }
 
     // 1. Token으로 link 조회
     const link = await prisma.applicationLink.findUnique({
-      where: { token: params.token }
+      where: { token: params.token },
+      include: { staff: true }
     })
 
     if (!link) {
@@ -22,27 +30,43 @@ export async function POST(
       )
     }
 
-    // 2. Link에서 연도/월 확인 후 staff 조회 (기존 신청이 있다면)
-    const existingApplication = await prisma.leaveApplication.findFirst({
-      where: { linkId: link.id },
-      include: { staff: true }
-    })
-
-    let staffId: string
-    let clinicId: string
-
-    if (existingApplication) {
-      staffId = existingApplication.staff.id
-      clinicId = existingApplication.staff.clinicId
+    // 2. PIN으로 직원 조회
+    let staff
+    if (link.staffId) {
+      // 특정 직원용 링크
+      if (!link.staff) {
+        return NextResponse.json(
+          { success: false, error: 'Staff not found' },
+          { status: 404 }
+        )
+      }
+      if (link.staff.pin !== pin) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid PIN' },
+          { status: 401 }
+        )
+      }
+      staff = link.staff
     } else {
-      // 기존 신청이 없으면 token을 통한 staff 매핑 필요
-      // TODO: ApplicationLink와 Staff 연결 방법 재검토 필요
-      return NextResponse.json(
-        { success: false, error: 'No staff found for this link' },
-        { status: 404 }
-      )
+      // 전체 직원용 링크
+      staff = await prisma.staff.findFirst({
+        where: {
+          clinicId: link.clinicId,
+          pin,
+          isActive: true
+        }
+      })
+
+      if (!staff) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid PIN' },
+          { status: 401 }
+        )
+      }
     }
 
+    const staffId = staff.id
+    const clinicId = staff.clinicId
     const applicationDate = new Date(date)
 
     // 3. DailySlot 조회
@@ -101,19 +125,7 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // 6. 직원 정보 조회
-    const staff = await prisma.staff.findUnique({
-      where: { id: staffId }
-    })
-
-    if (!staff) {
-      return NextResponse.json(
-        { success: false, error: 'Staff not found' },
-        { status: 404 }
-      )
-    }
-
-    // 7. 구분별 슬롯 확인
+    // 6. 구분별 슬롯 확인
     const categoryCheck = await checkCategoryAvailability(
       clinicId,
       applicationDate,
@@ -121,7 +133,7 @@ export async function POST(
       staff.categoryName || ''
     )
 
-    // 8. 신청 생성
+    // 7. 신청 생성
     let status: 'PENDING' | 'ON_HOLD' = 'PENDING'
     let holdReason: string | null = null
 

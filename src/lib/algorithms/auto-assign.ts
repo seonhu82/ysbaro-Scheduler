@@ -157,13 +157,15 @@ export async function autoAssignSingleSlot(slotId: string) {
       }
     }
 
-    // 6. DB에 저장 (StaffAssignment 모델이 있다면)
-    // TODO: StaffAssignment 모델 확인 후 저장 로직 구현
-    // for (const assignment of assignments) {
-    //   await prisma.staffAssignment.create({
-    //     data: assignment
-    //   })
-    // }
+    // 6. DB에 저장
+    for (const assignment of assignments) {
+      await prisma.dailyStaffAssignment.create({
+        data: {
+          dailySlotId: assignment.slotId,
+          staffId: assignment.staffId
+        }
+      })
+    }
 
     return {
       success: errors.length === 0,

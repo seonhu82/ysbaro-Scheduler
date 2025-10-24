@@ -287,10 +287,12 @@ model Staff {
   updatedAt DateTime @updatedAt
 
   // 관계
-  assignments       StaffAssignment[]
-  leaveApplications LeaveApplication[]
-  fairnessScores    FairnessScore[]
-  attendanceRecords AttendanceRecord[]
+  assignments           StaffAssignment[]
+  dailyStaffAssignments DailyStaffAssignment[]
+  leaveApplications     LeaveApplication[]
+  applicationLinks      ApplicationLink[]
+  fairnessScores        FairnessScore[]
+  attendanceRecords     AttendanceRecord[]
 
   @@index([clinicId])
   @@index([pin])
@@ -386,6 +388,8 @@ model ApplicationLink {
   id        String     @id @default(cuid())
   clinicId  String
   clinic    Clinic     @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  staffId   String?    // 특정 직원용 링크 (null이면 전체 직원용)
+  staff     Staff?     @relation(fields: [staffId], references: [id], onDelete: Cascade)
   token     String     @unique
   year      Int
   month     Int
@@ -397,6 +401,7 @@ model ApplicationLink {
   applications LeaveApplication[]
 
   @@index([clinicId])
+  @@index([staffId])
   @@index([token])
   @@index([status])
 }
@@ -459,12 +464,29 @@ model DailySlot {
   offAssigned    Int @default(0) // 배정된 오프
   annualAssigned Int @default(0) // 배정된 연차
 
+  // 관계
+  staffAssignments DailyStaffAssignment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([weekId, date])
   @@index([weekId])
   @@index([date])
+}
+
+// DailySlot에 배치된 직원
+model DailyStaffAssignment {
+  id          String    @id @default(cuid())
+  dailySlotId String
+  dailySlot   DailySlot @relation(fields: [dailySlotId], references: [id], onDelete: Cascade)
+  staffId     String
+  staff       Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([dailySlotId, staffId])
+  @@index([dailySlotId])
+  @@index([staffId])
 }
 
 enum ApplicationStatus {
