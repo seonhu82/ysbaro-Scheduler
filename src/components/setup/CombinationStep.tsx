@@ -158,7 +158,9 @@ export function CombinationStep({
     ]
 
     // 의사 목록 시트 추가 (참조용)
-    const doctorListData = doctorOptions.map(name => ({ 의사명: name }))
+    const doctorListData = doctorOptions.length > 0 
+      ? doctorOptions.map(name => ({ 의사명: name }))
+      : [{ 의사명: '원장 정보를 먼저 입력해주세요' }]
     const doctorListSheet = XLSX.utils.json_to_sheet(doctorListData)
     XLSX.utils.book_append_sheet(wb, doctorListSheet, '의사목록')
 

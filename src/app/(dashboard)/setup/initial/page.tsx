@@ -82,6 +82,7 @@ const STEPS = [
 export default function InitialSetupPage() {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(1)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [setupData, setSetupData] = useState<SetupData>({
     clinicInfo: { name: '', address: '', phone: '' },
     departments: [
@@ -109,17 +110,28 @@ export default function InitialSetupPage() {
     },
   })
 
-  // 데이터 변경 시 localStorage에 자동 저장
+  // 데이터 변경 시 localStorage에 자동 저장 (초기 로드 후에만)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (!isInitialLoad && typeof window !== 'undefined') {
       localStorage.setItem('setupData', JSON.stringify(setupData))
+      console.log('Setup data saved to localStorage')
     }
-  }, [setupData])
+  }, [setupData, isInitialLoad])
+  
+  // 단계 변경 시 저장
+  useEffect(() => {
+    if (!isInitialLoad && typeof window !== 'undefined') {
+      localStorage.setItem('setupStep', currentStep.toString())
+      console.log('Current step saved:', currentStep)
+    }
+  }, [currentStep, isInitialLoad])
 
-  // 페이지 로드 시 저장된 데이터 복원
+  // 페이지 로드 시 저장된 데이터 복원 (먼저 실행되도록)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedData = localStorage.getItem('setupData')
+      const savedStep = localStorage.getItem('setupStep')
+      
       if (savedData) {
         try {
           const parsed = JSON.parse(savedData)
@@ -128,6 +140,17 @@ export default function InitialSetupPage() {
           console.error('Failed to restore setup data:', error)
         }
       }
+      
+      if (savedStep) {
+        try {
+          setCurrentStep(parseInt(savedStep))
+        } catch (error) {
+          console.error('Failed to restore step:', error)
+        }
+      }
+      
+      // 초기 로드 완료
+      setIsInitialLoad(false)
     }
   }, [])
 
