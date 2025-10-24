@@ -27,6 +27,11 @@ interface Combination {
   dayOfWeek: string
   requiredStaff: number
   doctors: string[]
+  hasNightShift: boolean
+}
+
+interface CategoryRatios {
+  [categoryName: string]: number // percentage (0-100)
 }
 
 interface Fairness {
@@ -40,8 +45,11 @@ interface CombinationStepProps {
   data: Combination[]
   doctors: Doctor[]
   fairness: Fairness
+  categoryRatios: CategoryRatios
+  categories: string[]
   onChange: (data: Combination[]) => void
   onFairnessChange: (fairness: Fairness) => void
+  onCategoryRatiosChange: (ratios: CategoryRatios) => void
 }
 
 const DAYS_OF_WEEK = [
@@ -58,14 +66,18 @@ export function CombinationStep({
   data,
   doctors,
   fairness,
+  categoryRatios,
+  categories,
   onChange,
   onFairnessChange,
+  onCategoryRatiosChange,
 }: CombinationStepProps) {
   const [newCombination, setNewCombination] = useState<Combination>({
     name: '',
     dayOfWeek: 'MONDAY',
     requiredStaff: 2,
     doctors: [],
+    hasNightShift: false,
   })
   const [selectedDoctorIndex, setSelectedDoctorIndex] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState<string>('')

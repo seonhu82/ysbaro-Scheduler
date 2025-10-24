@@ -9,8 +9,12 @@ import { Plus, X, UserCircle } from 'lucide-react'
 
 interface Doctor {
   name: string
+  shortName: string
   useCategory: boolean
-  categories: string[]
+  categories: Array<{
+    name: string
+    shortName: string
+  }>
 }
 
 interface DoctorInfoStepProps {
@@ -20,18 +24,29 @@ interface DoctorInfoStepProps {
 
 export function DoctorInfoStep({ data, onChange }: DoctorInfoStepProps) {
   const [newDoctorName, setNewDoctorName] = useState('')
+  const [newDoctorShortName, setNewDoctorShortName] = useState('')
+
+  const extractSurname = (name: string): string => {
+    // 이름에서 성 추출 (첫 글자)
+    return name.trim().charAt(0)
+  }
 
   const addDoctor = () => {
     if (newDoctorName.trim()) {
+      const surname = extractSurname(newDoctorName)
+      const shortName = newDoctorShortName.trim() || surname
+
       onChange([
         ...data,
         {
           name: newDoctorName.trim(),
+          shortName,
           useCategory: false,
           categories: [],
         },
       ])
       setNewDoctorName('')
+      setNewDoctorShortName('')
     }
   }
 
@@ -48,12 +63,30 @@ export function DoctorInfoStep({ data, onChange }: DoctorInfoStepProps) {
     onChange(updated)
   }
 
-  const addCategory = (doctorIndex: number, categoryName: string) => {
+  const addCategory = (doctorIndex: number, categoryName: string, categoryShortName: string) => {
     if (categoryName.trim()) {
       const updated = [...data]
-      updated[doctorIndex].categories.push(categoryName.trim())
+      const doctor = updated[doctorIndex]
+      const defaultShortName = `${doctor.shortName}(${categoryName.trim()})`
+
+      updated[doctorIndex].categories.push({
+        name: categoryName.trim(),
+        shortName: categoryShortName.trim() || defaultShortName
+      })
       onChange(updated)
     }
+  }
+
+  const updateDoctorShortName = (index: number, shortName: string) => {
+    const updated = [...data]
+    updated[index].shortName = shortName
+    onChange(updated)
+  }
+
+  const updateCategoryShortName = (doctorIndex: number, categoryIndex: number, shortName: string) => {
+    const updated = [...data]
+    updated[doctorIndex].categories[categoryIndex].shortName = shortName
+    onChange(updated)
   }
 
   const removeCategory = (doctorIndex: number, categoryIndex: number) => {
@@ -82,10 +115,22 @@ export function DoctorInfoStep({ data, onChange }: DoctorInfoStepProps) {
             className="p-5 bg-gray-50 rounded-lg border border-gray-200"
           >
             <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-1">
                 <UserCircle className="w-6 h-6 text-blue-600" />
-                <div>
-                  <h3 className="font-semibold text-lg">{doctor.name}</h3>
+                <div className="flex-1 grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs text-gray-500">원장명</Label>
+                    <h3 className="font-semibold text-lg">{doctor.name}</h3>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-500">별칭 (조합명용)</Label>
+                    <Input
+                      value={doctor.shortName}
+                      onChange={(e) => updateDoctorShortName(doctorIndex, e.target.value)}
+                      placeholder="예: 박, 황"
+                      className="h-8 mt-1"
+                    />
+                  </div>
                 </div>
               </div>
               <Button
@@ -121,7 +166,15 @@ export function DoctorInfoStep({ data, onChange }: DoctorInfoStepProps) {
                     key={categoryIndex}
                     className="flex items-center gap-2 p-2 bg-white rounded border"
                   >
-                    <span className="flex-1 text-sm">{category}</span>
+                    <div className="flex-1 grid grid-cols-2 gap-2">
+                      <span className="text-sm">{category.name}</span>
+                      <Input
+                        value={category.shortName}
+                        onChange={(e) => updateCategoryShortName(doctorIndex, categoryIndex, e.target.value)}
+                        placeholder="별칭"
+                        className="h-7 text-sm"
+                      />
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -133,24 +186,43 @@ export function DoctorInfoStep({ data, onChange }: DoctorInfoStepProps) {
                   </div>
                 ))}
 
-                <div className="flex gap-2">
+                <div className="grid grid-cols-[1fr,1fr,auto] gap-2">
                   <Input
+                    id={`category-name-${doctorIndex}`}
                     placeholder="구분 입력 (예: 상담)"
                     className="h-8 text-sm"
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
-                        const target = e.target as HTMLInputElement
-                        addCategory(doctorIndex, target.value)
-                        target.value = ''
+                        const nameInput = e.target as HTMLInputElement
+                        const shortInput = document.getElementById(`category-short-${doctorIndex}`) as HTMLInputElement
+                        addCategory(doctorIndex, nameInput.value, shortInput?.value || '')
+                        nameInput.value = ''
+                        if (shortInput) shortInput.value = ''
+                      }
+                    }}
+                  />
+                  <Input
+                    id={`category-short-${doctorIndex}`}
+                    placeholder="별칭 (예: 박(상담))"
+                    className="h-8 text-sm"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        const nameInput = document.getElementById(`category-name-${doctorIndex}`) as HTMLInputElement
+                        const shortInput = e.target as HTMLInputElement
+                        addCategory(doctorIndex, nameInput?.value || '', shortInput.value)
+                        if (nameInput) nameInput.value = ''
+                        shortInput.value = ''
                       }
                     }}
                   />
                   <Button
                     size="sm"
-                    onClick={(e) => {
-                      const input = e.currentTarget.previousElementSibling as HTMLInputElement
-                      addCategory(doctorIndex, input.value)
-                      input.value = ''
+                    onClick={() => {
+                      const nameInput = document.getElementById(`category-name-${doctorIndex}`) as HTMLInputElement
+                      const shortInput = document.getElementById(`category-short-${doctorIndex}`) as HTMLInputElement
+                      addCategory(doctorIndex, nameInput?.value || '', shortInput?.value || '')
+                      if (nameInput) nameInput.value = ''
+                      if (shortInput) shortInput.value = ''
                     }}
                     className="h-8 px-3 text-xs"
                   >
@@ -165,11 +237,24 @@ export function DoctorInfoStep({ data, onChange }: DoctorInfoStepProps) {
       </div>
 
       {/* 원장 추가 */}
-      <div className="flex gap-2">
+      <div className="grid grid-cols-[2fr,1fr,auto] gap-2">
         <Input
           value={newDoctorName}
-          onChange={(e) => setNewDoctorName(e.target.value)}
+          onChange={(e) => {
+            setNewDoctorName(e.target.value)
+            // 자동으로 성 추출
+            if (e.target.value && !newDoctorShortName) {
+              setNewDoctorShortName(extractSurname(e.target.value))
+            }
+          }}
           placeholder="원장 이름 입력"
+          onKeyPress={(e) => e.key === 'Enter' && addDoctor()}
+          className="h-11"
+        />
+        <Input
+          value={newDoctorShortName}
+          onChange={(e) => setNewDoctorShortName(e.target.value)}
+          placeholder="별칭 (자동)"
           onKeyPress={(e) => e.key === 'Enter' && addDoctor()}
           className="h-11"
         />
@@ -183,10 +268,14 @@ export function DoctorInfoStep({ data, onChange }: DoctorInfoStepProps) {
       </div>
 
       <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
-        <p className="text-sm text-blue-900">
-          💡 <strong>안내:</strong> 구분은 한 원장이 상담과 진료를 모두 하는
-          경우에만 사용합니다. (예: 박원장-상담, 박원장-진료)
+        <p className="text-sm text-blue-900 mb-2">
+          💡 <strong>안내:</strong>
         </p>
+        <ul className="text-sm text-blue-900 space-y-1 ml-4">
+          <li>• <strong>별칭</strong>은 의사 조합명에 사용됩니다 (예: 박창범 → 박)</li>
+          <li>• 성이 같은 경우 다른 별칭을 사용하세요 (예: 박효진 → 효)</li>
+          <li>• <strong>구분</strong>은 한 원장이 상담과 진료를 모두 하는 경우에만 사용합니다</li>
+        </ul>
       </div>
     </div>
   )
