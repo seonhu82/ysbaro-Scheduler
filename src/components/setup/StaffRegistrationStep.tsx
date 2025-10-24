@@ -579,6 +579,15 @@ export function StaffRegistrationStep({
             </Button>
           </div>
         </div>
+
+        {/* 유연 배치 안내 */}
+        <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+          <p className="text-sm text-purple-900">
+            💡 <strong>유연 배치 설정:</strong> 엑셀 템플릿에서 "유연배치구분"과 "유연배치우선순위" 컬럼을 사용하여
+            다른 구분으로도 배치 가능한 직원을 지정할 수 있습니다.
+            (예: 중간년차 직원이 고년차 업무도 가능한 경우)
+          </p>
+        </div>
       </div>
 
       {/* 일괄 적용 */}

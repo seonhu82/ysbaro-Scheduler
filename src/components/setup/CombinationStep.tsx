@@ -400,6 +400,11 @@ export function CombinationStep({
                       <span className="inline-flex items-center gap-1">
                         👥 필요인원: {combination.requiredStaff}명
                       </span>
+                      {combination.hasNightShift && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">
+                          🌙 야간진료
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -491,6 +496,26 @@ export function CombinationStep({
                 className="h-9"
               />
             </div>
+          </div>
+
+          {/* 야간 진료 여부 */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="hasNightShift"
+              checked={newCombination.hasNightShift}
+              onCheckedChange={(checked) =>
+                setNewCombination({
+                  ...newCombination,
+                  hasNightShift: checked === true,
+                })
+              }
+            />
+            <Label
+              htmlFor="hasNightShift"
+              className="text-sm font-medium cursor-pointer"
+            >
+              🌙 야간 진료 포함
+            </Label>
           </div>
 
           {/* 의사 선택 */}
@@ -641,6 +666,55 @@ export function CombinationStep({
               </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 구분별 필요 인원 비율 설정 */}
+      <div className="p-5 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 mb-4">
+          <Users className="w-5 h-5 text-purple-600" />
+          <h3 className="font-semibold">구분별 필요 인원 비율</h3>
+        </div>
+
+        <p className="text-sm text-gray-600 mb-4">
+          오프/연차 신청 슬롯을 구분별로 관리하기 위한 비율입니다.
+          (예: 필요인원 15명 중 팀장/실장 2명, 고년차 5명, 중간년차 5명, 저년차 3명)
+        </p>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {categories.map((category) => (
+            <div key={category} className="space-y-1">
+              <Label className="text-xs font-medium">{category}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={categoryRatios[category] || 0}
+                  onChange={(e) => {
+                    const value = Math.min(100, Math.max(0, parseInt(e.target.value) || 0))
+                    onCategoryRatiosChange({
+                      ...categoryRatios,
+                      [category]: value,
+                    })
+                  }}
+                  className="h-9"
+                />
+                <span className="text-sm text-gray-500">%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-xs text-amber-900">
+            ⚠️ 합계: {Object.values(categoryRatios).reduce((sum, val) => sum + val, 0)}%
+            {Object.values(categoryRatios).reduce((sum, val) => sum + val, 0) !== 100 && (
+              <span className="ml-2 font-semibold text-red-600">
+                (비율의 합이 100%가 되어야 합니다)
+              </span>
+            )}
+          </p>
         </div>
       </div>
 
