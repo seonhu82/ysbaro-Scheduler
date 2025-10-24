@@ -56,6 +56,8 @@ export interface ComprehensiveFairnessReport {
   month: number;
   nightShift: FairnessAnalysisResult;
   weekendWork: FairnessAnalysisResult;
+  holidayWork: FairnessAnalysisResult;
+  holidayAdjacent: FairnessAnalysisResult;
   recommendations: Recommendation[];
 }
 
@@ -65,13 +67,13 @@ export class YearlyFairnessService {
    *
    * @param year 연도
    * @param month 월 (1~12)
-   * @param shiftType 'night' (야간) 또는 'weekend' (주말)
+   * @param shiftType 'night' (야간), 'weekend' (주말), 'holiday' (공휴일), 'holiday_adjacent' (공휴일 전후)
    * @returns 누적 목표 정보
    */
   async calculateCumulativeTarget(
     year: number,
     month: number,
-    shiftType: 'night' | 'weekend'
+    shiftType: 'night' | 'weekend' | 'holiday' | 'holiday_adjacent'
   ): Promise<CumulativeTarget> {
     let totalShifts = 0;
     let totalNeeds = 0;
@@ -109,7 +111,7 @@ export class YearlyFairnessService {
           const dayOfWeek = slot.date.getDay();
           return dayOfWeek >= 1 && dayOfWeek <= 5; // 월~금
         });
-      } else {
+      } else if (shiftType === 'weekend') {
         // 주말 (토요일만, 일요일은 전원 휴무)
         schedules = await prisma.dailySlot.findMany({
           where: {
@@ -120,6 +122,34 @@ export class YearlyFairnessService {
             dayType: 'SATURDAY',
           },
         });
+      } else if (shiftType === 'holiday') {
+        // 공휴일 (일요일 제외)
+        schedules = await prisma.dailySlot.findMany({
+          where: {
+            date: {
+              gte: startDate,
+              lte: endDate,
+            },
+            dayType: {
+              in: ['HOLIDAY', 'HOLIDAY_ADJACENT_SUNDAY']
+            }
+          },
+        });
+      } else if (shiftType === 'holiday_adjacent') {
+        // 공휴일 전후 (일요일 포함)
+        schedules = await prisma.dailySlot.findMany({
+          where: {
+            date: {
+              gte: startDate,
+              lte: endDate,
+            },
+            dayType: {
+              in: ['HOLIDAY_ADJACENT', 'HOLIDAY_ADJACENT_SUNDAY']
+            }
+          },
+        });
+      } else {
+        schedules = [];
       }
 
       const monthShifts = schedules.length;
@@ -283,6 +313,134 @@ export class YearlyFairnessService {
   }
 
   /**
+   * 공휴일 근무 형평성 분석
+   *
+   * @param year 연도
+   * @param month 월 (1~12)
+   * @returns 공휴일 근무 형평성 분석 결과
+   */
+  async getHolidayWorkFairness(year: number, month: number): Promise<FairnessAnalysisResult> {
+    // 누적 목표 계산
+    const cumulativeTarget = await this.calculateCumulativeTarget(year, month, 'holiday');
+    const target = cumulativeTarget.targetPerEmployee;
+
+    // 활성 직원 조회
+    const staffList = await prisma.staff.findMany({
+      where: { isActive: true },
+      include: {
+        fairnessScores: {
+          where: {
+            year,
+            month: { lte: month },
+          },
+        },
+      },
+    });
+
+    const employees: Record<string, EmployeeFairnessData> = {};
+
+    for (const staff of staffList) {
+      // 해당 월까지의 공휴일 근무 횟수 합산
+      const currentCount = staff.fairnessScores.reduce(
+        (sum, score) => sum + score.holidayCount,
+        0
+      );
+
+      const diff = currentCount - target;
+
+      // 상태 판정 (공휴일은 빈도가 낮으므로 1회 기준)
+      let status: ShiftStatus;
+      if (diff < -1) {
+        status = 'behind';
+      } else if (diff > 1) {
+        status = 'ahead';
+      } else {
+        status = 'on_track';
+      }
+
+      employees[staff.id] = {
+        name: staff.name,
+        currentCount,
+        target,
+        diff: Math.round(diff * 100) / 100,
+        priority: diff,
+        status,
+      };
+    }
+
+    return {
+      year,
+      month,
+      cumulativeTarget,
+      employees,
+    };
+  }
+
+  /**
+   * 공휴일 전후 근무 형평성 분석
+   *
+   * @param year 연도
+   * @param month 월 (1~12)
+   * @returns 공휴일 전후 근무 형평성 분석 결과
+   */
+  async getHolidayAdjacentFairness(year: number, month: number): Promise<FairnessAnalysisResult> {
+    // 누적 목표 계산
+    const cumulativeTarget = await this.calculateCumulativeTarget(year, month, 'holiday_adjacent');
+    const target = cumulativeTarget.targetPerEmployee;
+
+    // 활성 직원 조회
+    const staffList = await prisma.staff.findMany({
+      where: { isActive: true },
+      include: {
+        fairnessScores: {
+          where: {
+            year,
+            month: { lte: month },
+          },
+        },
+      },
+    });
+
+    const employees: Record<string, EmployeeFairnessData> = {};
+
+    for (const staff of staffList) {
+      // 해당 월까지의 공휴일 전후 근무 횟수 합산
+      const currentCount = staff.fairnessScores.reduce(
+        (sum, score) => sum + score.holidayAdjacentCount,
+        0
+      );
+
+      const diff = currentCount - target;
+
+      // 상태 판정
+      let status: ShiftStatus;
+      if (diff < -1) {
+        status = 'behind';
+      } else if (diff > 1) {
+        status = 'ahead';
+      } else {
+        status = 'on_track';
+      }
+
+      employees[staff.id] = {
+        name: staff.name,
+        currentCount,
+        target,
+        diff: Math.round(diff * 100) / 100,
+        priority: diff,
+        status,
+      };
+    }
+
+    return {
+      year,
+      month,
+      cumulativeTarget,
+      employees,
+    };
+  }
+
+  /**
    * 권장 사항 생성
    *
    * @param nightFairness 야간 근무 형평성
@@ -388,6 +546,8 @@ export class YearlyFairnessService {
   ): Promise<ComprehensiveFairnessReport> {
     const nightShiftFairness = await this.getNightShiftFairness(year, month);
     const weekendFairness = await this.getWeekendWorkFairness(year, month);
+    const holidayFairness = await this.getHolidayWorkFairness(year, month);
+    const holidayAdjacentFairness = await this.getHolidayAdjacentFairness(year, month);
 
     const recommendations = this.generateRecommendations(nightShiftFairness, weekendFairness);
 
@@ -396,6 +556,8 @@ export class YearlyFairnessService {
       month,
       nightShift: nightShiftFairness,
       weekendWork: weekendFairness,
+      holidayWork: holidayFairness,
+      holidayAdjacent: holidayAdjacentFairness,
       recommendations,
     };
   }

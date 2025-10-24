@@ -405,6 +405,9 @@ enum DayType {
   WEEKDAY // 평일 (월-금)
   SATURDAY // 토요일
   SUNDAY // 일요일 (전원 휴무)
+  HOLIDAY // 공휴일 (일요일 제외)
+  HOLIDAY_ADJACENT // 공휴일 전후일 (일요일 제외)
+  HOLIDAY_ADJACENT_SUNDAY // 공휴일 전후 일요일 (공휴일로 카운트)
 }
 
 // 주차 정보 테이블 (주별 슬롯 계산)
