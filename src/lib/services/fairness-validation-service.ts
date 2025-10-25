@@ -208,22 +208,86 @@ export class FairnessValidationService {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0);
 
-    // 이미 배정된 근무 (스케줄에서 조회)
-    // TODO: Schedule 테이블에서 실제 배정 내역 조회
-    const scheduled = 0; // 임시
+    // 이미 배정된 근무 (DailyStaffAssignment에서 조회)
+    const assignments = await prisma.dailyStaffAssignment.findMany({
+      where: {
+        staffId,
+        dailySlot: {
+          date: { gte: startDate, lte: endDate },
+        },
+      },
+      include: {
+        dailySlot: {
+          select: {
+            date: true,
+            dayType: true,
+            doctorSchedule: true,
+          },
+        },
+      },
+    });
+
+    // shiftType에 맞는 배정만 카운트
+    let scheduled = 0;
+    for (const assignment of assignments) {
+      const date = assignment.dailySlot.date;
+      const dayOfWeek = date.getDay();
+      const doctorSchedule = assignment.dailySlot.doctorSchedule as { night_shift?: boolean } | null;
+      const hasNightShift = doctorSchedule?.night_shift || false;
+
+      if (shiftType === 'night') {
+        // 야간 근무: 월~금 중 야간 진료일
+        if (dayOfWeek >= 1 && dayOfWeek <= 5 && hasNightShift) {
+          scheduled++;
+        }
+      } else if (shiftType === 'weekend') {
+        // 주말 근무: 토요일
+        if (dayOfWeek === 6) {
+          scheduled++;
+        }
+      }
+    }
 
     // 이미 신청한 오프 (LeaveApplication에서 조회)
     const offApplications = await prisma.leaveApplication.findMany({
       where: {
         staffId,
         date: { gte: startDate, lte: endDate },
-        status: { in: ['PENDING', 'PENDING'] },
+        status: { in: ['PENDING', 'CONFIRMED'] },
       },
     });
 
     let offRequested = 0;
     for (const app of offApplications) {
-      const dateType = this.getDateType(app.date, true, false); // TODO: 실제 정보 조회
+      const dayOfWeek = app.date.getDay();
+
+      // hasNightShift와 isHoliday 정보 조회
+      const dailySlot = await prisma.dailySlot.findFirst({
+        where: {
+          date: {
+            gte: new Date(app.date.setHours(0, 0, 0, 0)),
+            lte: new Date(app.date.setHours(23, 59, 59, 999)),
+          },
+        },
+        select: {
+          doctorSchedule: true,
+        },
+      });
+
+      const doctorSchedule = dailySlot?.doctorSchedule as { night_shift?: boolean } | null;
+      const hasNightShift = doctorSchedule?.night_shift || false;
+
+      const holiday = await prisma.holiday.findFirst({
+        where: {
+          date: {
+            gte: new Date(app.date.setHours(0, 0, 0, 0)),
+            lte: new Date(app.date.setHours(23, 59, 59, 999)),
+          },
+        },
+      });
+      const isHoliday = !!holiday;
+
+      const dateType = this.getDateType(app.date, hasNightShift, isHoliday);
       if (shiftType === 'night' && dateType === 'NIGHT_WEEKDAY') {
         offRequested++;
       } else if (shiftType === 'weekend' && dateType === 'WEEKEND') {
@@ -269,23 +333,68 @@ export class FairnessValidationService {
   }
 
   /**
+   * 날짜의 야간 진료 여부와 공휴일 여부 조회
+   */
+  async getDateInfo(
+    clinicId: string,
+    date: Date
+  ): Promise<{ hasNightShift: boolean; isHoliday: boolean }> {
+    const startOfDay = new Date(date.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(date.setHours(23, 59, 59, 999));
+
+    // DailySlot에서 야간 진료 정보 조회
+    const dailySlot = await prisma.dailySlot.findFirst({
+      where: {
+        date: { gte: startOfDay, lte: endOfDay },
+        week: { clinicId },
+      },
+      select: {
+        doctorSchedule: true,
+      },
+    });
+
+    const doctorSchedule = dailySlot?.doctorSchedule as { night_shift?: boolean } | null;
+    const hasNightShift = doctorSchedule?.night_shift || false;
+
+    // Holiday 테이블에서 공휴일 정보 조회
+    const holiday = await prisma.holiday.findFirst({
+      where: {
+        clinicId,
+        date: { gte: startOfDay, lte: endOfDay },
+      },
+    });
+    const isHoliday = !!holiday;
+
+    return { hasNightShift, isHoliday };
+  }
+
+  /**
    * 직원의 오프 신청 가능 여부 검증 (이중 체크)
    *
    * @param clinicId 병원 ID
    * @param staffId 직원 ID
    * @param date 신청 날짜
-   * @param hasNightShift 야간 진료 여부
-   * @param isHoliday 공휴일 여부
+   * @param hasNightShift 야간 진료 여부 (선택, 미제공 시 자동 조회)
+   * @param isHoliday 공휴일 여부 (선택, 미제공 시 자동 조회)
    */
   async validateOffApplication(
     clinicId: string,
     staffId: string,
     date: Date,
-    hasNightShift: boolean,
-    isHoliday: boolean
+    hasNightShift?: boolean,
+    isHoliday?: boolean
   ): Promise<ValidationResult> {
+    // hasNightShift 또는 isHoliday가 제공되지 않은 경우 자동 조회
+    let nightShift = hasNightShift;
+    let holiday = isHoliday;
+
+    if (nightShift === undefined || holiday === undefined) {
+      const dateInfo = await this.getDateInfo(clinicId, date);
+      nightShift = nightShift ?? dateInfo.hasNightShift;
+      holiday = holiday ?? dateInfo.isHoliday;
+    }
     // 1. 날짜 유형 판단
-    const dateType = this.getDateType(date, hasNightShift, isHoliday);
+    const dateType = this.getDateType(date, nightShift, holiday);
 
     // 일반 평일이나 일요일은 형평성 체크 불필요
     if (dateType === 'NORMAL_WEEKDAY' || dateType === 'SUNDAY') {
