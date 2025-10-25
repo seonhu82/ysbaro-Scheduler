@@ -13,7 +13,7 @@ export async function checkSlotAvailability(linkId: string, date: Date): Promise
   remaining: number
 }> {
   // 공개 링크로 clinicId 조회
-  const link = await prisma.leaveApplicationLink.findUnique({
+  const link = await prisma.applicationLink.findUnique({
     where: { token: linkId },
     include: { clinic: true }
   })
@@ -44,7 +44,7 @@ export async function checkSlotAvailability(linkId: string, date: Date): Promise
         gte: new Date(date.setHours(0, 0, 0, 0)),
         lt: new Date(date.setHours(23, 59, 59, 999))
       },
-      status: { in: ['PENDING', 'APPROVED'] }, // 승인 대기 + 승인됨
+      status: { in: ['PENDING', 'CONFIRMED'] }, // 승인 대기 + 확정됨
       staff: { clinicId: link.clinicId }
     }
   })
@@ -96,7 +96,7 @@ export async function checkWeeklyOffLimit(
         gte: weekStart,
         lte: weekEnd
       },
-      status: { in: ['PENDING', 'APPROVED'] } // 대기 + 승인만 카운트
+      status: { in: ['PENDING', 'CONFIRMED'] } // 대기 + 확정만 카운트
     },
     orderBy: { date: 'asc' }
   })

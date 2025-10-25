@@ -29,10 +29,10 @@ export async function GET(request: NextRequest) {
     const weekEnd = new Date(weekStart)
     weekEnd.setDate(weekEnd.getDate() + 6)
 
-    const weeks = await prisma.week.findMany({
+    const weeks = await prisma.weekInfo.findMany({
       where: {
         clinicId: session.user.clinicId,
-        startDate: {
+        weekStart: {
           gte: weekStart,
           lte: weekEnd
         }
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       include: {
         dailySlots: {
           include: {
-            assignments: {
+            staffAssignments: {
               include: {
                 staff: {
                   select: {
@@ -61,18 +61,17 @@ export async function GET(request: NextRequest) {
       success: true,
       data: weeks.map(week => ({
         id: week.id,
-        startDate: week.startDate,
-        endDate: week.endDate,
+        startDate: week.weekStart,
+        endDate: week.weekEnd,
         year: week.year,
         weekNumber: week.weekNumber,
-        isConfirmed: week.isConfirmed,
         dailySlots: week.dailySlots.map(slot => ({
           id: slot.id,
           date: slot.date,
           requiredStaff: slot.requiredStaff,
-          assignedCount: slot.assignments.length,
-          isComplete: slot.assignments.length >= slot.requiredStaff,
-          assignments: slot.assignments
+          assignedCount: slot.staffAssignments.length,
+          isComplete: slot.staffAssignments.length >= slot.requiredStaff,
+          assignments: slot.staffAssignments
         }))
       }))
     })

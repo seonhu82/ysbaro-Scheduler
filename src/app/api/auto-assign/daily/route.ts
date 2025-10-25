@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       },
       include: {
         week: true,
-        assignments: {
+        staffAssignments: {
           include: {
             staff: {
               select: {
@@ -57,9 +57,9 @@ export async function GET(request: NextRequest) {
         id: slot.id,
         date: slot.date,
         requiredStaff: slot.requiredStaff,
-        assignedCount: slot.assignments.length,
-        isComplete: slot.assignments.length >= slot.requiredStaff,
-        assignments: slot.assignments
+        assignedCount: slot.staffAssignments.length,
+        isComplete: slot.staffAssignments.length >= slot.requiredStaff,
+        assignments: slot.staffAssignments
       }))
     })
   } catch (error) {

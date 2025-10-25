@@ -30,11 +30,12 @@ export async function GET(request: NextRequest) {
     const startDate = new Date(parseInt(year), parseInt(month) - 1, 1)
     const endDate = new Date(parseInt(year), parseInt(month), 0)
 
-    const weeks = await prisma.week.findMany({
+    const weeks = await prisma.weekInfo.findMany({
       where: {
         clinicId: session.user.clinicId,
         year: parseInt(year),
-        startDate: {
+        month: parseInt(month),
+        weekStart: {
           gte: startDate,
           lte: endDate
         }
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
       include: {
         dailySlots: {
           include: {
-            assignments: {
+            staffAssignments: {
               include: {
                 staff: {
                   select: {
@@ -62,18 +63,18 @@ export async function GET(request: NextRequest) {
 
     // 월간 통계 계산
     const totalSlots = weeks.reduce(
-      (sum, week) => sum + week.dailySlots.length,
+      (sum: number, week) => sum + week.dailySlots.length,
       0
     )
     const totalAssignments = weeks.reduce(
-      (sum, week) =>
+      (sum: number, week) =>
         sum +
-        week.dailySlots.reduce((s, slot) => s + slot.assignments.length, 0),
+        week.dailySlots.reduce((s: number, slot) => s + slot.staffAssignments.length, 0),
       0
     )
     const totalRequired = weeks.reduce(
-      (sum, week) =>
-        sum + week.dailySlots.reduce((s, slot) => s + slot.requiredStaff, 0),
+      (sum: number, week) =>
+        sum + week.dailySlots.reduce((s: number, slot) => s + slot.requiredStaff, 0),
       0
     )
 
@@ -84,17 +85,16 @@ export async function GET(request: NextRequest) {
         month: parseInt(month),
         weeks: weeks.map(week => ({
           id: week.id,
-          startDate: week.startDate,
-          endDate: week.endDate,
+          startDate: week.weekStart,
+          endDate: week.weekEnd,
           weekNumber: week.weekNumber,
-          isConfirmed: week.isConfirmed,
           dailySlots: week.dailySlots.map(slot => ({
             id: slot.id,
             date: slot.date,
             requiredStaff: slot.requiredStaff,
-            assignedCount: slot.assignments.length,
-            isComplete: slot.assignments.length >= slot.requiredStaff,
-            assignments: slot.assignments
+            assignedCount: slot.staffAssignments.length,
+            isComplete: slot.staffAssignments.length >= slot.requiredStaff,
+            assignments: slot.staffAssignments
           }))
         })),
         summary: {
