@@ -1,30 +1,50 @@
-// 알림 읽음 처리
+/**
+ * 알림 읽음 처리 API
+ * PATCH: 특정 알림을 읽음으로 표시
+ */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { successResponse, errorResponse, unauthorizedResponse, notFoundResponse } from '@/lib/utils/api-response'
 
-export async function GET(request: NextRequest) {
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    // TODO: 알림 읽음 처리 - GET 구현
-    return NextResponse.json({ success: true, data: [] })
-  } catch (error) {
-    console.error('GET error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
+    const session = await auth()
+    if (!session?.user?.id) {
+      return unauthorizedResponse()
+    }
 
-export async function POST(request: NextRequest) {
-  try {
-    // TODO: 알림 읽음 처리 - POST 구현
-    return NextResponse.json({ success: true })
+    const { id } = params
+
+    // 알림 조회 및 권한 확인
+    const notification = await prisma.notification.findUnique({
+      where: { id }
+    })
+
+    if (!notification) {
+      return notFoundResponse('Notification not found')
+    }
+
+    if (notification.userId !== session.user.id) {
+      return unauthorizedResponse()
+    }
+
+    // 읽음 처리
+    const updatedNotification = await prisma.notification.update({
+      where: { id },
+      data: {
+        isRead: true,
+        readAt: new Date()
+      }
+    })
+
+    return successResponse(updatedNotification, 'Notification marked as read')
   } catch (error) {
-    console.error('POST error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
+    console.error('Mark notification as read error:', error)
+    return errorResponse('Failed to mark notification as read', 500)
   }
 }

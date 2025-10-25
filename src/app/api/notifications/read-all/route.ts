@@ -1,30 +1,38 @@
-// 모두 읽음
+/**
+ * 모든 알림 읽음 처리 API
+ * PATCH: 사용자의 모든 알림을 읽음으로 표시
+ */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { successResponse, errorResponse, unauthorizedResponse } from '@/lib/utils/api-response'
 
-export async function GET(request: NextRequest) {
+export async function PATCH(request: NextRequest) {
   try {
-    // TODO: 모두 읽음 - GET 구현
-    return NextResponse.json({ success: true, data: [] })
-  } catch (error) {
-    console.error('GET error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
-}
+    const session = await auth()
+    if (!session?.user?.id) {
+      return unauthorizedResponse()
+    }
 
-export async function POST(request: NextRequest) {
-  try {
-    // TODO: 모두 읽음 - POST 구현
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('POST error:', error)
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 }
+    // 모든 읽지 않은 알림을 읽음 처리
+    const result = await prisma.notification.updateMany({
+      where: {
+        userId: session.user.id,
+        isRead: false
+      },
+      data: {
+        isRead: true,
+        readAt: new Date()
+      }
+    })
+
+    return successResponse(
+      { count: result.count },
+      `${result.count} notifications marked as read`
     )
+  } catch (error) {
+    console.error('Mark all notifications as read error:', error)
+    return errorResponse('Failed to mark all notifications as read', 500)
   }
 }

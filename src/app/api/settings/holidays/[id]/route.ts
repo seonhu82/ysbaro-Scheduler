@@ -1,6 +1,6 @@
 /**
- * 알림 삭제 API
- * DELETE: 특정 알림 삭제
+ * 개별 휴업일 관리 API
+ * DELETE: 휴업일 삭제
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -14,33 +14,33 @@ export async function DELETE(
 ) {
   try {
     const session = await auth()
-    if (!session?.user?.id) {
+    if (!session?.user?.clinicId) {
       return unauthorizedResponse()
     }
 
     const { id } = params
 
-    // 알림 조회 및 권한 확인
-    const notification = await prisma.notification.findUnique({
+    // 휴업일 조회 및 권한 확인
+    const holiday = await prisma.holiday.findUnique({
       where: { id }
     })
 
-    if (!notification) {
-      return notFoundResponse('Notification not found')
+    if (!holiday) {
+      return notFoundResponse('Holiday not found')
     }
 
-    if (notification.userId !== session.user.id) {
+    if (holiday.clinicId !== session.user.clinicId) {
       return unauthorizedResponse()
     }
 
     // 삭제
-    await prisma.notification.delete({
+    await prisma.holiday.delete({
       where: { id }
     })
 
-    return successResponse(null, 'Notification deleted successfully')
+    return successResponse(null, 'Holiday deleted successfully')
   } catch (error) {
-    console.error('Delete notification error:', error)
-    return errorResponse('Failed to delete notification', 500)
+    console.error('Delete holiday error:', error)
+    return errorResponse('Failed to delete holiday', 500)
   }
 }

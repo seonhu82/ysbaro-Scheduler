@@ -319,6 +319,8 @@ async function main() {
     update: {},
     create: {
       clinicId: clinic.id,
+      weekBusinessDays: 6,
+      defaultWorkDays: 4,
       maxWeeklyOffs: 2,
       preventSundayOff: true,
       preventHolidayOff: true,
@@ -372,8 +374,8 @@ async function main() {
     create: {
       id: 'backup-config-1',
       clinicId: clinic.id,
-      enableAutoBackup: true,
-      backupFrequency: 'daily',
+      autoBackup: true,
+      backupFrequency: 'DAILY',
       retentionDays: 30,
     },
   })
