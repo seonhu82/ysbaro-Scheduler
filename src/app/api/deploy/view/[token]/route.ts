@@ -56,7 +56,7 @@ export async function GET(
               select: {
                 id: true,
                 name: true,
-                rank: true
+                specialization: true
               }
             }
           },
@@ -104,7 +104,7 @@ export async function GET(
       scheduleByDate[dateKey].doctors.push({
         id: doc.doctor.id,
         name: doc.doctor.name,
-        rank: doc.doctor.rank,
+        specialization: doc.doctor.specialization,
         hasNightShift: doc.hasNightShift
       })
     })

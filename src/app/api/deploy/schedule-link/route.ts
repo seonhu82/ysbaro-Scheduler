@@ -18,43 +18,44 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const scheduleId = searchParams.get('scheduleId')
+    const year = searchParams.get('year')
+    const month = searchParams.get('month')
 
     const where: any = {
-      schedule: {
-        clinicId: session.user.clinicId
-      }
+      clinicId: session.user.clinicId
     }
 
-    if (scheduleId) {
-      where.scheduleId = scheduleId
+    if (year) {
+      where.year = parseInt(year)
+    }
+    if (month) {
+      where.month = parseInt(month)
     }
 
     // 배포된 스케줄 목록 조회
-    const deployments = await prisma.scheduleDeployment.findMany({
+    const deployments = await prisma.scheduleViewLink.findMany({
       where,
       include: {
-        schedule: {
+        clinic: {
           select: {
-            year: true,
-            month: true,
-            status: true
+            name: true
           }
         }
       },
       orderBy: {
-        deployedAt: 'desc'
+        createdAt: 'desc'
       }
     })
 
     const deploymentList = deployments.map(d => ({
       id: d.id,
-      scheduleId: d.scheduleId,
-      year: d.schedule.year,
-      month: d.schedule.month,
-      publicToken: d.publicToken,
-      publicUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/schedule-view/${d.publicToken}`,
-      deployedAt: d.deployedAt.toISOString(),
+      clinicId: d.clinicId,
+      clinicName: d.clinic.name,
+      year: d.year,
+      month: d.month,
+      publicToken: d.token,
+      publicUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/schedule-view/${d.token}`,
+      deployedAt: d.createdAt.toISOString(),
       expiresAt: d.expiresAt?.toISOString() || null,
       isActive: !d.expiresAt || d.expiresAt > new Date()
     }))
@@ -74,28 +75,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { scheduleId, expiryDays = 30 } = body
+    const { year, month, expiryDays = 30 } = body
 
-    if (!scheduleId) {
-      return badRequestResponse('Schedule ID is required')
-    }
-
-    // 스케줄 조회 및 권한 확인
-    const schedule = await prisma.schedule.findUnique({
-      where: { id: scheduleId }
-    })
-
-    if (!schedule) {
-      return notFoundResponse('Schedule not found')
-    }
-
-    if (schedule.clinicId !== session.user.clinicId) {
-      return unauthorizedResponse()
-    }
-
-    // 스케줄이 확정 상태가 아니면 배포 불가
-    if (schedule.status !== 'CONFIRMED' && schedule.status !== 'DEPLOYED') {
-      return badRequestResponse('Only confirmed schedules can be deployed')
+    if (!year || !month) {
+      return badRequestResponse('Year and month are required')
     }
 
     // 공개 토큰 생성
@@ -104,43 +87,36 @@ export async function POST(request: NextRequest) {
     // 만료일 계산
     const expiresAt = expiryDays > 0
       ? new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000)
-      : null
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 기본 30일
 
     // 배포 생성
-    const deployment = await prisma.scheduleDeployment.create({
+    const deployment = await prisma.scheduleViewLink.create({
       data: {
-        scheduleId,
-        publicToken,
-        expiresAt,
-        deployedBy: session.user.id
+        clinicId: session.user.clinicId,
+        year: parseInt(year),
+        month: parseInt(month),
+        token: publicToken,
+        expiresAt
       },
       include: {
-        schedule: {
+        clinic: {
           select: {
-            year: true,
-            month: true
+            name: true
           }
         }
-      }
-    })
-
-    // 스케줄 상태를 DEPLOYED로 변경
-    await prisma.schedule.update({
-      where: { id: scheduleId },
-      data: {
-        status: 'DEPLOYED'
       }
     })
 
     return successResponse(
       {
         id: deployment.id,
-        scheduleId: deployment.scheduleId,
-        year: deployment.schedule.year,
-        month: deployment.schedule.month,
-        publicToken: deployment.publicToken,
-        publicUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/schedule-view/${deployment.publicToken}`,
-        deployedAt: deployment.deployedAt.toISOString(),
+        clinicId: deployment.clinicId,
+        clinicName: deployment.clinic.name,
+        year: deployment.year,
+        month: deployment.month,
+        publicToken: deployment.token,
+        publicUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/schedule-view/${deployment.token}`,
+        deployedAt: deployment.createdAt.toISOString(),
         expiresAt: deployment.expiresAt?.toISOString() || null
       },
       'Schedule deployed successfully'

@@ -41,7 +41,9 @@
       "Bash(git log:*)",
       "Bash(timeout 180 npx prisma migrate:*)",
       "Bash(git reset:*)",
-      "Bash(node analyze-template.js:*)"
+      "Bash(node analyze-template.js:*)",
+      "Bash(timeout 200 npm run build:*)",
+      "Bash(timeout 60 npx prisma db seed:*)"
     ],
     "deny": [],
     "ask": []

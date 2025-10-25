@@ -374,9 +374,9 @@ async function main() {
     create: {
       id: 'backup-config-1',
       clinicId: clinic.id,
-      autoBackup: true,
-      backupFrequency: 'DAILY',
-      retentionDays: 30,
+      enableAutoBackup: true,
+      backupFrequency: 'daily',
+      retentionDays: 30
     },
   })
 

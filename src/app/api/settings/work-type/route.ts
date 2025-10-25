@@ -31,12 +31,10 @@ export async function GET() {
       success: true,
       data: {
         weekBusinessDays: ruleSettings.weekBusinessDays,
-        week4WorkDays: ruleSettings.week4WorkDays,
-        week4OffDays: ruleSettings.week4OffDays,
-        week5WorkDays: ruleSettings.week5WorkDays,
-        week5OffDays: ruleSettings.week5OffDays,
-        maxConsecutiveWorkDays: ruleSettings.maxConsecutiveWorkDays,
-        maxWeeklyOffs: ruleSettings.maxWeeklyOffs
+        defaultWorkDays: ruleSettings.defaultWorkDays,
+        maxWeeklyOffs: ruleSettings.maxWeeklyOffs,
+        maxConsecutiveNights: ruleSettings.maxConsecutiveNights,
+        minRestAfterNight: ruleSettings.minRestAfterNight
       }
     })
   } catch (error) {
@@ -58,44 +56,21 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json()
     const {
       weekBusinessDays,
-      week4WorkDays,
-      week4OffDays,
-      week5WorkDays,
-      week5OffDays,
-      maxConsecutiveWorkDays,
-      maxWeeklyOffs
+      defaultWorkDays,
+      maxWeeklyOffs,
+      maxConsecutiveNights,
+      minRestAfterNight
     } = body
-
-    // 입력 검증
-    if (week4WorkDays !== undefined && week4OffDays !== undefined) {
-      if (week4WorkDays + week4OffDays !== weekBusinessDays) {
-        return NextResponse.json(
-          { error: 'Week 4 work days + off days must equal business days' },
-          { status: 400 }
-        )
-      }
-    }
-
-    if (week5WorkDays !== undefined && week5OffDays !== undefined) {
-      if (week5WorkDays + week5OffDays !== weekBusinessDays) {
-        return NextResponse.json(
-          { error: 'Week 5 work days + off days must equal business days' },
-          { status: 400 }
-        )
-      }
-    }
 
     // RuleSettings 업데이트
     const updatedSettings = await prisma.ruleSettings.update({
       where: { clinicId: session.user.clinicId },
       data: {
         ...(weekBusinessDays !== undefined && { weekBusinessDays }),
-        ...(week4WorkDays !== undefined && { week4WorkDays }),
-        ...(week4OffDays !== undefined && { week4OffDays }),
-        ...(week5WorkDays !== undefined && { week5WorkDays }),
-        ...(week5OffDays !== undefined && { week5OffDays }),
-        ...(maxConsecutiveWorkDays !== undefined && { maxConsecutiveWorkDays }),
-        ...(maxWeeklyOffs !== undefined && { maxWeeklyOffs })
+        ...(defaultWorkDays !== undefined && { defaultWorkDays }),
+        ...(maxWeeklyOffs !== undefined && { maxWeeklyOffs }),
+        ...(maxConsecutiveNights !== undefined && { maxConsecutiveNights }),
+        ...(minRestAfterNight !== undefined && { minRestAfterNight })
       }
     })
 

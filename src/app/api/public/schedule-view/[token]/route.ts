@@ -19,18 +19,14 @@ export async function GET(
     const { token } = params
 
     // 토큰으로 배포된 스케줄 찾기
-    const deployment = await prisma.scheduleDeployment.findUnique({
+    const deployment = await prisma.scheduleViewLink.findUnique({
       where: {
-        publicToken: token
+        token: token
       },
       include: {
-        schedule: {
-          include: {
-            clinic: {
-              select: {
-                name: true
-              }
-            }
+        clinic: {
+          select: {
+            name: true
           }
         }
       }
@@ -45,25 +41,37 @@ export async function GET(
       return unauthorizedResponse('Token has expired')
     }
 
-    // 해당 월의 시작일과 종료일 계산
-    const startDate = new Date(year, month - 1, 1)
-    const endDate = new Date(year, month, 0) // 해당 월의 마지막 날
+    // 배포 정보에서 year, month 사용 (URL 파라미터는 무시)
+    const deployYear = deployment.year
+    const deployMonth = deployment.month
 
-    // 해당 스케줄의 근무 배정 조회
-    const assignments = await prisma.scheduleAssignment.findMany({
+    // 해당 월의 시작일과 종료일 계산
+    const startDate = new Date(deployYear, deployMonth - 1, 1)
+    const endDate = new Date(deployYear, deployMonth, 0) // 해당 월의 마지막 날
+
+    // 해당 월의 DailySlot 조회
+    const dailySlots = await prisma.dailySlot.findMany({
       where: {
-        scheduleId: deployment.scheduleId,
         date: {
           gte: startDate,
           lte: endDate
+        },
+        week: {
+          clinicId: deployment.clinicId,
+          year: deployYear,
+          month: deployMonth
         }
       },
       include: {
-        staff: {
-          select: {
-            id: true,
-            name: true,
-            rank: true
+        staffAssignments: {
+          include: {
+            staff: {
+              select: {
+                id: true,
+                name: true,
+                rank: true
+              }
+            }
           }
         }
       },
@@ -75,7 +83,7 @@ export async function GET(
     // 해당 월의 휴업일 조회
     const holidays = await prisma.holiday.findMany({
       where: {
-        clinicId: deployment.schedule.clinicId,
+        clinicId: deployment.clinicId,
         date: {
           gte: startDate,
           lte: endDate
@@ -111,22 +119,18 @@ export async function GET(
     })
 
     // 근무 배정 정보 추가
-    assignments.forEach(assignment => {
-      const dateKey = assignment.date.toISOString().split('T')[0]
+    dailySlots.forEach(slot => {
+      const dateKey = slot.date.toISOString().split('T')[0]
       if (daysMap.has(dateKey)) {
         const day = daysMap.get(dateKey)
-        day.assignments.push({
+        day.assignments = slot.staffAssignments.map(assignment => ({
           id: assignment.id,
           staff: {
             id: assignment.staff.id,
             name: assignment.staff.name,
             rank: assignment.staff.rank
-          },
-          shiftType: assignment.shiftType,
-          hasNightShift: assignment.hasNightShift,
-          leaveType: assignment.leaveType,
-          notes: assignment.notes
-        })
+          }
+        }))
       }
     })
 
@@ -134,20 +138,17 @@ export async function GET(
     const days = Array.from(daysMap.values())
 
     return successResponse({
-      schedule: {
-        id: deployment.schedule.id,
-        year: deployment.schedule.year,
-        month: deployment.schedule.month,
-        status: deployment.schedule.status,
-        clinicName: deployment.schedule.clinic.name
-      },
-      year,
-      month,
-      days,
       deployment: {
-        deployedAt: deployment.deployedAt,
+        id: deployment.id,
+        year: deployment.year,
+        month: deployment.month,
+        clinicName: deployment.clinic.name,
+        deployedAt: deployment.createdAt,
         expiresAt: deployment.expiresAt
-      }
+      },
+      year: deployYear,
+      month: deployMonth,
+      days
     })
   } catch (error) {
     console.error('Get public schedule error:', error)

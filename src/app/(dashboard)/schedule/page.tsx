@@ -39,7 +39,7 @@ export default function ScheduleManagementPage() {
     }
 
     fetchWeekSummaries()
-  }, [currentMonth, year, month])
+  }, [currentMonth])
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth() + 1

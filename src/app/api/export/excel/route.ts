@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       const schedule = await prisma.schedule.findUnique({
         where: { id: scheduleId },
         include: {
-          assignments: {
+          staffAssignments: {
             include: {
               staff: {
                 select: {
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
           month
         },
         include: {
-          assignments: {
+          staffAssignments: {
             include: {
               staff: {
                 select: {
@@ -98,14 +98,11 @@ export async function POST(request: NextRequest) {
         exportedAt: new Date().toISOString(),
         exportedBy: session.user.name
       },
-      assignments: scheduleData.assignments.map((assignment: any) => ({
+      assignments: scheduleData.staffAssignments.map((assignment: any) => ({
         date: assignment.date.toISOString().split('T')[0],
         staffName: assignment.staff.name,
         staffRank: assignment.staff.rank,
-        shiftType: assignment.shiftType,
-        hasNightShift: assignment.hasNightShift,
-        leaveType: assignment.leaveType,
-        notes: assignment.notes
+        shiftType: assignment.shiftType
       }))
     }
 

@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
       return unauthorizedResponse()
     }
 
+    const clinicId = session.user.clinicId
     const { searchParams } = new URL(request.url)
     const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString())
     const month = searchParams.get('month') ? parseInt(searchParams.get('month')!) : null
@@ -36,14 +37,14 @@ export async function GET(request: NextRequest) {
     // 1. 스케줄 통계
     const schedules = await prisma.schedule.findMany({
       where: {
-        clinicId: session.user.clinicId,
+        clinicId: clinicId,
         year,
         ...(month && { month })
       },
       include: {
         _count: {
           select: {
-            assignments: true
+            staffAssignments: true
           }
         }
       }
@@ -54,13 +55,13 @@ export async function GET(request: NextRequest) {
       draft: schedules.filter(s => s.status === 'DRAFT').length,
       confirmed: schedules.filter(s => s.status === 'CONFIRMED').length,
       deployed: schedules.filter(s => s.status === 'DEPLOYED').length,
-      totalAssignments: schedules.reduce((sum, s) => sum + s._count.assignments, 0)
+      totalAssignments: schedules.reduce((sum, s) => sum + s._count.staffAssignments, 0)
     }
 
     // 2. 연차 신청 통계
     const leaveApplications = await prisma.leaveApplication.findMany({
       where: {
-        clinicId: session.user.clinicId,
+        clinicId: clinicId,
         date: {
           gte: startDate,
           lte: endDate
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest) {
     const leaveStats = {
       total: leaveApplications.length,
       pending: leaveApplications.filter(l => l.status === 'PENDING').length,
-      approved: leaveApplications.filter(l => l.status === 'APPROVED').length,
+      approved: leaveApplications.filter(l => l.status === 'CONFIRMED').length,
       rejected: leaveApplications.filter(l => l.status === 'REJECTED').length,
       annual: leaveApplications.filter(l => l.leaveType === 'ANNUAL').length,
       off: leaveApplications.filter(l => l.leaveType === 'OFF').length
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
     // 3. 직원 통계
     const staff = await prisma.staff.findMany({
       where: {
-        clinicId: session.user.clinicId,
+        clinicId: clinicId,
         isActive: true
       },
       select: {
@@ -92,11 +93,13 @@ export async function GET(request: NextRequest) {
     const staffStats = {
       total: staff.length,
       byRank: staff.reduce((acc: any, s) => {
-        acc[s.rank] = (acc[s.rank] || 0) + 1
+        const rank = s.rank || 'UNKNOWN'
+        acc[rank] = (acc[rank] || 0) + 1
         return acc
       }, {}),
       byWorkType: staff.reduce((acc: any, s) => {
-        acc[s.workType] = (acc[s.workType] || 0) + 1
+        const workType = s.workType || 'UNKNOWN'
+        acc[workType] = (acc[workType] || 0) + 1
         return acc
       }, {})
     }
@@ -104,7 +107,7 @@ export async function GET(request: NextRequest) {
     // 4. 출퇴근 통계
     const attendanceRecords = await prisma.attendanceRecord.findMany({
       where: {
-        clinicId: session.user.clinicId,
+        clinicId: clinicId,
         date: {
           gte: startDate,
           lte: endDate
@@ -130,20 +133,20 @@ export async function GET(request: NextRequest) {
           const [scheduleCount, leaveCount, attendanceCount] = await Promise.all([
             prisma.schedule.count({
               where: {
-                clinicId: session.user.clinicId,
+                clinicId: clinicId,
                 year,
                 month: i + 1
               }
             }),
             prisma.leaveApplication.count({
               where: {
-                clinicId: session.user.clinicId,
+                clinicId: clinicId,
                 date: { gte: monthStart, lte: monthEnd }
               }
             }),
             prisma.attendanceRecord.count({
               where: {
-                clinicId: session.user.clinicId,
+                clinicId: clinicId,
                 date: { gte: monthStart, lte: monthEnd }
               }
             })

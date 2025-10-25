@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
               name: true
             }
           },
-          assignments: {
+          staffAssignments: {
             include: {
               staff: {
                 select: {
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
               name: true
             }
           },
-          assignments: {
+          staffAssignments: {
             include: {
               staff: {
                 select: {
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
     // 날짜별로 그룹화
     const assignmentsByDate = new Map<string, any[]>()
-    scheduleData.assignments.forEach((assignment: any) => {
+    scheduleData.staffAssignments.forEach((assignment: any) => {
       const dateKey = assignment.date.toISOString().split('T')[0]
       if (!assignmentsByDate.has(dateKey)) {
         assignmentsByDate.set(dateKey, [])

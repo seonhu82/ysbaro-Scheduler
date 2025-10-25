@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
     const backup = await prisma.backupConfig.create({
       data: {
         clinicId: session.user.clinicId,
-        autoBackup: false,
-        backupFrequency: 'MANUAL',
+        enableAutoBackup: false,
+        backupFrequency: 'manual',
         retentionDays: 30
       }
     })

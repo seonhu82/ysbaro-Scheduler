@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 
 // GET: 특정 패턴 조회
 export async function GET(
@@ -9,7 +8,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
@@ -27,7 +26,7 @@ export async function GET(
           select: {
             id: true,
             name: true,
-            rank: true
+            specialization: true
           }
         }
       }
@@ -56,7 +55,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
@@ -137,7 +136,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await auth()
     if (!session || session.user.role !== 'ADMIN') {
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },

@@ -113,7 +113,6 @@ export async function POST(request: NextRequest) {
             scheduleId: schedule.id,
             date,
             doctorId: pattern.doctorId,
-            shiftType: dayPattern.hasNightShift ? 'NIGHT' : 'DAY',
             hasNightShift: dayPattern.hasNightShift
           })
         }
@@ -121,29 +120,28 @@ export async function POST(request: NextRequest) {
     }
 
     // 6. 기존 원장 배치 삭제 (덮어쓰기)
-    await prisma.scheduleAssignment.deleteMany({
+    await prisma.scheduleDoctor.deleteMany({
       where: {
-        scheduleId: schedule.id,
-        doctorId: {
-          not: null
-        }
+        scheduleId: schedule.id
       }
     })
 
     // 7. 새로운 배치 생성
     if (assignmentsToCreate.length > 0) {
-      await prisma.scheduleAssignment.createMany({
-        data: assignmentsToCreate
+      await prisma.scheduleDoctor.createMany({
+        data: assignmentsToCreate.map(a => ({
+          scheduleId: a.scheduleId,
+          date: a.date,
+          doctorId: a.doctorId,
+          hasNightShift: a.hasNightShift
+        }))
       })
     }
 
     // 8. 생성된 배치 조회
-    const assignments = await prisma.scheduleAssignment.findMany({
+    const assignments = await prisma.scheduleDoctor.findMany({
       where: {
-        scheduleId: schedule.id,
-        doctorId: {
-          not: null
-        }
+        scheduleId: schedule.id
       },
       include: {
         doctor: {
@@ -168,7 +166,6 @@ export async function POST(request: NextRequest) {
         assignments: assignments.map(a => ({
           date: a.date.toISOString().split('T')[0],
           doctorName: a.doctor?.name,
-          shiftType: a.shiftType,
           hasNightShift: a.hasNightShift
         }))
       },

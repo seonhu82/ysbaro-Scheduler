@@ -37,6 +37,7 @@ export interface RequiredStaff {
  * 배치 설정
  */
 export interface AssignmentConfig {
+  clinicId?: string
   year: number
   month: number
   mode: 'full' | 'smart'  // 완전 재배치 vs 스마트 배치
