@@ -1,59 +1,84 @@
 /**
- * 백업/복원 페이지
+ * 백업 관리 페이지
  * 경로: /settings/backup
- *
- * 기능:
- * - 데이터 백업 생성
- * - 백업 파일 다운로드
- * - 백업 목록 조회
  */
 
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Database, Download, Upload, RefreshCw, AlertCircle } from 'lucide-react'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Database, Download, Trash2, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface Backup {
   id: string
-  filename: string
-  size: number
+  backupType: string
+  description: string | null
   createdAt: string
+  createdBy: string | null
+  restoredAt: string | null
+  restoredBy: string | null
 }
 
-export default function BackupSettingsPage() {
-  const { toast } = useToast()
+export default function BackupManagementPage() {
+  const [weekInfoId, setWeekInfoId] = useState('')
   const [backups, setBackups] = useState<Backup[]>([])
-  const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [selectedBackup, setSelectedBackup] = useState<Backup | null>(null)
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [description, setDescription] = useState('')
+  const { toast } = useToast()
 
-  useEffect(() => {
-    fetchBackups()
-  }, [])
+  const loadBackups = async () => {
+    if (!weekInfoId.trim()) {
+      toast({
+        title: '주차 ID 입력 필요',
+        description: '주차 정보 ID를 입력하세요',
+        variant: 'destructive'
+      })
+      return
+    }
 
-  const fetchBackups = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/settings/backup')
-      const data = await response.json()
+      const response = await fetch(`/api/backup/list?weekInfoId=${weekInfoId}`)
+      const result = await response.json()
 
-      if (data.success) {
-        setBackups(data.data || [])
-      } else {
+      if (result.success) {
+        setBackups(result.data)
         toast({
-          variant: 'destructive',
-          title: '데이터 로드 실패',
-          description: data.error
+          title: '백업 목록 로드 완료',
+          description: `${result.data.length}개의 백업을 찾았습니다`
         })
+      } else {
+        throw new Error(result.error)
       }
-    } catch (error) {
+    } catch (error: any) {
       toast({
-        variant: 'destructive',
-        title: '오류 발생',
-        description: '서버 오류가 발생했습니다'
+        title: '오류',
+        description: error.message,
+        variant: 'destructive'
       })
     } finally {
       setLoading(false)
@@ -61,171 +86,315 @@ export default function BackupSettingsPage() {
   }
 
   const handleCreateBackup = async () => {
+    if (!weekInfoId.trim()) {
+      toast({
+        title: '주차 ID 입력 필요',
+        description: '주차 정보 ID를 입력하세요',
+        variant: 'destructive'
+      })
+      return
+    }
+
     try {
-      setCreating(true)
-      const response = await fetch('/api/settings/backup', {
-        method: 'POST'
+      setLoading(true)
+      const response = await fetch('/api/backup/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weekInfoId,
+          description: description || undefined
+        })
       })
 
-      const data = await response.json()
+      const result = await response.json()
 
-      if (data.success) {
+      if (result.success) {
         toast({
           title: '백업 생성 완료',
-          description: '데이터 백업이 성공적으로 생성되었습니다'
+          description: result.message
         })
-        fetchBackups()
+        setShowCreateDialog(false)
+        setDescription('')
+        loadBackups()
       } else {
-        toast({
-          variant: 'destructive',
-          title: '백업 생성 실패',
-          description: data.error
-        })
+        throw new Error(result.error)
       }
-    } catch (error) {
+    } catch (error: any) {
       toast({
-        variant: 'destructive',
-        title: '오류 발생',
-        description: '서버 오류가 발생했습니다'
+        title: '오류',
+        description: error.message,
+        variant: 'destructive'
       })
     } finally {
-      setCreating(false)
+      setLoading(false)
     }
   }
 
-  const handleDownload = async (backupId: string) => {
-    toast({
-      title: '다운로드 준비 중',
-      description: '백업 파일을 다운로드합니다...'
-    })
-    // 실제 다운로드 로직은 API 구현 필요
+  const handleRestore = async () => {
+    if (!selectedBackup) return
+
+    try {
+      setLoading(true)
+      const response = await fetch('/api/backup/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          backupId: selectedBackup.id
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast({
+          title: '복구 완료',
+          description: `${result.data.restoredCount}명의 배치가 복원되었습니다`
+        })
+        setShowRestoreDialog(false)
+        setSelectedBackup(null)
+        loadBackups()
+      } else {
+        throw new Error(result.error)
+      }
+    } catch (error: any) {
+      toast({
+        title: '오류',
+        description: error.message,
+        variant: 'destructive'
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
-    return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+  const handleCleanup = async () => {
+    if (!weekInfoId.trim()) {
+      toast({
+        title: '주차 ID 입력 필요',
+        description: '주차 정보 ID를 입력하세요',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    if (!confirm('오래된 백업을 삭제하시겠습니까? (최근 5개만 유지)')) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      const response = await fetch('/api/backup/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weekInfoId,
+          keepCount: 5
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast({
+          title: '정리 완료',
+          description: result.message
+        })
+        loadBackups()
+      } else {
+        throw new Error(result.error)
+      }
+    } catch (error: any) {
+      toast({
+        title: '오류',
+        description: error.message,
+        variant: 'destructive'
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getBackupTypeBadge = (type: string) => {
+    const typeMap: Record<string, { label: string; variant: any }> = {
+      'AUTO_BEFORE_ASSIGN': { label: '자동(배치전)', variant: 'secondary' },
+      'AUTO_AFTER_ASSIGN': { label: '자동(배치후)', variant: 'default' },
+      'BEFORE_LEAVE_CHANGE': { label: '자동(연차변경전)', variant: 'outline' },
+      'MANUAL': { label: '수동', variant: 'destructive' }
+    }
+
+    const config = typeMap[type] || { label: type, variant: 'default' }
+    return <Badge variant={config.variant}>{config.label}</Badge>
   }
 
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-2 flex items-center gap-2">
-          <Database className="w-7 h-7" />
-          백업/복원
-        </h1>
+        <h1 className="text-2xl font-bold mb-2">백업 관리</h1>
         <p className="text-gray-600">
-          시스템 데이터를 백업하고 복원합니다
+          주간 배치 데이터의 백업 및 복구를 관리합니다
         </p>
       </div>
 
-      {/* 경고 메시지 */}
-      <Card className="mb-6 border-amber-200 bg-amber-50">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-amber-900">
-                백업 중요 안내
-              </p>
-              <p className="text-sm text-amber-800 mt-1">
-                • 백업은 정기적으로 수행하는 것이 좋습니다<br />
-                • 중요한 작업 전에는 반드시 백업을 생성하세요<br />
-                • 백업 파일은 안전한 장소에 별도로 보관하세요
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 백업 생성 */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>새 백업 생성</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="w-5 h-5" />
+            백업 조회
+          </CardTitle>
+          <CardDescription>
+            주차 정보 ID를 입력하여 백업 목록을 조회하세요
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600 mb-2">
-                현재 시스템의 모든 데이터를 백업합니다
-              </p>
-              <p className="text-xs text-gray-500">
-                백업에는 스케줄, 직원 정보, 연차 신청 등 모든 데이터가 포함됩니다
-              </p>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <Label htmlFor="weekInfoId">주차 정보 ID</Label>
+              <Input
+                id="weekInfoId"
+                value={weekInfoId}
+                onChange={(e) => setWeekInfoId(e.target.value)}
+                placeholder="예: clxxx..."
+              />
             </div>
-            <Button onClick={handleCreateBackup} disabled={creating}>
-              <Database className="w-4 h-4 mr-2" />
-              {creating ? '생성 중...' : '백업 생성'}
-            </Button>
+            <div className="flex items-end gap-2">
+              <Button onClick={loadBackups} disabled={loading}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                조회
+              </Button>
+              <Button onClick={() => setShowCreateDialog(true)} disabled={loading}>
+                <Database className="w-4 h-4 mr-2" />
+                수동 백업
+              </Button>
+              <Button onClick={handleCleanup} variant="outline" disabled={loading}>
+                <Trash2 className="w-4 h-4 mr-2" />
+                정리
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 백업 목록 */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>백업 목록</CardTitle>
-          <Button variant="outline" size="sm" onClick={fetchBackups}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            새로고침
-          </Button>
-        </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">파일명</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">크기</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">생성일</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">작업</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y">
-              {loading ? (
-                <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center">
-                    <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin text-blue-500" />
-                    <p className="text-gray-500">로딩 중...</p>
-                  </td>
-                </tr>
-              ) : backups.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center">
-                    <Database className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                    <p className="text-gray-500">백업 파일이 없습니다</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      위의 '백업 생성' 버튼을 클릭하여 첫 백업을 생성하세요
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                backups.map((backup) => (
-                  <tr key={backup.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {backup.filename}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <Badge variant="outline">{formatFileSize(backup.size)}</Badge>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+      {backups.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>백업 목록 ({backups.length}개)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>유형</TableHead>
+                  <TableHead>설명</TableHead>
+                  <TableHead>생성일시</TableHead>
+                  <TableHead>복구일시</TableHead>
+                  <TableHead>작업</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {backups.map((backup) => (
+                  <TableRow key={backup.id}>
+                    <TableCell>{getBackupTypeBadge(backup.backupType)}</TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {backup.description || '-'}
+                    </TableCell>
+                    <TableCell className="text-sm text-gray-600">
                       {new Date(backup.createdAt).toLocaleString('ko-KR')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {backup.restoredAt ? (
+                        <Badge variant="outline" className="bg-green-50">
+                          {new Date(backup.restoredAt).toLocaleString('ko-KR')}
+                        </Badge>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Button
-                        variant="ghost"
                         size="sm"
-                        onClick={() => handleDownload(backup.id)}
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedBackup(backup)
+                          setShowRestoreDialog(true)
+                        }}
+                        disabled={loading}
                       >
-                        <Download className="w-4 h-4 text-blue-500" />
+                        <Download className="w-3 h-3 mr-1" />
+                        복구
                       </Button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 복구 확인 다이얼로그 */}
+      <Dialog open={showRestoreDialog} onOpenChange={setShowRestoreDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+              백업 복구 확인
+            </DialogTitle>
+            <DialogDescription>
+              이 백업으로 복구하시겠습니까? 현재 배치 데이터는 삭제됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedBackup && (
+            <div className="space-y-2 py-4">
+              <p className="text-sm"><strong>유형:</strong> {selectedBackup.backupType}</p>
+              <p className="text-sm"><strong>설명:</strong> {selectedBackup.description || '-'}</p>
+              <p className="text-sm"><strong>생성일시:</strong> {new Date(selectedBackup.createdAt).toLocaleString('ko-KR')}</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRestoreDialog(false)}>
+              취소
+            </Button>
+            <Button onClick={handleRestore} disabled={loading}>
+              <CheckCircle className="w-4 h-4 mr-2" />
+              복구 실행
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 수동 백업 생성 다이얼로그 */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="w-5 h-5" />
+              수동 백업 생성
+            </DialogTitle>
+            <DialogDescription>
+              현재 배치 상태를 백업합니다
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="description">설명 (선택)</Label>
+            <Input
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="백업 사유를 입력하세요"
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              취소
+            </Button>
+            <Button onClick={handleCreateBackup} disabled={loading}>
+              <Database className="w-4 h-4 mr-2" />
+              백업 생성
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -30,18 +30,21 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // 2. 부서 생성
+      // 2. 부서 생성 및 ID 매핑
+      const departmentIdMap: Record<string, string> = {}
       for (const dept of departments) {
-        await tx.department.create({
+        const createdDept = await tx.department.create({
           data: {
             clinicId: clinicId,
             name: dept.name,
             order: dept.order,
+            useAutoAssignment: dept.useAutoAssignment ?? true, // 기본값 true
           },
         })
+        departmentIdMap[dept.name] = createdDept.id
       }
 
-      // 3. 구분 생성
+      // 3. 구분 생성 (부서 연결)
       for (const cat of categories) {
         await tx.staffCategory.create({
           data: {
@@ -49,6 +52,7 @@ export async function POST(request: NextRequest) {
             name: cat.name,
             priority: cat.priority,
             order: cat.order,
+            departmentId: cat.departmentName ? departmentIdMap[cat.departmentName] : null,
           },
         })
       }
@@ -95,7 +99,7 @@ export async function POST(request: NextRequest) {
             birthDate: birthDate,
             birthDateStr: staffMember.birthDate,
             departmentName: staffMember.departmentName,
-            categoryName: staffMember.categoryName,
+            categoryName: staffMember.categoryName || '', // 빈 문자열 허용
             position: staffMember.position || '사원',
             workType: staffMember.workType,
             workDays: staffMember.workType === 'WEEK_4' ? 4 : 5,
@@ -115,6 +119,8 @@ export async function POST(request: NextRequest) {
             name: combination.name,
             dayOfWeek: combination.dayOfWeek,
             requiredStaff: combination.requiredStaff,
+            departmentRequiredStaff: combination.departmentRequiredStaff || {},
+            departmentCategoryStaff: combination.departmentCategoryStaff || {},
             doctors: combination.doctors,
             hasNightShift: combination.hasNightShift || false,
           },

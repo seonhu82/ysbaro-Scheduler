@@ -64,6 +64,7 @@ export async function createWeeklySchedule(clinicId: string, startDate: Date) {
           weekId: week.id,
           date,
           requiredStaff: combination.requiredStaff,
+          departmentRequiredStaff: combination.departmentRequiredStaff || {}, // 부서별 필요 인원
           dayType: primaryDayType,
           doctorSchedule: {
             doctors: combination.doctors,

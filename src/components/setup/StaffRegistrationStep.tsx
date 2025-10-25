@@ -30,7 +30,7 @@ interface Staff {
 interface StaffRegistrationStepProps {
   data: Staff[]
   departments: { name: string; order: number }[]
-  categories: { name: string; priority: number; order: number }[]
+  categories: { name: string; priority: number; order: number; departmentName: string | null }[]
   onChange: (data: Staff[]) => void
 }
 
@@ -48,7 +48,7 @@ export function StaffRegistrationStep({
     name: '',
     birthDate: '',
     departmentName: departments[0]?.name || '',
-    categoryName: categories[0]?.name || '',
+    categoryName: 'none', // 선택 사항 (none으로 시작)
     position: '사원',
     workType: 'WEEK_4',
     flexibleForCategories: [],
@@ -62,12 +62,17 @@ export function StaffRegistrationStep({
 
   const addStaff = () => {
     if (newStaff.name.trim() && newStaff.birthDate.length === 6) {
-      onChange([...data, { ...newStaff }])
+      // categoryName이 'none'이면 빈 문자열로 저장
+      const staffToAdd = {
+        ...newStaff,
+        categoryName: newStaff.categoryName === 'none' ? '' : newStaff.categoryName
+      }
+      onChange([...data, staffToAdd])
       setNewStaff({
         name: '',
         birthDate: '',
         departmentName: departments[0]?.name || '',
-        categoryName: categories[0]?.name || '',
+        categoryName: 'none', // 초기화 시 'none'
         position: '사원',
         workType: 'WEEK_4',
         flexibleForCategories: [],
@@ -79,6 +84,11 @@ export function StaffRegistrationStep({
   const toggleFlexibleCategory = (staffIndex: number, categoryName: string) => {
     const updated = [...data]
     const staff = updated[staffIndex]
+
+    // flexibleForCategories가 없으면 빈 배열로 초기화
+    if (!staff.flexibleForCategories) {
+      staff.flexibleForCategories = []
+    }
 
     if (staff.flexibleForCategories.includes(categoryName)) {
       staff.flexibleForCategories = staff.flexibleForCategories.filter(c => c !== categoryName)
@@ -236,9 +246,9 @@ export function StaffRegistrationStep({
             return
           }
 
-          // 구분 검증
-          const catName = row['구분'] || categories[0]?.name
-          if (!categories.find((c) => c.name === catName)) {
+          // 구분 검증 (빈 값 허용)
+          const catName = row['구분'] ? String(row['구분']).trim() : ''
+          if (catName && !categories.find((c) => c.name === catName)) {
             errors.push(`${rowNum}행: 존재하지 않는 구분입니다. (${catName})`)
             return
           }
@@ -255,9 +265,18 @@ export function StaffRegistrationStep({
 
           // 유연 배치 구분 파싱 (예: "고년차,중간년차" 또는 비어있음)
           const flexibleStr = row['유연배치구분'] || ''
-          const flexibleForCategories = flexibleStr
+          const flexibleCategoriesRaw = flexibleStr
             ? String(flexibleStr).split(',').map((s: string) => s.trim()).filter(Boolean)
             : []
+
+          // 유연배치 구분 필터링: 같은 부서 또는 공통 구분만 허용
+          const flexibleForCategories = flexibleCategoriesRaw.filter(flexCatName => {
+            const flexCat = categories.find(c => c.name === flexCatName)
+            if (!flexCat) return false // 존재하지 않는 구분
+            if (flexCat.name === catName) return false // 자신의 구분 제외
+            if (flexCat.departmentName === null) return true // 공통 구분은 허용
+            return flexCat.departmentName === deptName // 같은 부서만 허용
+          })
 
           // 유연 배치 우선순위
           const flexibilityPriority = row['유연배치우선순위'] ? Number(row['유연배치우선순위']) : 0
@@ -394,6 +413,9 @@ export function StaffRegistrationStep({
                   근무형태
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  유연배치
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   삭제
                 </th>
               </tr>
@@ -436,6 +458,65 @@ export function StaffRegistrationStep({
                     </span>
                   </td>
                   <td className="px-4 py-3">
+                    <div className="space-y-2">
+                      {(() => {
+                        // 같은 부서의 구분만 표시 (자신의 구분 제외)
+                        const availableCategories = categories.filter(cat => {
+                          // 자신의 구분 제외
+                          if (cat.name === staff.categoryName) return false
+                          // 부서가 없는 구분(공통)은 모든 부서에서 사용 가능
+                          if (cat.departmentName === null) return true
+                          // 같은 부서의 구분만
+                          return cat.departmentName === staff.departmentName
+                        })
+
+                        return (
+                          <>
+                            {availableCategories.length > 0 ? (
+                              <>
+                                <div className="flex flex-wrap gap-1">
+                                  {availableCategories.map((cat) => (
+                                    <button
+                                      key={cat.name}
+                                      onClick={() => toggleFlexibleCategory(index, cat.name)}
+                                      className={`px-2 py-1 text-xs rounded transition-colors ${
+                                        (staff.flexibleForCategories || []).includes(cat.name)
+                                          ? 'bg-orange-100 text-orange-700 border border-orange-300 font-medium'
+                                          : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
+                                      }`}
+                                      title={`클릭하여 ${cat.name} 유연배치 ${(staff.flexibleForCategories || []).includes(cat.name) ? '해제' : '설정'}`}
+                                    >
+                                      {cat.name}
+                                    </button>
+                                  ))}
+                                </div>
+                                {(staff.flexibleForCategories || []).length > 0 && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-500 font-medium">우선순위:</span>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      max={10}
+                                      value={staff.flexibilityPriority || 0}
+                                      onChange={(e) => updateFlexibilityPriority(index, parseInt(e.target.value) || 0)}
+                                      className="h-7 w-16 text-xs"
+                                      title="숫자가 낮을수록 우선순위 높음 (0=최우선)"
+                                    />
+                                    <span className="text-xs text-gray-400">(낮을수록 우선)</span>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div className="text-xs text-gray-400 italic">
+                                -
+                              </div>
+                            )}
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -459,9 +540,9 @@ export function StaffRegistrationStep({
           <h3 className="font-semibold">새 직원 추가</h3>
         </div>
 
-        <div className="grid md:grid-cols-7 gap-3 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-3">
           <div className="space-y-1">
-            <Label className="text-xs">이름 *</Label>
+            <Label className="text-xs font-semibold">이름 *</Label>
             <Input
               value={newStaff.name}
               onChange={(e) =>
@@ -473,7 +554,7 @@ export function StaffRegistrationStep({
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">생년월일 (YYMMDD) *</Label>
+            <Label className="text-xs font-semibold">생년월일 (YYMMDD) *</Label>
             <Input
               value={newStaff.birthDate}
               onChange={(e) => {
@@ -487,11 +568,15 @@ export function StaffRegistrationStep({
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">부서</Label>
+            <Label className="text-xs font-semibold">부서</Label>
             <Select
               value={newStaff.departmentName}
               onValueChange={(value) =>
-                setNewStaff({ ...newStaff, departmentName: value })
+                setNewStaff({
+                  ...newStaff,
+                  departmentName: value,
+                  categoryName: 'none' // 부서 변경 시 구분 초기화
+                })
               }
             >
               <SelectTrigger className="h-9">
@@ -508,7 +593,7 @@ export function StaffRegistrationStep({
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">구분</Label>
+            <Label className="text-xs font-semibold">구분 (선택사항)</Label>
             <Select
               value={newStaff.categoryName}
               onValueChange={(value) =>
@@ -516,20 +601,27 @@ export function StaffRegistrationStep({
               }
             >
               <SelectTrigger className="h-9">
-                <SelectValue />
+                <SelectValue placeholder="선택안함" />
               </SelectTrigger>
               <SelectContent>
-                {categories.map((cat) => (
-                  <SelectItem key={cat.name} value={cat.name}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="none">선택안함</SelectItem>
+                {categories
+                  .filter(cat => {
+                    // 선택한 부서의 구분만 표시 (공통 구분도 포함)
+                    if (cat.departmentName === null) return true // 공통 구분
+                    return cat.departmentName === newStaff.departmentName
+                  })
+                  .map((cat) => (
+                    <SelectItem key={cat.name} value={cat.name}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">직급</Label>
+            <Label className="text-xs font-semibold">직급</Label>
             <Input
               value={newStaff.position}
               onChange={(e) =>
@@ -541,7 +633,7 @@ export function StaffRegistrationStep({
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">근무형태</Label>
+            <Label className="text-xs font-semibold">근무형태</Label>
             <div className="flex gap-2 items-center h-9">
               <label className="flex items-center gap-1 cursor-pointer">
                 <input
@@ -580,13 +672,48 @@ export function StaffRegistrationStep({
           </div>
         </div>
 
-        {/* 유연 배치 안내 */}
-        <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
-          <p className="text-sm text-purple-900">
-            💡 <strong>유연 배치 설정:</strong> 엑셀 템플릿에서 "유연배치구분"과 "유연배치우선순위" 컬럼을 사용하여
-            다른 구분으로도 배치 가능한 직원을 지정할 수 있습니다.
-            (예: 중간년차 직원이 고년차 업무도 가능한 경우)
-          </p>
+        {/* 유연배치 안내 */}
+        <div className="mt-4 p-4 bg-orange-50 rounded-lg border border-orange-200">
+          <h4 className="font-semibold text-sm text-orange-900 mb-3">💡 유연배치 설정 가이드</h4>
+
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-orange-900 mb-1">유연배치란?</p>
+              <p className="text-xs text-orange-800">
+                자신의 본래 구분 외에 다른 구분의 역할도 수행할 수 있는 직원을 설정합니다.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-orange-900 mb-1">설정 방법:</p>
+              <ul className="text-xs text-orange-800 space-y-1 list-disc list-inside ml-2">
+                <li>테이블에서 각 직원의 "유연배치" 열에서 가능한 구분 버튼을 클릭</li>
+                <li>선택된 버튼이 주황색으로 표시됩니다</li>
+                <li>유연배치 구분을 선택하면 우선순위 입력 필드가 나타납니다</li>
+              </ul>
+            </div>
+
+            <div className="p-3 bg-white rounded border border-orange-300">
+              <p className="text-xs font-semibold text-orange-900 mb-1">🔢 우선순위 숫자의 의미:</p>
+              <ul className="text-xs text-orange-800 space-y-1 ml-2">
+                <li><span className="font-semibold">0</span> = 가장 높은 우선순위 (가장 먼저 배치)</li>
+                <li><span className="font-semibold">1, 2, 3...</span> = 숫자가 커질수록 우선순위 낮음</li>
+                <li className="mt-2 pt-2 border-t border-orange-200">
+                  <span className="font-semibold">예시:</span> "팀장/실장" 자리가 부족할 때
+                  <br/>→ 본래 "팀장/실장"인 직원을 먼저 배치
+                  <br/>→ 부족하면 유연배치 가능한 직원 중 우선순위 0, 1, 2... 순으로 배치
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-orange-900 mb-1">엑셀 업로드 시:</p>
+              <ul className="text-xs text-orange-800 space-y-1 list-disc list-inside ml-2">
+                <li><strong>유연배치구분</strong>: 쉼표로 구분 (예: "팀장/실장,고년차")</li>
+                <li><strong>유연배치우선순위</strong>: 숫자 입력 (예: 0, 1, 2, 3...)</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
 

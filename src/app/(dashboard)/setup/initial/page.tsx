@@ -24,8 +24,8 @@ interface SetupData {
   }
 
   // 2단계: 부서/구분
-  departments: { name: string; order: number }[]
-  categories: { name: string; priority: number; order: number }[]
+  departments: { name: string; order: number; useAutoAssignment: boolean }[]
+  categories: { name: string; priority: number; order: number; departmentName: string | null }[]
 
   // 3단계: 원장 정보
   doctors: {
@@ -55,6 +55,7 @@ interface SetupData {
     name: string
     dayOfWeek: string
     requiredStaff: number
+    departmentRequiredStaff: { [departmentName: string]: number }
     doctors: string[]
     hasNightShift: boolean
   }[]
@@ -100,14 +101,14 @@ export default function InitialSetupPage() {
   const [setupData, setSetupData] = useState<SetupData>({
     clinicInfo: { name: '', address: '', phone: '' },
     departments: [
-      { name: '데스크', order: 0 },
-      { name: '진료실', order: 1 },
+      { name: '데스크', order: 0, useAutoAssignment: false },
+      { name: '진료실', order: 1, useAutoAssignment: true },
     ],
     categories: [
-      { name: '팀장/실장', priority: 1, order: 0 },
-      { name: '고년차', priority: 2, order: 1 },
-      { name: '중간년차', priority: 3, order: 2 },
-      { name: '저년차', priority: 4, order: 3 },
+      { name: '팀장/실장', priority: 1, order: 0, departmentName: null },
+      { name: '고년차', priority: 2, order: 1, departmentName: null },
+      { name: '중간년차', priority: 3, order: 2, departmentName: null },
+      { name: '저년차', priority: 4, order: 3, departmentName: null },
     ],
     doctors: [],
     staff: [],
@@ -249,7 +250,8 @@ export default function InitialSetupPage() {
           {STEPS.map((step, index) => (
             <div
               key={step.id}
-              className="flex flex-col items-center min-w-[120px]"
+              className="flex flex-col items-center min-w-[120px] cursor-pointer transition-transform hover:scale-105"
+              onClick={() => setCurrentStep(step.id)}
             >
               <div className="flex items-center">
                 {currentStep > step.id ? (
@@ -295,9 +297,35 @@ export default function InitialSetupPage() {
                 onDepartmentsChange={(data) =>
                   updateSetupData('departments', data)
                 }
-                onCategoriesChange={(data) =>
-                  updateSetupData('categories', data)
-                }
+                onCategoriesChange={(data) => {
+                  // 카테고리 변경 시 categoryRatios도 업데이트
+                  const newRatios: { [key: string]: number } = {}
+                  const oldCategoryNames = setupData.categories.map(c => c.name)
+                  const newCategoryNames = data.map(c => c.name)
+
+                  // 기존 비율 유지 (이름이 같으면)
+                  newCategoryNames.forEach(newName => {
+                    if (oldCategoryNames.includes(newName) && setupData.categoryRatios) {
+                      newRatios[newName] = setupData.categoryRatios[newName] || 0
+                    } else {
+                      // 새로운 카테고리는 균등 배분
+                      newRatios[newName] = Math.floor(100 / newCategoryNames.length)
+                    }
+                  })
+
+                  // 합계가 100이 되도록 조정
+                  const sum = Object.values(newRatios).reduce((a, b) => a + b, 0)
+                  if (sum !== 100 && newCategoryNames.length > 0) {
+                    const diff = 100 - sum
+                    newRatios[newCategoryNames[0]] += diff
+                  }
+
+                  setSetupData({
+                    ...setupData,
+                    categories: data,
+                    categoryRatios: newRatios
+                  })
+                }}
               />
             )}
             {currentStep === 3 && (
@@ -318,6 +346,8 @@ export default function InitialSetupPage() {
               <CombinationStep
                 data={setupData.combinations}
                 doctors={setupData.doctors}
+                departments={setupData.departments}
+                staff={setupData.staff}
                 fairness={setupData.fairness}
                 categoryRatios={setupData.categoryRatios}
                 categories={setupData.categories.map(c => c.name)}

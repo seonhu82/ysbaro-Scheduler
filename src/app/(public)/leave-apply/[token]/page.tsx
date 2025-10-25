@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { DateSelector } from '@/components/public-apply/DateSelector'
 import { TypeSelector } from '@/components/public-apply/TypeSelector'
 import { RealTimeStatus } from '@/components/public-apply/RealTimeStatus'
+import FairnessCheck from '@/components/leave-apply/FairnessCheck'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -28,6 +29,13 @@ interface SlotStatus {
   isHoliday: boolean
 }
 
+interface AuthData {
+  staffId: string
+  staffName: string
+  categoryName: string
+  clinicId: string
+}
+
 export default function LeaveApplyPage({
   params,
 }: {
@@ -35,6 +43,7 @@ export default function LeaveApplyPage({
 }) {
   const { toast } = useToast()
   const [isAuth, setIsAuth] = useState(false)
+  const [authData, setAuthData] = useState<AuthData | null>(null)
   const [birthDate, setBirthDate] = useState('')
   const [pin, setPin] = useState('')
   const [loading, setLoading] = useState(false)
@@ -55,7 +64,7 @@ export default function LeaveApplyPage({
     setLoading(true)
 
     try {
-      const response = await fetch(`/api/leave-apply/${params.token}`, {
+      const response = await fetch(`/api/leave-apply/${params.token}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -68,18 +77,11 @@ export default function LeaveApplyPage({
 
       if (result.success) {
         setIsAuth(true)
+        setAuthData(result.data)
         toast({
           title: '인증 성공',
-          description: '연차/오프 신청이 가능합니다.',
+          description: `${result.data.staffName}님, 연차/오프 신청이 가능합니다.`,
         })
-
-        // 슬롯 현황 로드
-        const statusResponse = await fetch(`/api/leave-apply/${params.token}/status`)
-        const statusResult = await statusResponse.json()
-        if (statusResult.success) {
-          setSlotStatus(statusResult.data.slotStatus || [])
-          setWeeklyOffCount(statusResult.data.weeklyOffCount || 0)
-        }
       } else {
         throw new Error(result.error || '인증 실패')
       }
@@ -206,13 +208,22 @@ export default function LeaveApplyPage({
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2">연차/오프 신청</h1>
         <p className="text-gray-600">
-          원하는 날짜와 유형을 선택해서 신청하세요
+          {authData && `${authData.staffName}님, `}원하는 날짜와 유형을 선택해서 신청하세요
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 왼쪽: 신청 폼 */}
         <div className="lg:col-span-2 space-y-6">
+          {/* 형평성 체크 */}
+          {authData && selectedDate && (
+            <FairnessCheck
+              staffId={authData.staffId}
+              startDate={selectedDate}
+              endDate={selectedDate}
+            />
+          )}
+
           <DateSelector
             selectedDate={selectedDate}
             onSelect={setSelectedDate}
