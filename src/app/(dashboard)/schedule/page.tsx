@@ -22,28 +22,24 @@ export default function ScheduleManagementPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // TODO: 실제 API 연결
-    // 임시 데이터
-    setWeekSummaries([
-      {
-        weekNumber: 1,
-        startDate: '2025-10-01',
-        endDate: '2025-10-07',
-        totalSlots: 70,
-        assignedSlots: 65,
-        issues: 2
-      },
-      {
-        weekNumber: 2,
-        startDate: '2025-10-08',
-        endDate: '2025-10-14',
-        totalSlots: 70,
-        assignedSlots: 70,
-        issues: 0
+    const fetchWeekSummaries = async () => {
+      try {
+        setLoading(true)
+        const response = await fetch(`/api/schedule/summary?year=${year}&month=${month}`)
+        const result = await response.json()
+
+        if (result.success && result.data) {
+          setWeekSummaries(result.data)
+        }
+      } catch (error) {
+        console.error('Failed to fetch week summaries:', error)
+      } finally {
+        setLoading(false)
       }
-    ])
-    setLoading(false)
-  }, [currentMonth])
+    }
+
+    fetchWeekSummaries()
+  }, [currentMonth, year, month])
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth() + 1

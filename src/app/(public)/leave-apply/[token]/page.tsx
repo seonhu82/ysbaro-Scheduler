@@ -55,23 +55,42 @@ export default function LeaveApplyPage({
     setLoading(true)
 
     try {
-      // TODO: API 호출로 인증 확인
-      // 임시로 바로 인증 성공 처리
-      setTimeout(() => {
+      const response = await fetch(`/api/leave-apply/${params.token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          birthDate,
+          pin
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
         setIsAuth(true)
-        setLoading(false)
         toast({
           title: '인증 성공',
           description: '연차/오프 신청이 가능합니다.',
         })
-      }, 500)
-    } catch (error) {
-      setLoading(false)
+
+        // 슬롯 현황 로드
+        const statusResponse = await fetch(`/api/leave-apply/${params.token}/status`)
+        const statusResult = await statusResponse.json()
+        if (statusResult.success) {
+          setSlotStatus(statusResult.data.slotStatus || [])
+          setWeeklyOffCount(statusResult.data.weeklyOffCount || 0)
+        }
+      } else {
+        throw new Error(result.error || '인증 실패')
+      }
+    } catch (error: any) {
       toast({
         title: '인증 실패',
-        description: '생년월일 또는 PIN이 올바르지 않습니다.',
+        description: error.message || '생년월일 또는 PIN이 올바르지 않습니다.',
         variant: 'destructive',
       })
+    } finally {
+      setLoading(false)
     }
   }
 

@@ -37,16 +37,27 @@ export default function AttendanceDashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: 실제 API 연결
-    // 임시 데이터
-    setStats({
-      totalStaff: 15,
-      checkedIn: 12,
-      checkedOut: 3,
-      notCheckedIn: 3,
-      suspiciousCount: 0
-    });
-    setLoading(false);
+    const fetchTodayStats = async () => {
+      try {
+        setLoading(true)
+        const response = await fetch('/api/attendance/today-stats')
+        const result = await response.json()
+
+        if (result.success && result.data) {
+          setStats(result.data)
+        }
+      } catch (error) {
+        console.error('Failed to fetch today stats:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchTodayStats()
+
+    // 30초마다 자동 새로고침
+    const interval = setInterval(fetchTodayStats, 30000)
+    return () => clearInterval(interval)
   }, []);
 
   return (
