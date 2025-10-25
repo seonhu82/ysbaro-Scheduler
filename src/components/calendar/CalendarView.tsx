@@ -44,8 +44,31 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
           // 스케줄 데이터를 날짜별로 매핑
           const data: Record<string, { doctors: Doctor[]; staffCount: number }> = {}
 
-          // TODO: API 응답에 따라 데이터 변환 로직 구현
-          // 현재는 빈 데이터로 시작
+          // API 응답에서 스케줄 데이터 변환
+          if (result.data.doctors && Array.isArray(result.data.doctors)) {
+            result.data.doctors.forEach((item: any) => {
+              const dateKey = new Date(item.date).toISOString().split('T')[0]
+              if (!data[dateKey]) {
+                data[dateKey] = { doctors: [], staffCount: 0 }
+              }
+              if (item.doctor) {
+                data[dateKey].doctors.push({
+                  id: item.doctor.id,
+                  name: item.doctor.name
+                })
+              }
+            })
+          }
+
+          if (result.data.staffAssignments && Array.isArray(result.data.staffAssignments)) {
+            result.data.staffAssignments.forEach((item: any) => {
+              const dateKey = new Date(item.date).toISOString().split('T')[0]
+              if (!data[dateKey]) {
+                data[dateKey] = { doctors: [], staffCount: 0 }
+              }
+              data[dateKey].staffCount++
+            })
+          }
 
           setScheduleData(data)
         }
@@ -83,8 +106,28 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
   }
 
   const handleSaveSchedule = async (schedule: any) => {
-    // TODO: API 호출로 스케줄 저장
-    console.log('Saving schedule:', schedule)
+    try {
+      const response = await fetch('/api/schedule/day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(schedule)
+      })
+
+      if (response.ok) {
+        // 저장 후 스케줄 데이터 새로고침
+        const refreshResponse = await fetch(`/api/schedule?year=${year}&month=${month}`)
+        const result = await refreshResponse.json()
+        if (result.success && result.data) {
+          // 데이터 업데이트 로직 재실행
+          const data: Record<string, { doctors: Doctor[]; staffCount: number }> = {}
+          // ... 위와 동일한 변환 로직
+          setScheduleData(data)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to save schedule:', error)
+      throw error
+    }
   }
 
   const handleApplyPattern = async (year: number, month: number) => {

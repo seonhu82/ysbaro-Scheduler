@@ -183,8 +183,59 @@ export async function autoAssignSingleSlot(slotId: string) {
   }
 }
 
-export async function autoAssignWeeklySchedule(options: any) {
-  // 주간 스케줄 자동 배치 로직
-  // TODO: 추후 구현
-  return { success: true, assignments: [], errors: [] }
+export async function autoAssignWeeklySchedule(options: {
+  clinicId: string
+  weekInfoId: string
+}) {
+  const { clinicId, weekInfoId } = options
+  const allAssignments: any[] = []
+  const allErrors: string[] = []
+
+  try {
+    // 1. WeekInfo와 DailySlot 조회
+    const weekInfo = await prisma.weekInfo.findUnique({
+      where: { id: weekInfoId },
+      include: {
+        dailySlots: {
+          orderBy: { date: 'asc' }
+        }
+      }
+    })
+
+    if (!weekInfo) {
+      return {
+        success: false,
+        assignments: [],
+        errors: ['Week info not found']
+      }
+    }
+
+    // 2. 각 DailySlot에 대해 자동 배치 실행
+    for (const slot of weekInfo.dailySlots) {
+      const result = await autoAssignSingleSlot(slot.id)
+
+      if (result.assignments) {
+        allAssignments.push(...result.assignments)
+      }
+
+      if (result.errors && result.errors.length > 0) {
+        allErrors.push(
+          `${slot.date.toISOString().split('T')[0]}: ${result.errors.join(', ')}`
+        )
+      }
+    }
+
+    return {
+      success: allErrors.length === 0,
+      assignments: allAssignments,
+      errors: allErrors
+    }
+  } catch (error) {
+    console.error('Weekly auto-assign error:', error)
+    return {
+      success: false,
+      assignments: allAssignments,
+      errors: [...allErrors, 'Internal error: ' + (error as Error).message]
+    }
+  }
 }
