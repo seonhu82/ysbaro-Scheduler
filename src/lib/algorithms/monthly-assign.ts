@@ -20,26 +20,28 @@ interface StaffWithMetrics {
 }
 
 export async function monthlyAssign(config: AssignmentConfig): Promise<AssignmentResult> {
-  const { year, month, mode, ratios } = config
+  const { clinicId, year, month, mode, ratios } = config
   const warnings: string[] = []
   let successCount = 0
   let failedCount = 0
 
   try {
-    // 1. 데이터 수집
-    const schedules = await prisma.schedule.findMany({
+    // 1. DailySlot 데이터 수집
+    const startDate = new Date(year, month - 1, 1)
+    const endDate = new Date(year, month, 0)
+
+    const dailySlots = await prisma.dailySlot.findMany({
       where: {
-        year,
-        month,
         date: {
-          gte: new Date(year, month - 1, 1),
-          lte: new Date(year, month, 0)
+          gte: startDate,
+          lte: endDate
+        },
+        week: {
+          clinicId: clinicId || ''
         }
       },
       include: {
-        doctors: {
-          include: { doctor: true }
-        },
+        week: true,
         staffAssignments: {
           include: { staff: true }
         }
@@ -47,8 +49,8 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
       orderBy: { date: 'asc' }
     })
 
-    if (schedules.length === 0) {
-      warnings.push('No schedules found for the specified month')
+    if (dailySlots.length === 0) {
+      warnings.push('No daily slots found for the specified month')
       return {
         success: false,
         totalSchedules: 0,
@@ -68,9 +70,9 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
       warnings.push('No active staff found')
       return {
         success: false,
-        totalSchedules: schedules.length,
+        totalSchedules: dailySlots.length,
         successCount: 0,
-        failedCount: schedules.length,
+        failedCount: dailySlots.length,
         warnings,
         fairnessScore: 0
       }
@@ -81,36 +83,38 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
     allStaff.forEach(staff => {
       staffMetrics.set(staff.id, {
         ...staff,
+        rank: staff.rank || '',
+        categoryName: staff.categoryName || '',
+        workType: staff.workType || '',
         nightShifts: 0,
         weekendShifts: 0,
         totalShifts: 0,
         consecutiveWorkDays: 0,
         lastWorkDate: null
-      })
+      } as StaffWithMetrics)
     })
 
     // 2. 배치 방식 결정
     if (mode === 'full') {
       // 완전 재배치: 기존 배치 삭제
-      await prisma.staffAssignment.deleteMany({
+      const dailySlotIds = dailySlots.map(slot => slot.id)
+      await prisma.dailyStaffAssignment.deleteMany({
         where: {
-          schedule: {
-            year,
-            month
-          }
+          dailySlotId: { in: dailySlotIds }
         }
       })
     }
 
     // 3. 각 날짜별 직원 배치
-    for (const schedule of schedules) {
+    for (const slot of dailySlots) {
       try {
-        const dayOfWeek = schedule.date.getDay()
+        const dayOfWeek = slot.date.getDay()
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
-        const hasNightShift = schedule.hasNightShift
+        const doctorSchedule = slot.doctorSchedule as any
+        const hasNightShift = doctorSchedule?.night_shift || false
 
-        // 필요 인원 수 계산 (원장 1명당 2명의 스태프)
-        const requiredStaffCount = schedule.doctors.length * 2
+        // 필요 인원 수
+        const requiredStaffCount = slot.requiredStaff
 
         // 직원 선발
         const selectedStaff = selectStaffForDay(
@@ -123,7 +127,7 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
 
         if (selectedStaff.length < requiredStaffCount) {
           warnings.push(
-            `${schedule.date.toISOString().split('T')[0]}: Not enough staff (needed ${requiredStaffCount}, got ${selectedStaff.length})`
+            `${slot.date.toISOString().split('T')[0]}: Not enough staff (needed ${requiredStaffCount}, got ${selectedStaff.length})`
           )
           failedCount++
           continue
@@ -131,8 +135,8 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
 
         // 배치 생성 (기존 배치가 있으면 스킵, mode='full'이면 이미 삭제됨)
         if (mode === 'smart') {
-          const existingAssignments = await prisma.staffAssignment.count({
-            where: { scheduleId: schedule.id }
+          const existingAssignments = await prisma.dailyStaffAssignment.count({
+            where: { dailySlotId: slot.id }
           })
           if (existingAssignments > 0) {
             successCount++
@@ -140,13 +144,11 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
           }
         }
 
-        // StaffAssignment 생성
-        await prisma.staffAssignment.createMany({
+        // DailyStaffAssignment 생성
+        await prisma.dailyStaffAssignment.createMany({
           data: selectedStaff.map(staffId => ({
-            scheduleId: schedule.id,
-            staffId,
-            shiftType: hasNightShift ? 'NIGHT' : 'DAY',
-            status: 'CONFIRMED'
+            dailySlotId: slot.id,
+            staffId
           }))
         })
 
@@ -161,7 +163,7 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
             // 연속 근무일 계산
             if (metrics.lastWorkDate) {
               const dayDiff = Math.floor(
-                (schedule.date.getTime() - metrics.lastWorkDate.getTime()) / (1000 * 60 * 60 * 24)
+                (slot.date.getTime() - metrics.lastWorkDate.getTime()) / (1000 * 60 * 60 * 24)
               )
               if (dayDiff === 1) {
                 metrics.consecutiveWorkDays++
@@ -171,16 +173,16 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
             } else {
               metrics.consecutiveWorkDays = 1
             }
-            metrics.lastWorkDate = schedule.date
+            metrics.lastWorkDate = slot.date
           }
         })
 
         successCount++
       } catch (error) {
-        console.error(`Error assigning staff for ${schedule.date}:`, error)
+        console.error(`Error assigning staff for ${slot.date}:`, error)
         failedCount++
         warnings.push(
-          `${schedule.date.toISOString().split('T')[0]}: Assignment failed - ${(error as Error).message}`
+          `${slot.date.toISOString().split('T')[0]}: Assignment failed - ${(error as Error).message}`
         )
       }
     }
@@ -195,7 +197,7 @@ export async function monthlyAssign(config: AssignmentConfig): Promise<Assignmen
 
     return {
       success: failedCount === 0,
-      totalSchedules: schedules.length,
+      totalSchedules: dailySlots.length,
       successCount,
       failedCount,
       warnings,
