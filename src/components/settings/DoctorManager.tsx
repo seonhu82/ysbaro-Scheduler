@@ -31,6 +31,8 @@ export function DoctorManager() {
   const [doctors, setDoctors] = useState<Doctor[]>([])
   const [loading, setLoading] = useState(true)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -71,6 +73,38 @@ export function DoctorManager() {
       }
     } catch (error) {
       console.error('Failed to add doctor:', error)
+    }
+  }
+
+  const handleEditDoctor = (doctor: Doctor) => {
+    setEditingDoctor(doctor)
+    setFormData({
+      name: doctor.name,
+      rank: doctor.rank
+    })
+    setIsEditDialogOpen(true)
+  }
+
+  const handleUpdateDoctor = async () => {
+    if (!editingDoctor) return
+
+    try {
+      const response = await fetch(`/api/settings/doctors/${editingDoctor.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+      })
+
+      if (response.ok) {
+        fetchDoctors()
+        setIsEditDialogOpen(false)
+        setEditingDoctor(null)
+        setFormData({ name: '', rank: 'DOCTOR' })
+      }
+    } catch (error) {
+      console.error('Failed to update doctor:', error)
     }
   }
 
@@ -142,7 +176,7 @@ export function DoctorManager() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {/* TODO: Edit dialog */}}
+                        onClick={() => handleEditDoctor(doctor)}
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
@@ -224,6 +258,58 @@ export function DoctorManager() {
               취소
             </Button>
             <Button onClick={handleAddDoctor}>추가</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 원장 수정 다이얼로그 */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>원장 정보 수정</DialogTitle>
+            <DialogDescription>
+              원장의 정보를 수정합니다
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="edit-name">이름</Label>
+              <Input
+                id="edit-name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="원장 이름"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="edit-rank">직급</Label>
+              <select
+                id="edit-rank"
+                value={formData.rank}
+                onChange={(e) => setFormData({ ...formData, rank: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              >
+                <option value="DOCTOR">원장</option>
+                <option value="ASSOCIATE">부원장</option>
+                <option value="RESIDENT">레지던트</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsEditDialogOpen(false)
+                setEditingDoctor(null)
+                setFormData({ name: '', rank: 'DOCTOR' })
+              }}
+            >
+              취소
+            </Button>
+            <Button onClick={handleUpdateDoctor}>수정</Button>
           </div>
         </DialogContent>
       </Dialog>

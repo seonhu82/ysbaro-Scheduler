@@ -34,15 +34,17 @@ export function PatternApplyButton({ onApply }: PatternApplyButtonProps) {
       if (onApply) {
         await onApply(year, month)
       } else {
-        // TODO: API 호출
+        // API 호출
         const response = await fetch('/api/doctor-pattern/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ year, month }),
         })
 
-        if (!response.ok) {
-          throw new Error('패턴 적용 실패')
+        const result = await response.json()
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || '패턴 적용 실패')
         }
       }
 

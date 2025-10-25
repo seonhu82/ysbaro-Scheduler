@@ -56,19 +56,36 @@ export function DayDetailPopup({
     const fetchDaySchedule = async () => {
       setLoading(true)
       try {
-        // TODO: API 호출로 날짜별 스케줄 데이터 가져오기
-        // const response = await fetch(`/api/schedule/day?date=${formatDate(date)}`)
-        // const result = await response.json()
+        const dateStr = date.toISOString().split('T')[0]
+        const response = await fetch(`/api/schedule/day?date=${dateStr}`)
+        const result = await response.json()
 
-        // 임시 데이터
+        if (result.success && result.data) {
+          setSchedule({
+            id: result.data.id,
+            date: result.data.date,
+            doctors: result.data.doctors || [],
+            staff: result.data.staff || [],
+            isNightShift: result.data.isNightShift || false,
+          })
+        } else {
+          // 데이터가 없으면 빈 스케줄
+          setSchedule({
+            date: dateStr,
+            doctors: [],
+            staff: [],
+            isNightShift: false,
+          })
+        }
+      } catch (error) {
+        console.error('Failed to fetch day schedule:', error)
+        // 에러 시에도 빈 스케줄 표시
         setSchedule({
-          date: date.toISOString(),
+          date: date.toISOString().split('T')[0],
           doctors: [],
           staff: [],
           isNightShift: false,
         })
-      } catch (error) {
-        console.error('Failed to fetch day schedule:', error)
       } finally {
         setLoading(false)
       }
