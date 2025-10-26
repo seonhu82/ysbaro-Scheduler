@@ -79,7 +79,8 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
   message: string
   assignedCount: number
   unresolvedIssues: ValidationIssue[]
-}> {
+}>
+{
   try {
     // ========== Phase 1-3: 준비 단계 ==========
 
@@ -629,7 +630,7 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
           categoryRequirements: d.categoryRequirements,
           currentAssignments: assignmentDetails.get(d.dateKey)?.length || 0,
           departmentRequiredStaff: d.departmentRequiredStaff, // 부서별 필요 인원 전달
-          departmentName: staff.departmentName // 직원 부서 전달
+          departmentName: staff.departmentName ?? undefined // 직원 부서 전달
         })),
         weeklyAssignments,
         assignmentDetails,
@@ -802,6 +803,7 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
       }
 
       assignmentDetails.set(day.dateKey, existingAssignments)
+    }
     }
 
     console.log(`   → 총 ${assignedCount}명 배치 완료`)

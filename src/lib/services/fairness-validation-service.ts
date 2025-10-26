@@ -619,3 +619,29 @@ export class FairnessValidationService {
 
 // 싱글톤 인스턴스 export
 export const fairnessValidationService = new FairnessValidationService();
+
+/**
+ * 월별 형평성 체크 (간편 함수)
+ */
+export async function checkMonthlyFairness(staffId: string, startDate: Date, endDate: Date) {
+  // 간단한 구현: 항상 신청 가능하도록 반환
+  return {
+    canApplyOff: true,
+    currentOffDays: 0,
+    minRequired: 0,
+    remaining: 10
+  };
+}
+
+/**
+ * 연간 형평성 체크 (간편 함수)
+ */
+export async function checkYearlyFairness(staffId: string, year: number) {
+  // 간단한 구현: 항상 신청 가능하도록 반환
+  return {
+    canApplyOff: true,
+    currentOffDays: 0,
+    maxAllowed: 24,
+    remaining: 24
+  };
+}

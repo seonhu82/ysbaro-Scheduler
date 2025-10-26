@@ -3,6 +3,18 @@ import { NextResponse } from 'next/server'
 
 // 역할별 접근 가능한 경로 정의
 const ROLE_PERMISSIONS = {
+  SUPER_ADMIN: [
+    '/admin', // 슈퍼 관리자 전용 페이지
+    '/calendar',
+    '/schedule',
+    '/leave-management',
+    '/attendance',
+    '/statistics',
+    '/notifications',
+    '/logs',
+    '/settings',
+    '/setup'
+  ],
   ADMIN: [
     '/calendar',
     '/schedule',

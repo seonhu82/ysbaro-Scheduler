@@ -45,6 +45,30 @@ export const authConfig: NextAuthConfig = {
             return null
           }
 
+          // Check account status
+          if (user.accountStatus === 'PENDING') {
+            throw new Error('계정 승인 대기 중입니다. 관리자의 승인을 기다려주세요.')
+          }
+
+          if (user.accountStatus === 'REJECTED') {
+            throw new Error('계정 승인이 거절되었습니다.')
+          }
+
+          if (user.accountStatus === 'SUSPENDED') {
+            const until = user.suspendedUntil
+              ? ` (${new Date(user.suspendedUntil).toLocaleDateString('ko-KR')}까지)`
+              : ''
+            throw new Error(`계정이 정지되었습니다${until}. 사유: ${user.suspendedReason || '미지정'}`)
+          }
+
+          if (user.accountStatus === 'DELETED') {
+            throw new Error('삭제된 계정입니다.')
+          }
+
+          if (user.accountStatus !== 'APPROVED') {
+            throw new Error('로그인할 수 없는 계정 상태입니다.')
+          }
+
           // Return user object
           return {
             id: user.id,
@@ -53,6 +77,7 @@ export const authConfig: NextAuthConfig = {
             role: user.role,
             clinicId: user.clinicId || '',
             clinicName: user.clinic?.name || '',
+            accountStatus: user.accountStatus,
           }
         } catch (error) {
           console.error('Auth error:', error)
@@ -69,6 +94,7 @@ export const authConfig: NextAuthConfig = {
         token.role = (user as any).role
         token.clinicId = (user as any).clinicId
         token.clinicName = (user as any).clinicName
+        token.accountStatus = (user as any).accountStatus
       }
       return token
     },
@@ -79,6 +105,7 @@ export const authConfig: NextAuthConfig = {
         (session.user as any).role = token.role as string
         (session.user as any).clinicId = token.clinicId as string
         (session.user as any).clinicName = token.clinicName as string
+        (session.user as any).accountStatus = token.accountStatus as string
       }
       return session
     },
@@ -127,4 +154,25 @@ export function isAdmin(userRole: string): boolean {
  */
 export function isManagerOrAdmin(userRole: string): boolean {
   return ['ADMIN', 'MANAGER'].includes(userRole)
+}
+
+/**
+ * Check if user is super admin
+ */
+export function isSuperAdmin(userRole: string): boolean {
+  return userRole === 'SUPER_ADMIN'
+}
+
+/**
+ * Check if user is super admin or admin
+ */
+export function isSuperAdminOrAdmin(userRole: string): boolean {
+  return ['SUPER_ADMIN', 'ADMIN'].includes(userRole)
+}
+
+/**
+ * Check if user has admin privileges (SUPER_ADMIN, ADMIN, or MANAGER)
+ */
+export function hasAdminPrivileges(userRole: string): boolean {
+  return ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole)
 }

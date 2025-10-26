@@ -20,8 +20,28 @@ async function main() {
   })
   console.log(`✅ Clinic created: ${clinic.name}`)
 
-  // 2. 관리자 계정 생성
-  console.log('👤 Creating admin user...')
+  // 2. 슈퍼 관리자 계정 생성 (시스템 관리자)
+  console.log('🔑 Creating SUPER ADMIN user...')
+  const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || 'superadmin@yonsedental.com'
+  const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD || 'SuperAdmin2025!'
+  const superAdminPassword = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 10)
+  const superAdmin = await prisma.user.upsert({
+    where: { email: SUPER_ADMIN_EMAIL },
+    update: {},
+    create: {
+      email: SUPER_ADMIN_EMAIL,
+      password: superAdminPassword,
+      name: '시스템 관리자',
+      role: UserRole.SUPER_ADMIN,
+      accountStatus: 'APPROVED', // 슈퍼 관리자는 자동 승인
+      approvedAt: new Date(),
+      clinicId: null, // 슈퍼 관리자는 특정 병원에 속하지 않음
+    },
+  })
+  console.log(`✅ SUPER ADMIN created: ${superAdmin.email}`)
+
+  // 3. 병원 관리자 계정 생성
+  console.log('👤 Creating clinic admin user...')
   const hashedPassword = await bcrypt.hash('admin123!', 10)
   const adminUser = await prisma.user.upsert({
     where: { email: 'admin@dental.com' },
@@ -29,14 +49,17 @@ async function main() {
     create: {
       email: 'admin@dental.com',
       password: hashedPassword,
-      name: '관리자',
+      name: '병원 관리자',
       role: UserRole.ADMIN,
+      accountStatus: 'APPROVED', // 초기 관리자는 자동 승인
+      approvedAt: new Date(),
+      approvedBy: superAdmin.id, // 슈퍼 관리자가 승인한 것으로 기록
       clinicId: clinic.id,
     },
   })
-  console.log(`✅ Admin user created: ${adminUser.email}`)
+  console.log(`✅ Clinic admin user created: ${adminUser.email}`)
 
-  // 3. 원장 5명 생성
+  // 4. 원장 5명 생성
   console.log('⚕️  Creating doctors...')
   const doctors = await Promise.all([
     prisma.doctor.upsert({

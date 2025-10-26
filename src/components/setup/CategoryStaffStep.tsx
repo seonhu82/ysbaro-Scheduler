@@ -255,9 +255,8 @@ export function CategoryStaffStep({
               </div>
 
               {/* 내용 */}
-              <div className="p-4 bg-white space-y-4">{
-                <div className="p-4 bg-white space-y-4">
-                  {Object.entries(combination.departmentRequiredStaff)
+              <div className="p-4 bg-white space-y-4">
+                {Object.entries(combination.departmentRequiredStaff)
                     .filter(([_, count]) => count > 0)
                     .map(([deptName, deptRequired]) => {
                       // 이 부서의 직원들
@@ -392,8 +391,7 @@ export function CategoryStaffStep({
                         </div>
                       )
                     })}
-                </div>
-              )}
+              </div>
             </div>
           )
         })}

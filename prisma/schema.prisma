@@ -15,9 +15,18 @@ generator client {
 // ============================================
 
 enum UserRole {
-  ADMIN // 시스템 관리자
-  MANAGER // 병원 관리자
-  STAFF // 일반 직원
+  SUPER_ADMIN // 시스템 전체 관리자 (개발자)
+  ADMIN // 병원 시스템 관리자
+  MANAGER // 병원 관리자 (스케줄 관리 권한)
+  STAFF // 일반 직원 (조회만 가능)
+}
+
+enum AccountStatus {
+  PENDING // 가입 대기 (승인 필요)
+  APPROVED // 승인됨
+  REJECTED // 거절됨
+  SUSPENDED // 정지됨
+  DELETED // 삭제됨
 }
 
 model User {
@@ -26,6 +35,15 @@ model User {
   password  String
   name      String
   role      UserRole @default(STAFF)
+
+  // 가입 승인 관련 필드
+  accountStatus   AccountStatus @default(PENDING)
+  approvedBy      String? // 승인자 User ID
+  approvedAt      DateTime?
+  rejectedReason  String?
+  suspendedReason String?
+  suspendedUntil  DateTime?
+
   clinicId  String?
   clinic    Clinic?  @relation(fields: [clinicId], references: [id])
   createdAt DateTime @default(now())
@@ -35,9 +53,13 @@ model User {
   notifications       Notification[]
   activityLogs        ActivityLog[]
   passwordResetTokens PasswordResetToken[]
+  approvedUsers       User[]         @relation("UserApprovals") // 내가 승인한 사용자들
+  approver            User?          @relation("UserApprovals", fields: [approvedBy], references: [id])
 
   @@index([clinicId])
   @@index([email])
+  @@index([accountStatus])
+  @@index([role])
 }
 
 // 비밀번호 재설정 토큰
@@ -72,6 +94,7 @@ model Clinic {
   staffCategories      StaffCategory[]
   doctorCategories     DoctorCategory[]
   doctorCombinations   DoctorCombination[]
+  weeklyPatterns       WeeklyPattern[]
   closedDaySettings    ClosedDaySettings?
   schedules            Schedule[]
   holidays             Holiday[]
@@ -165,6 +188,45 @@ model DoctorCombination {
 
   @@index([clinicId])
   @@index([dayOfWeek])
+
+  // 관계
+  weeklyPatternDays WeeklyPatternDay[]
+}
+
+// 주간 패턴 (7일 조합 그룹)
+model WeeklyPattern {
+  id          String   @id @default(cuid())
+  clinicId    String
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name        String   // 패턴명 (예: "일반 주간 패턴", "여름 패턴")
+  description String?  // 패턴 설명
+  isDefault   Boolean  @default(false) // 기본 패턴 여부
+  isActive    Boolean  @default(true) // 활성화 여부
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 관계
+  days WeeklyPatternDay[]
+
+  @@index([clinicId])
+  @@index([isDefault])
+}
+
+// 주간 패턴의 각 요일별 조합
+model WeeklyPatternDay {
+  id                String   @id @default(cuid())
+  weeklyPatternId   String
+  weeklyPattern     WeeklyPattern      @relation(fields: [weeklyPatternId], references: [id], onDelete: Cascade)
+  dayOfWeek         String   // MONDAY, TUESDAY, ..., SUNDAY
+  combinationId     String?  // 배정된 의사 조합 ID (null이면 휴무일)
+  combination       DoctorCombination? @relation(fields: [combinationId], references: [id], onDelete: SetNull)
+  isClosedDay       Boolean  @default(false) // 휴무일 여부
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([weeklyPatternId, dayOfWeek])
+  @@index([weeklyPatternId])
+  @@index([combinationId])
 }
 
 // 휴업일 설정
@@ -729,6 +791,10 @@ enum NotificationType {
   LEAVE_CANCELLED // 연차 취소
   SCHEDULE_DEPLOYED // 스케줄 배포
   SYSTEM_ALERT // 시스템 알림
+  USER_REGISTRATION // 회원가입 알림 (관리자에게)
+  USER_APPROVED // 회원 승인 알림 (사용자에게)
+  USER_REJECTED // 회원 거절 알림 (사용자에게)
+  USER_SUSPENDED // 회원 정지 알림 (사용자에게)
 }
 
 model Notification {
@@ -758,6 +824,12 @@ enum ActivityType {
   SETTINGS_UPDATED
   USER_LOGIN
   USER_LOGOUT
+  USER_REGISTERED // 회원가입
+  USER_APPROVED // 회원 승인
+  USER_REJECTED // 회원 거절
+  USER_SUSPENDED // 회원 정지
+  USER_RESTORED // 회원 복구
+  USER_ROLE_CHANGED // 역할 변경
 }
 
 model ActivityLog {

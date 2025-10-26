@@ -45,7 +45,12 @@
       "Bash(timeout 200 npm run build:*)",
       "Bash(timeout 60 npx prisma db seed:*)",
       "Bash(timeout 10 tail:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(git checkout:*)",
+      "Bash(node check-braces.js:*)",
+      "Bash(node find-brace-issue.js:*)",
+      "Bash(node check-function-start.js:*)",
+      "Read(//d//**)"
     ],
     "deny": [],
     "ask": []
