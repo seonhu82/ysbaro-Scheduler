@@ -56,6 +56,14 @@ interface SetupData {
     dayOfWeek: string
     requiredStaff: number
     departmentRequiredStaff: { [departmentName: string]: number }
+    departmentCategoryStaff?: {
+      [departmentName: string]: {
+        [categoryName: string]: {
+          count: number
+          minRequired: number
+        }
+      }
+    }
     doctors: string[]
     hasNightShift: boolean
   }[]

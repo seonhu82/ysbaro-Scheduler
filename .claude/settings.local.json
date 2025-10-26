@@ -50,7 +50,8 @@
       "Bash(node check-braces.js:*)",
       "Bash(node find-brace-issue.js:*)",
       "Bash(node check-function-start.js:*)",
-      "Read(//d//**)"
+      "Read(//d//**)",
+      "Bash(git diff:*)"
     ],
     "deny": [],
     "ask": []

@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, rank, pin, phoneNumber, email } = body
+    const { name, rank, pin, phoneNumber, email, workType } = body
 
     // 유효성 검사
     if (!name || !rank || !pin) {
@@ -83,6 +83,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // workType 기본값 설정
+    const finalWorkType = workType || 'WEEK_5'
 
     // PIN 중복 체크
     const existingPin = await prisma.staff.findFirst({
@@ -108,8 +111,8 @@ export async function POST(request: NextRequest) {
         birthDateStr: '000101',
         departmentName: '미지정',
         categoryName: '미지정',
-        workType: 'WEEK_5',
-        workDays: 5,
+        workType: finalWorkType,
+        workDays: finalWorkType === 'WEEK_4' ? 4 : 5, // workType에 맞춰 workDays도 설정
         rank,
         pin,
         phoneNumber,

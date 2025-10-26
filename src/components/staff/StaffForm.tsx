@@ -22,7 +22,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
 import { UserPlus, Save } from 'lucide-react'
-import type { Staff, StaffRank } from './StaffList'
+import type { Staff, StaffRank, WorkType } from './StaffList'
 
 interface StaffFormProps {
   staff: Staff | null
@@ -38,6 +38,11 @@ const RANK_OPTIONS: { value: StaffRank; label: string }[] = [
   { value: 'OTHER', label: '기타' },
 ]
 
+const WORK_TYPE_OPTIONS: { value: WorkType; label: string; description: string }[] = [
+  { value: 'WEEK_5', label: '주5일 근무', description: '월~금 5일 근무' },
+  { value: 'WEEK_4', label: '주4일 근무', description: '주 4일 근무 (파트타임)' },
+]
+
 export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
   const { toast } = useToast()
   const [submitting, setSubmitting] = useState(false)
@@ -45,6 +50,7 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
   const [formData, setFormData] = useState({
     name: '',
     rank: 'HYGIENIST' as StaffRank,
+    workType: 'WEEK_5' as WorkType,
     pin: '',
     phoneNumber: '',
     email: '',
@@ -56,6 +62,7 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
       setFormData({
         name: staff.name,
         rank: staff.rank,
+        workType: staff.workType || 'WEEK_5',
         pin: '', // PIN은 수정 시 비워둠 (보안)
         phoneNumber: staff.phoneNumber || '',
         email: staff.email || '',
@@ -65,6 +72,7 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
       setFormData({
         name: '',
         rank: 'HYGIENIST',
+        workType: 'WEEK_5',
         pin: '',
         phoneNumber: '',
         email: '',
@@ -97,6 +105,7 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
       const body: any = {
         name: formData.name,
         rank: formData.rank,
+        workType: formData.workType,
         phoneNumber: formData.phoneNumber || null,
         email: formData.email || null,
         isActive: formData.isActive,
@@ -190,6 +199,36 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* 근무 형태 */}
+            <div>
+              <Label htmlFor="workType">
+                근무 형태 <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={formData.workType}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, workType: value as WorkType })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {WORK_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{option.label}</span>
+                        <span className="text-xs text-gray-500">{option.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                스케줄 자동 배치 시 주당 근무일수가 반영됩니다
+              </p>
             </div>
 
             {/* PIN */}

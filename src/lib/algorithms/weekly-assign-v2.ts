@@ -321,7 +321,21 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
 
               console.log(`        🔴 필수: ${category} (최소 ${minRequired}명)`)
 
-              // 가용 직원 필터링 (기존 로직과 동일)
+              // 이미 배치된 인원 확인
+              const alreadyAssigned = day.currentAssignments.filter(
+                a => {
+                  const staff = allActiveStaff.find(s => s.id === a.staffId)
+                  return staff?.departmentName === deptName && a.category === category
+                }
+              ).length
+
+              const needed = minRequired - alreadyAssigned
+              if (needed <= 0) {
+                console.log(`           ✅ 이미 충족됨 (${alreadyAssigned}/${minRequired}명)`)
+                continue
+              }
+
+              // 가용 직원 필터링 (해당 부서 + 구분)
               const availableStaff = allActiveStaff.filter(staff => {
                 if (staff.departmentName !== deptName) return false
                 if (staff.categoryName !== category) return false
@@ -337,8 +351,39 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
                 return true
               })
 
+              // 인원 부족 시 경고 및 다른 부서에서 차출 시도
+              if (availableStaff.length < needed) {
+                console.log(`           ⚠️ ${deptName}/${category}: 부서 내 인원 부족 (필요 ${needed}명, 가용 ${availableStaff.length}명)`)
+                console.log(`           🔄 다른 부서에서 ${category} 구분 직원 찾는 중...`)
+
+                // 다른 부서에서 같은 구분의 직원 찾기 (유연 배치)
+                const otherDeptStaff = allActiveStaff.filter(staff => {
+                  if (staff.departmentName === deptName) return false // 같은 부서는 제외
+                  if (staff.categoryName !== category) return false
+                  if (day.excludedStaff.has(staff.id)) return false
+                  if (assignedToday.has(staff.id)) return false
+                  const assignedDates = weeklyAssignments.get(staff.id)
+                  if (assignedDates?.has(day.dateKey)) return false
+                  const workStatus = staffWorkDayCount.get(staff.id)
+                  if (workStatus) {
+                    const totalDays = workStatus.current + workStatus.leave
+                    if (totalDays >= workStatus.required) return false
+                  }
+                  return true
+                })
+
+                if (otherDeptStaff.length > 0) {
+                  const additionalNeeded = needed - availableStaff.length
+                  const additionalStaff = otherDeptStaff.slice(0, additionalNeeded)
+                  availableStaff.push(...additionalStaff)
+                  console.log(`           ✅ 다른 부서에서 ${additionalStaff.length}명 찾음`)
+                } else {
+                  console.log(`           ❌ 다른 부서에서도 가용 인력 없음`)
+                }
+              }
+
               if (availableStaff.length === 0) {
-                console.log(`           ⚠️ ${deptName}/${category}: 필수 인력 부족`)
+                console.log(`           ❌ ${deptName}/${category}: 배치 불가 (가용 인력 없음)`)
                 continue
               }
 
@@ -350,7 +395,7 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
               staffWithScores.sort((a, b) => a.score - b.score)
 
               // 필수 인원만큼 배치
-              const toAssign = staffWithScores.slice(0, Math.min(minRequired, availableStaff.length))
+              const toAssign = staffWithScores.slice(0, Math.min(needed, availableStaff.length))
 
               toAssign.forEach(({ staff }) => {
                 const dates = weeklyAssignments.get(staff.id)!
@@ -363,7 +408,7 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
                 assignedCount++
               })
 
-              console.log(`           ✅ 필수 ${toAssign.length}명 배치`)
+              console.log(`           ✅ 필수 ${toAssign.length}/${needed}명 배치 (부족: ${needed - toAssign.length}명)`)
             }
 
             // 이제 일반 카테고리 배치 (필수 제외)

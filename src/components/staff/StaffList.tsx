@@ -18,11 +18,13 @@ import { StaffForm } from './StaffForm'
 import { useToast } from '@/hooks/use-toast'
 
 export type StaffRank = 'HYGIENIST' | 'ASSISTANT' | 'COORDINATOR' | 'NURSE' | 'OTHER'
+export type WorkType = 'WEEK_4' | 'WEEK_5'
 
 export interface Staff {
   id: string
   name: string
   rank: StaffRank
+  workType?: WorkType | null
   phoneNumber?: string | null
   email?: string | null
   isActive: boolean
@@ -49,6 +51,11 @@ const RANK_COLORS: Record<StaffRank, string> = {
   COORDINATOR: 'bg-purple-100 text-purple-800',
   NURSE: 'bg-pink-100 text-pink-800',
   OTHER: 'bg-gray-100 text-gray-800',
+}
+
+const WORK_TYPE_LABELS: Record<WorkType, string> = {
+  WEEK_4: '주4일',
+  WEEK_5: '주5일',
 }
 
 export function StaffList({ staff, onUpdate }: StaffListProps) {
@@ -183,6 +190,12 @@ export function StaffList({ staff, onUpdate }: StaffListProps) {
                       <Badge className={RANK_COLORS[s.rank]}>
                         {RANK_LABELS[s.rank]}
                       </Badge>
+
+                      {s.workType && (
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                          {WORK_TYPE_LABELS[s.workType]}
+                        </Badge>
+                      )}
 
                       {!s.isActive && (
                         <Badge variant="secondary">비활성</Badge>

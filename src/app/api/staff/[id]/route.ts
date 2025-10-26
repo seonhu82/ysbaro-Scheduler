@@ -71,17 +71,25 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { name, rank, phoneNumber, email, isActive } = body
+    const { name, rank, phoneNumber, email, isActive, workType } = body
+
+    // workType이 변경되면 workDays도 같이 업데이트
+    const updateData: any = {
+      ...(name && { name }),
+      ...(rank && { rank }),
+      ...(phoneNumber !== undefined && { phoneNumber }),
+      ...(email !== undefined && { email }),
+      ...(isActive !== undefined && { isActive }),
+    }
+
+    if (workType) {
+      updateData.workType = workType
+      updateData.workDays = workType === 'WEEK_4' ? 4 : 5
+    }
 
     const updated = await prisma.staff.update({
       where: { id: params.id },
-      data: {
-        ...(name && { name }),
-        ...(rank && { rank }),
-        ...(phoneNumber !== undefined && { phoneNumber }),
-        ...(email !== undefined && { email }),
-        ...(isActive !== undefined && { isActive }),
-      },
+      data: updateData,
     })
 
     return NextResponse.json({

@@ -85,8 +85,11 @@ export async function GET(request: NextRequest) {
         isActive: true
       },
       select: {
+        id: true,
         rank: true,
-        workType: true
+        workType: true,
+        departmentName: true,
+        categoryName: true
       }
     })
 
@@ -162,12 +165,101 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // 6. 직원별 통계
+    const staffDetails = await Promise.all(
+      staff.map(async (s) => {
+        const staffFull = await prisma.staff.findUnique({
+          where: { id: s.id },
+          select: {
+            id: true,
+            name: true,
+            departmentName: true,
+            categoryName: true,
+            workType: true,
+            rank: true
+          }
+        })
+
+        // 이 기간 동안의 연차/오프
+        const staffLeaves = leaveApplications.filter(l => l.staffId === s.id)
+
+        // 형평성 점수
+        const fairnessScores = await prisma.fairnessScore.findMany({
+          where: {
+            staffId: s.id,
+            year,
+            ...(month && { month })
+          }
+        })
+
+        // 출퇴근 기록
+        const staffAttendance = attendanceRecords.filter(a => a.staffId === s.id)
+
+        return {
+          ...staffFull,
+          leaves: {
+            total: staffLeaves.length,
+            annual: staffLeaves.filter(l => l.leaveType === 'ANNUAL').length,
+            off: staffLeaves.filter(l => l.leaveType === 'OFF').length
+          },
+          fairness: fairnessScores.reduce((acc, fs) => ({
+            nightShift: acc.nightShift + fs.nightShiftCount,
+            weekend: acc.weekend + fs.weekendCount,
+            holiday: acc.holiday + fs.holidayCount,
+            holidayAdjacent: acc.holidayAdjacent + fs.holidayAdjacentCount
+          }), { nightShift: 0, weekend: 0, holiday: 0, holidayAdjacent: 0 }),
+          attendance: {
+            total: staffAttendance.length,
+            checkIn: staffAttendance.filter(a => a.checkType === 'IN').length,
+            checkOut: staffAttendance.filter(a => a.checkType === 'OUT').length
+          }
+        }
+      })
+    )
+
+    // 7. 부서별 통계
+    const departments = Array.from(new Set(staff.map(s => s.departmentName).filter(Boolean)))
+    const departmentStats = departments.map(deptName => {
+      const deptStaff = staffDetails.filter(s => s.departmentName === deptName)
+      return {
+        name: deptName,
+        staffCount: deptStaff.length,
+        leaves: deptStaff.reduce((sum, s) => sum + s.leaves.total, 0),
+        attendance: deptStaff.reduce((sum, s) => sum + s.attendance.total, 0),
+        fairness: {
+          nightShift: deptStaff.reduce((sum, s) => sum + s.fairness.nightShift, 0),
+          weekend: deptStaff.reduce((sum, s) => sum + s.fairness.weekend, 0),
+          holiday: deptStaff.reduce((sum, s) => sum + s.fairness.holiday, 0)
+        }
+      }
+    })
+
+    // 8. 구분별 통계
+    const categories = Array.from(new Set(staff.map(s => s.categoryName).filter(Boolean)))
+    const categoryStats = categories.map(catName => {
+      const catStaff = staffDetails.filter(s => s.categoryName === catName)
+      return {
+        name: catName,
+        staffCount: catStaff.length,
+        leaves: catStaff.reduce((sum, s) => sum + s.leaves.total, 0),
+        attendance: catStaff.reduce((sum, s) => sum + s.attendance.total, 0),
+        fairness: {
+          nightShift: catStaff.reduce((sum, s) => sum + s.fairness.nightShift, 0),
+          weekend: catStaff.reduce((sum, s) => sum + s.fairness.weekend, 0),
+          holiday: catStaff.reduce((sum, s) => sum + s.fairness.holiday, 0)
+        }
+      }
+    })
+
     return successResponse({
       period: month ? `${year}-${month.toString().padStart(2, '0')}` : `${year}`,
       schedules: scheduleStats,
       leaves: leaveStats,
       staff: staffStats,
       attendance: attendanceStats,
+      staffDetails,
+      departments: departmentStats,
+      categories: categoryStats,
       ...(monthlyTrend && { monthlyTrend })
     })
   } catch (error) {
