@@ -8,6 +8,10 @@ interface FairnessSettings {
   enableHolidayFairness: boolean
   enableHolidayAdjacentFairness: boolean
   fairnessThreshold: number
+  nightShiftWeight: number
+  weekendWeight: number
+  holidayWeight: number
+  holidayAdjacentWeight: number
 }
 
 interface FairnessScore {
@@ -26,6 +30,10 @@ export default function FairnessSettingsPage() {
     enableHolidayFairness: true,
     enableHolidayAdjacentFairness: false,
     fairnessThreshold: 0.2,
+    nightShiftWeight: 1.5,
+    weekendWeight: 1.0,
+    holidayWeight: 2.0,
+    holidayAdjacentWeight: 0.5,
   })
   const [scores, setScores] = useState<FairnessScore[]>([])
   const [loading, setLoading] = useState(true)
@@ -163,6 +171,48 @@ export default function FairnessSettingsPage() {
         </div>
       </div>
 
+      {/* 형평성 가중치 */}
+      <div className="bg-white p-6 rounded-lg shadow space-y-6">
+        <h2 className="text-xl font-semibold">형평성 가중치</h2>
+        <p className="text-sm text-gray-600">
+          각 근무 유형의 중요도를 설정합니다. 가중치가 높을수록 형평성 계산 시 더 큰 영향을 미칩니다.
+        </p>
+        <div className="space-y-4">
+          <WeightSlider
+            label="야간 근무 가중치"
+            value={settings.nightShiftWeight}
+            onChange={(value) => setSettings({ ...settings, nightShiftWeight: value })}
+            disabled={!settings.enableNightShiftFairness}
+          />
+          <WeightSlider
+            label="주말 근무 가중치"
+            value={settings.weekendWeight}
+            onChange={(value) => setSettings({ ...settings, weekendWeight: value })}
+            disabled={!settings.enableWeekendFairness}
+          />
+          <WeightSlider
+            label="공휴일 근무 가중치"
+            value={settings.holidayWeight}
+            onChange={(value) => setSettings({ ...settings, holidayWeight: value })}
+            disabled={!settings.enableHolidayFairness}
+          />
+          <WeightSlider
+            label="공휴일 인접일 가중치"
+            value={settings.holidayAdjacentWeight}
+            onChange={(value) => setSettings({ ...settings, holidayAdjacentWeight: value })}
+            disabled={!settings.enableHolidayAdjacentFairness}
+          />
+        </div>
+        <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+          <p className="text-sm text-blue-800">
+            <strong>가중치 계산 예시:</strong><br/>
+            야간 1회 (가중치 {settings.nightShiftWeight}) = 점수 {settings.nightShiftWeight}<br/>
+            주말 1회 (가중치 {settings.weekendWeight}) = 점수 {settings.weekendWeight}<br/>
+            공휴일 1회 (가중치 {settings.holidayWeight}) = 점수 {settings.holidayWeight}
+          </p>
+        </div>
+      </div>
+
       {/* 현재 형평성 점수 */}
       <div className="bg-white p-6 rounded-lg shadow space-y-6">
         <div className="flex justify-between items-center">
@@ -255,6 +305,44 @@ function SettingToggle({
         />
         <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
       </label>
+    </div>
+  )
+}
+
+/**
+ * 가중치 슬라이더 컴포넌트
+ */
+function WeightSlider({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className={disabled ? 'opacity-50' : ''}>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        {label}: <strong>{value.toFixed(1)}</strong>
+      </label>
+      <input
+        type="range"
+        min="0"
+        max="3"
+        step="0.1"
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        disabled={disabled}
+        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:cursor-not-allowed"
+      />
+      <div className="flex justify-between text-xs text-gray-500 mt-1">
+        <span>0 (무시)</span>
+        <span>1.0 (보통)</span>
+        <span>3.0 (매우 중요)</span>
+      </div>
     </div>
   )
 }
