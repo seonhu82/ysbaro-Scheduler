@@ -36,6 +36,10 @@ export async function GET() {
           enableHolidayFairness: true,
           enableHolidayAdjacentFairness: false,
           fairnessThreshold: 0.2,
+          nightShiftWeight: 1.5,
+          weekendWeight: 1.0,
+          holidayWeight: 2.0,
+          holidayAdjacentWeight: 0.5,
         },
       })
     }
