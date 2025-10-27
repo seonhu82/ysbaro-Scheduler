@@ -717,10 +717,6 @@ model FairnessSettings {
   enableHolidayFairness         Boolean  @default(true) // 공휴일 근무 형평성 사용
   enableHolidayAdjacentFairness Boolean  @default(false) // 공휴일 전후 근무 형평성 사용
   fairnessThreshold             Float    @default(0.2) // 형평성 허용 오차 (20%)
-  nightShiftWeight              Float    @default(1.5) // 야간 근무 가중치
-  weekendWeight                 Float    @default(1.0) // 주말 근무 가중치
-  holidayWeight                 Float    @default(2.0) // 공휴일 근무 가중치
-  holidayAdjacentWeight         Float    @default(0.5) // 공휴일 인접일 가중치
   createdAt                     DateTime @default(now())
   updatedAt                     DateTime @updatedAt
 }
