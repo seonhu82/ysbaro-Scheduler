@@ -3,6 +3,25 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Download, FileSpreadsheet, FileText } from 'lucide-react'
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts'
+import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 interface StatisticsData {
   period: string
@@ -32,6 +51,31 @@ interface StatisticsData {
     checkOut: number
     suspicious: number
   }
+  staffDetails?: Array<{
+    id: string
+    name: string
+    departmentName: string
+    categoryName: string
+    workType: string
+    rank: string
+    leaves: { total: number; annual: number; off: number }
+    fairness: { nightShift: number; weekend: number; holiday: number; holidayAdjacent: number }
+    attendance: { total: number; checkIn: number; checkOut: number }
+  }>
+  departments?: Array<{
+    name: string
+    staffCount: number
+    leaves: number
+    attendance: number
+    fairness: { nightShift: number; weekend: number; holiday: number }
+  }>
+  categories?: Array<{
+    name: string
+    staffCount: number
+    leaves: number
+    attendance: number
+    fairness: { nightShift: number; weekend: number; holiday: number }
+  }>
   monthlyTrend?: Array<{
     month: number
     schedules: number
@@ -39,6 +83,8 @@ interface StatisticsData {
     attendance: number
   }>
 }
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
 export default function StatisticsPage() {
   const [data, setData] = useState<StatisticsData | null>(null)
@@ -73,8 +119,204 @@ export default function StatisticsPage() {
 
   const handlePrevYear = () => setYear(year - 1)
   const handleNextYear = () => setYear(year + 1)
-
   const handleMonthSelect = (m: number | null) => setMonth(m)
+
+  // 엑셀 다운로드
+  const downloadExcel = () => {
+    if (!data) return
+
+    const wb = XLSX.utils.book_new()
+
+    // 1. 요약 시트
+    const summaryData = [
+      ['기간', data.period],
+      [],
+      ['스케줄 통계'],
+      ['총 스케줄', data.schedules.total],
+      ['임시저장', data.schedules.draft],
+      ['확정', data.schedules.confirmed],
+      ['배포', data.schedules.deployed],
+      ['총 배정 수', data.schedules.totalAssignments],
+      [],
+      ['연차 통계'],
+      ['총 신청', data.leaves.total],
+      ['대기', data.leaves.pending],
+      ['승인', data.leaves.approved],
+      ['거절', data.leaves.rejected],
+      ['연차', data.leaves.annual],
+      ['오프', data.leaves.off],
+      [],
+      ['직원 통계'],
+      ['총 직원', data.staff.total],
+      [],
+      ['출퇴근 통계'],
+      ['총 기록', data.attendance.total],
+      ['출근', data.attendance.checkIn],
+      ['퇴근', data.attendance.checkOut],
+      ['의심 기록', data.attendance.suspicious]
+    ]
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryData)
+    XLSX.utils.book_append_sheet(wb, summarySheet, '요약')
+
+    // 2. 부서별 통계
+    if (data.departments && data.departments.length > 0) {
+      const deptData = data.departments.map(d => ({
+        부서: d.name,
+        직원수: d.staffCount,
+        연차사용: d.leaves,
+        출퇴근기록: d.attendance,
+        야간근무: d.fairness.nightShift,
+        주말근무: d.fairness.weekend,
+        공휴일근무: d.fairness.holiday
+      }))
+      const deptSheet = XLSX.utils.json_to_sheet(deptData)
+      XLSX.utils.book_append_sheet(wb, deptSheet, '부서별 통계')
+    }
+
+    // 3. 구분별 통계
+    if (data.categories && data.categories.length > 0) {
+      const catData = data.categories.map(c => ({
+        구분: c.name,
+        직원수: c.staffCount,
+        연차사용: c.leaves,
+        출퇴근기록: c.attendance,
+        야간근무: c.fairness.nightShift,
+        주말근무: c.fairness.weekend,
+        공휴일근무: c.fairness.holiday
+      }))
+      const catSheet = XLSX.utils.json_to_sheet(catData)
+      XLSX.utils.book_append_sheet(wb, catSheet, '구분별 통계')
+    }
+
+    // 4. 직원별 상세
+    if (data.staffDetails && data.staffDetails.length > 0) {
+      const staffData = data.staffDetails.map(s => ({
+        이름: s.name,
+        부서: s.departmentName,
+        구분: s.categoryName,
+        근무형태: s.workType,
+        총연차: s.leaves.total,
+        연차: s.leaves.annual,
+        오프: s.leaves.off,
+        야간근무: s.fairness.nightShift,
+        주말근무: s.fairness.weekend,
+        공휴일근무: s.fairness.holiday,
+        출퇴근기록: s.attendance.total
+      }))
+      const staffSheet = XLSX.utils.json_to_sheet(staffData)
+      XLSX.utils.book_append_sheet(wb, staffSheet, '직원별 상세')
+    }
+
+    // 5. 월별 추이
+    if (data.monthlyTrend) {
+      const trendData = data.monthlyTrend.map(t => ({
+        월: `${t.month}월`,
+        스케줄: t.schedules,
+        연차: t.leaves,
+        출퇴근: t.attendance
+      }))
+      const trendSheet = XLSX.utils.json_to_sheet(trendData)
+      XLSX.utils.book_append_sheet(wb, trendSheet, '월별 추이')
+    }
+
+    XLSX.writeFile(wb, `통계_${data.period}.xlsx`)
+  }
+
+  // PDF 다운로드
+  const downloadPDF = () => {
+    if (!data) return
+
+    const doc = new jsPDF()
+
+    // 한글 폰트 문제로 영문으로 표시 (실제로는 한글 폰트 추가 필요)
+    doc.setFontSize(18)
+    doc.text(`Statistics Report - ${data.period}`, 14, 22)
+
+    let yPos = 40
+
+    // 요약 통계
+    doc.setFontSize(14)
+    doc.text('Summary', 14, yPos)
+    yPos += 10
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Category', 'Total', 'Draft', 'Confirmed', 'Deployed']],
+      body: [
+        ['Schedules', data.schedules.total, data.schedules.draft, data.schedules.confirmed, data.schedules.deployed]
+      ],
+      theme: 'grid'
+    })
+
+    yPos = (doc as any).lastAutoTable.finalY + 15
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [['Category', 'Total', 'Pending', 'Approved', 'Rejected']],
+      body: [
+        ['Leave Applications', data.leaves.total, data.leaves.pending, data.leaves.approved, data.leaves.rejected]
+      ],
+      theme: 'grid'
+    })
+
+    yPos = (doc as any).lastAutoTable.finalY + 15
+
+    // 부서별 통계
+    if (data.departments && data.departments.length > 0) {
+      if (yPos > 250) {
+        doc.addPage()
+        yPos = 20
+      }
+
+      doc.setFontSize(14)
+      doc.text('Department Statistics', 14, yPos)
+      yPos += 10
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Department', 'Staff', 'Leaves', 'Night Shift', 'Weekend', 'Holiday']],
+        body: data.departments.map(d => [
+          d.name,
+          d.staffCount,
+          d.leaves,
+          d.fairness.nightShift,
+          d.fairness.weekend,
+          d.fairness.holiday
+        ]),
+        theme: 'striped'
+      })
+
+      yPos = (doc as any).lastAutoTable.finalY + 15
+    }
+
+    // 구분별 통계
+    if (data.categories && data.categories.length > 0) {
+      if (yPos > 250) {
+        doc.addPage()
+        yPos = 20
+      }
+
+      doc.setFontSize(14)
+      doc.text('Category Statistics', 14, yPos)
+      yPos += 10
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Category', 'Staff', 'Leaves', 'Night Shift', 'Weekend', 'Holiday']],
+        body: data.categories.map(c => [
+          c.name,
+          c.staffCount,
+          c.leaves,
+          c.fairness.nightShift,
+          c.fairness.weekend,
+          c.fairness.holiday
+        ]),
+        theme: 'striped'
+      })
+    }
+
+    doc.save(`statistics_${data.period}.pdf`)
+  }
 
   if (loading) {
     return (
@@ -94,9 +336,22 @@ export default function StatisticsPage() {
     )
   }
 
+  // 차트 데이터 준비
+  const scheduleChartData = [
+    { name: '임시저장', value: data.schedules.draft, fill: COLORS[0] },
+    { name: '확정', value: data.schedules.confirmed, fill: COLORS[1] },
+    { name: '배포', value: data.schedules.deployed, fill: COLORS[2] }
+  ]
+
+  const leaveChartData = [
+    { name: '대기', value: data.leaves.pending, fill: COLORS[3] },
+    { name: '승인', value: data.leaves.approved, fill: COLORS[1] },
+    { name: '거절', value: data.leaves.rejected, fill: COLORS[0] }
+  ]
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">통계 대시보드</h1>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -120,13 +375,21 @@ export default function StatisticsPage() {
               </option>
             ))}
           </select>
+          <Button onClick={downloadExcel} variant="outline" size="sm" className="gap-2">
+            <FileSpreadsheet className="w-4 h-4" />
+            엑셀
+          </Button>
+          <Button onClick={downloadPDF} variant="outline" size="sm" className="gap-2">
+            <FileText className="w-4 h-4" />
+            PDF
+          </Button>
         </div>
       </div>
 
-      <div className="text-sm text-gray-600 mb-4">기간: {data.period}</div>
+      <div className="text-sm text-gray-600">기간: {data.period}</div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">스케줄</CardTitle>
@@ -174,136 +437,152 @@ export default function StatisticsPage() {
         </Card>
       </div>
 
-      {/* 상세 통계 */}
+      {/* 차트 섹션 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 스케줄 상세 */}
+        {/* 스케줄 상태 차트 */}
         <Card>
           <CardHeader>
-            <CardTitle>스케줄 상태</CardTitle>
+            <CardTitle>스케줄 상태 분포</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>임시저장</span>
-                <span className="font-semibold">{data.schedules.draft}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>확정</span>
-                <span className="font-semibold">{data.schedules.confirmed}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>배포</span>
-                <span className="font-semibold">{data.schedules.deployed}</span>
-              </div>
-              <div className="flex justify-between border-t pt-2">
-                <span>총 배정 수</span>
-                <span className="font-semibold">{data.schedules.totalAssignments}</span>
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={scheduleChartData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {scheduleChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        {/* 연차 상세 */}
+        {/* 연차 신청 상태 차트 */}
         <Card>
           <CardHeader>
             <CardTitle>연차 신청 현황</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>대기</span>
-                <span className="font-semibold text-yellow-600">{data.leaves.pending}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>승인</span>
-                <span className="font-semibold text-green-600">{data.leaves.approved}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>거절</span>
-                <span className="font-semibold text-red-600">{data.leaves.rejected}</span>
-              </div>
-              <div className="flex justify-between border-t pt-2">
-                <span>연차</span>
-                <span className="font-semibold">{data.leaves.annual}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>오프</span>
-                <span className="font-semibold">{data.leaves.off}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 직원 직급별 */}
-        <Card>
-          <CardHeader>
-            <CardTitle>직급별 직원 수</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {Object.entries(data.staff.byRank).map(([rank, count]) => (
-                <div key={rank} className="flex justify-between">
-                  <span>{rank}</span>
-                  <span className="font-semibold">{count}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 출퇴근 상세 */}
-        <Card>
-          <CardHeader>
-            <CardTitle>출퇴근 기록</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>출근</span>
-                <span className="font-semibold">{data.attendance.checkIn}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>퇴근</span>
-                <span className="font-semibold">{data.attendance.checkOut}</span>
-              </div>
-              <div className="flex justify-between text-red-600">
-                <span>의심 기록</span>
-                <span className="font-semibold">{data.attendance.suspicious}</span>
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={leaveChartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#8884d8">
+                  {leaveChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
 
-      {/* 월별 추이 (연간 조회시) */}
-      {data.monthlyTrend && (
-        <Card className="mt-6">
+      {/* 부서별 통계 */}
+      {data.departments && data.departments.length > 0 && (
+        <Card>
           <CardHeader>
-            <CardTitle>월별 추이</CardTitle>
+            <CardTitle>부서별 통계</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-2">월</th>
-                    <th className="text-right py-2">스케줄</th>
-                    <th className="text-right py-2">연차</th>
-                    <th className="text-right py-2">출퇴근</th>
+                    <th className="text-left py-2">부서</th>
+                    <th className="text-right py-2">직원 수</th>
+                    <th className="text-right py-2">연차 사용</th>
+                    <th className="text-right py-2">야간 근무</th>
+                    <th className="text-right py-2">주말 근무</th>
+                    <th className="text-right py-2">공휴일 근무</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.monthlyTrend.map((trend) => (
-                    <tr key={trend.month} className="border-b">
-                      <td className="py-2">{trend.month}월</td>
-                      <td className="text-right">{trend.schedules}</td>
-                      <td className="text-right">{trend.leaves}</td>
-                      <td className="text-right">{trend.attendance}</td>
+                  {data.departments.map((dept, idx) => (
+                    <tr key={idx} className="border-b">
+                      <td className="py-2">{dept.name}</td>
+                      <td className="text-right">{dept.staffCount}</td>
+                      <td className="text-right">{dept.leaves}</td>
+                      <td className="text-right">{dept.fairness.nightShift}</td>
+                      <td className="text-right">{dept.fairness.weekend}</td>
+                      <td className="text-right">{dept.fairness.holiday}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 구분별 통계 */}
+      {data.categories && data.categories.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>구분별 통계</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2">구분</th>
+                    <th className="text-right py-2">직원 수</th>
+                    <th className="text-right py-2">연차 사용</th>
+                    <th className="text-right py-2">야간 근무</th>
+                    <th className="text-right py-2">주말 근무</th>
+                    <th className="text-right py-2">공휴일 근무</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.categories.map((cat, idx) => (
+                    <tr key={idx} className="border-b">
+                      <td className="py-2">{cat.name}</td>
+                      <td className="text-right">{cat.staffCount}</td>
+                      <td className="text-right">{cat.leaves}</td>
+                      <td className="text-right">{cat.fairness.nightShift}</td>
+                      <td className="text-right">{cat.fairness.weekend}</td>
+                      <td className="text-right">{cat.fairness.holiday}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 월별 추이 (연간 조회시) */}
+      {data.monthlyTrend && (
+        <Card>
+          <CardHeader>
+            <CardTitle>월별 추이</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={data.monthlyTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" label={{ value: '월', position: 'insideBottomRight', offset: -5 }} />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="schedules" stroke="#3b82f6" name="스케줄" />
+                <Line type="monotone" dataKey="leaves" stroke="#10b981" name="연차" />
+                <Line type="monotone" dataKey="attendance" stroke="#f59e0b" name="출퇴근" />
+              </LineChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       )}
