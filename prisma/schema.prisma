@@ -440,10 +440,20 @@ model StaffAssignment {
   shiftType  ShiftType
   createdAt  DateTime  @default(now())
 
+  // 🆕 실제 출퇴근 시간 (출퇴근 연동)
+  actualCheckInTime  DateTime?
+  actualCheckOutTime DateTime?
+
+  // 🆕 출퇴근 기록 연결
+  attendanceRecords AttendanceRecord[]
+
   @@unique([scheduleId, staffId, date])
   @@index([scheduleId])
   @@index([staffId])
   @@index([date])
+  // 🚀 복합 인덱스 (쿼리 최적화)
+  @@index([staffId, date], name: "assignment_staff_date")
+  @@index([date, shiftType], name: "assignment_date_shift")
 }
 
 // ============================================
@@ -591,6 +601,8 @@ model DailyStaffAssignment {
   @@unique([dailySlotId, staffId])
   @@index([dailySlotId])
   @@index([staffId])
+  // 🚀 복합 인덱스 (쿼리 최적화)
+  @@index([dailySlotId, staffId], name: "daily_slot_staff")
 }
 
 enum ApplicationStatus {
@@ -629,6 +641,10 @@ model LeaveApplication {
   @@index([staffId])
   @@index([date])
   @@index([status])
+  // 🚀 복합 인덱스 (쿼리 최적화)
+  @@index([clinicId, date, status], name: "leave_clinic_date_status")
+  @@index([staffId, date], name: "leave_staff_date")
+  @@index([status, date], name: "leave_status_date")
 }
 
 // ============================================
@@ -801,6 +817,9 @@ model FairnessScore {
   @@unique([staffId, year, month])
   @@index([staffId])
   @@index([year, month])
+  // 🚀 복합 인덱스 (쿼리 최적화)
+  @@index([staffId, year], name: "fairness_staff_year")
+  @@index([year, month], name: "fairness_year_month")
 }
 
 // ============================================
@@ -852,6 +871,25 @@ enum ActivityType {
   USER_SUSPENDED // 회원 정지
   USER_RESTORED // 회원 복구
   USER_ROLE_CHANGED // 역할 변경
+
+  // 🆕 추가 이벤트 타입
+  WEEKLY_ASSIGNMENT_STARTED // 주간 배치 시작
+  WEEKLY_ASSIGNMENT_COMPLETED // 주간 배치 완료
+  WEEKLY_ASSIGNMENT_FAILED // 주간 배치 실패
+  REASSIGNMENT_TRIGGERED // 재배치 트리거
+  REASSIGNMENT_COMPLETED // 재배치 완료
+  ONHOLD_AUTO_APPROVED // ON_HOLD 자동 승인
+  LEAVE_REJECTED // 연차 거절
+  ATTENDANCE_CHECKED // 출퇴근 체크
+  ATTENDANCE_SUSPICIOUS // 의심스러운 출퇴근
+  BACKUP_CREATED // 백업 생성
+  BACKUP_RESTORED // 백업 복원
+  STAFF_CREATED // 직원 생성
+  STAFF_UPDATED // 직원 수정
+  STAFF_DELETED // 직원 삭제
+  DEPARTMENT_CREATED // 부서 생성
+  DEPARTMENT_UPDATED // 부서 수정
+  DEPARTMENT_DELETED // 부서 삭제
 }
 
 model ActivityLog {
@@ -870,6 +908,10 @@ model ActivityLog {
   @@index([clinicId])
   @@index([userId])
   @@index([createdAt])
+  // 🚀 복합 인덱스 (쿼리 최적화)
+  @@index([clinicId, createdAt], name: "activity_clinic_time")
+  @@index([userId, createdAt], name: "activity_user_time")
+  @@index([activityType, createdAt], name: "activity_type_time")
 }
 
 // ============================================
@@ -1075,6 +1117,12 @@ model AttendanceRecord {
   isSuspicious     Boolean @default(false)
   suspiciousReason String? // 의심 사유
 
+  // 🆕 스케줄 연동
+  staffAssignmentId String? // StaffAssignment와 연결
+  staffAssignment   StaffAssignment? @relation(fields: [staffAssignmentId], references: [id], onDelete: SetNull)
+  isScheduled       Boolean @default(true) // 스케줄에 예정된 근무인지 여부
+  scheduleNote      String? // 스케줄 관련 메모 (예: 스케줄에 없는 근무)
+
   notes String?
 
   createdAt DateTime @default(now())
@@ -1084,5 +1132,10 @@ model AttendanceRecord {
   @@index([staffId])
   @@index([date])
   @@index([checkType])
+  @@index([staffAssignmentId])
   @@index([isSuspicious])
+  // 🚀 복합 인덱스 (쿼리 최적화)
+  @@index([clinicId, date], name: "attendance_clinic_date")
+  @@index([staffId, date, checkType], name: "attendance_staff_date_type")
+  @@index([date, isSuspicious], name: "attendance_date_suspicious")
 }

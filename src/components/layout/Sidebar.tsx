@@ -88,7 +88,7 @@ export function Sidebar() {
   )
 
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 min-h-screen">
+    <aside className="hidden md:block w-64 bg-white border-r border-gray-200 min-h-screen">
       <nav className="px-4 py-6 space-y-2">
         {filteredNav.map((item) => {
           const isActive = pathname?.startsWith(item.href)

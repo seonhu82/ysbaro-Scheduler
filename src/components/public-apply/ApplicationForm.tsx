@@ -5,12 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { AlertCircle, Calendar, User, MessageSquare } from 'lucide-react'
 import { DateSelector } from './DateSelector'
 import { TypeSelector } from './TypeSelector'
 import { RealTimeStatus } from './RealTimeStatus'
+import { FormField, TextInput, Textarea as AccessibleTextarea } from '@/components/ui/form-field'
+import { LeaveTypeBadge } from '@/components/ui/status-badge'
+import { announceToScreenReader } from '@/lib/utils/accessibility'
+import { SkeletonCard, SkeletonText } from '@/components/ui/skeleton'
 
 type LeaveType = 'ANNUAL' | 'OFF'
 
@@ -50,6 +53,7 @@ export function ApplicationForm({
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
+  const [fieldErrors, setFieldErrors] = useState<{ reason?: string; contact?: string }>({}) // 🆕 필드별 에러
 
   useEffect(() => {
     fetchSlotStatus()
@@ -97,15 +101,24 @@ export function ApplicationForm({
 
   const validateForm = (): boolean => {
     const newErrors: string[] = []
+    const newFieldErrors: { reason?: string; contact?: string } = {}
 
     if (!selectedDate) {
       newErrors.push('날짜를 선택해주세요')
     }
 
     if (!reason.trim()) {
+      newFieldErrors.reason = '사유를 입력해주세요'
       newErrors.push('사유를 입력해주세요')
     } else if (reason.trim().length < 5) {
+      newFieldErrors.reason = '사유는 최소 5자 이상 입력해주세요'
       newErrors.push('사유는 최소 5자 이상 입력해주세요')
+    }
+
+    // 🆕 비상 연락처 검증 (선택 필드지만 입력 시 형식 체크)
+    if (emergencyContact.trim() && !/^[0-9-+().\s]+$/.test(emergencyContact)) {
+      newFieldErrors.contact = '올바른 전화번호 형식을 입력해주세요'
+      newErrors.push('올바른 전화번호 형식을 입력해주세요')
     }
 
     if (leaveType === 'OFF' && weeklyOffCount >= 2) {
@@ -113,6 +126,12 @@ export function ApplicationForm({
     }
 
     setErrors(newErrors)
+    setFieldErrors(newFieldErrors)
+
+    if (newErrors.length > 0) {
+      announceToScreenReader('입력 정보를 확인해주세요', 'assertive')
+    }
+
     return newErrors.length === 0
   }
 
@@ -142,12 +161,23 @@ export function ApplicationForm({
     }
   }
 
+  // 🆕 스켈레톤 로딩 스크린
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-gray-600">로딩 중...</p>
+      <div className="max-w-6xl mx-auto p-4">
+        <div className="mb-6 space-y-2">
+          <div className="h-9 w-48 bg-gray-200 animate-pulse rounded" />
+          <div className="h-5 w-32 bg-gray-200 animate-pulse rounded" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+          <div className="lg:col-span-1">
+            <SkeletonCard />
+          </div>
         </div>
       </div>
     )
@@ -183,7 +213,7 @@ export function ApplicationForm({
             weeklyOffCount={weeklyOffCount}
           />
 
-          {/* 사유 입력 */}
+          {/* 🆕 사유 입력 - 접근성 개선 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -192,35 +222,45 @@ export function ApplicationForm({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="reason">신청 사유 *</Label>
-                <Textarea
-                  id="reason"
+              {/* 신청 사유 */}
+              <FormField
+                id="reason"
+                label="신청 사유"
+                required
+                error={fieldErrors.reason}
+                helperText={`${reason.length}/200자`}
+              >
+                <AccessibleTextarea
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={(e) => {
+                    setReason(e.target.value)
+                    setFieldErrors({ ...fieldErrors, reason: undefined })
+                  }}
                   placeholder="연차/오프 신청 사유를 입력해주세요 (최소 5자 이상)"
                   rows={4}
-                  className="mt-2"
+                  maxLength={200}
+                  error={!!fieldErrors.reason}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  {reason.length}/200자
-                </p>
-              </div>
+              </FormField>
 
-              <div>
-                <Label htmlFor="emergency">비상 연락처 (선택)</Label>
-                <Input
-                  id="emergency"
+              {/* 비상 연락처 */}
+              <FormField
+                id="emergency-contact"
+                label="비상 연락처"
+                error={fieldErrors.contact}
+                helperText="연차 기간 중 연락 가능한 번호를 입력해주세요"
+              >
+                <TextInput
                   type="tel"
                   value={emergencyContact}
-                  onChange={(e) => setEmergencyContact(e.target.value)}
+                  onChange={(e) => {
+                    setEmergencyContact(e.target.value)
+                    setFieldErrors({ ...fieldErrors, contact: undefined })
+                  }}
                   placeholder="010-1234-5678"
-                  className="mt-2"
+                  error={!!fieldErrors.contact}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  연차 기간 중 연락 가능한 번호를 입력해주세요
-                </p>
-              </div>
+              </FormField>
             </CardContent>
           </Card>
 

@@ -8,6 +8,8 @@
 import { prisma } from '@/lib/prisma'
 import { createWeeklyAssignmentBackup } from './assignment-backup-service'
 import { autoAssignWeeklySchedule } from '@/lib/algorithms/weekly-assign-v2'
+import { notifyReassignment } from './notification-helper'
+import { processOnHoldForDate } from './on-hold-auto-approval-service'
 
 /**
  * 연차/오프 변경 로그 생성
@@ -268,6 +270,103 @@ export async function performAutoReassignment(
   const message = `재배치 완료: 성공 ${successCount}개, 실패 ${failCount}개`
 
   console.log(`\n✅ ${message}`)
+
+  // 🔔 재배치 알림 전송 (영향받는 직원들에게)
+  try {
+    if (successCount > 0) {
+      // 영향받는 날짜 추출
+      const affectedDates: Date[] = []
+
+      for (const weekInfoId of changeLog.affectedWeekIds) {
+        const weekInfo = await prisma.weekInfo.findUnique({
+          where: { id: weekInfoId },
+          select: { weekStart: true, weekEnd: true }
+        })
+
+        if (weekInfo) {
+          // 주차 내 모든 날짜 추가
+          const current = new Date(weekInfo.weekStart)
+          const end = new Date(weekInfo.weekEnd)
+
+          while (current <= end) {
+            affectedDates.push(new Date(current))
+            current.setDate(current.getDate() + 1)
+          }
+        }
+      }
+
+      // 각 날짜별로 영향받는 직원들에게 알림
+      for (const date of affectedDates) {
+        const assignments = await prisma.dailyAssignment.findMany({
+          where: { date },
+          include: {
+            staff: {
+              include: { user: true }
+            }
+          }
+        })
+
+        const affectedStaffUserIds = assignments
+          .filter(a => a.staff.user)
+          .map(a => a.staff.user!.id)
+
+        if (affectedStaffUserIds.length > 0) {
+          const reason = `${changeLog.leaveApplication.staff.name}님의 ${
+            changeLog.changeType === 'STATUS_CHANGE' ? '연차 상태 변경' :
+            changeLog.changeType === 'DATE_CHANGE' ? '연차 날짜 변경' : '연차 취소'
+          }`
+
+          await notifyReassignment(
+            affectedStaffUserIds,
+            reason,
+            date
+          )
+        }
+      }
+
+      console.log(`📬 재배치 알림 전송 완료`)
+    }
+  } catch (notificationError) {
+    console.error('재배치 알림 전송 실패 (무시):', notificationError)
+  }
+
+  // 🆕 ON_HOLD 자동 승인 처리 (재배치 성공한 날짜들)
+  try {
+    if (successCount > 0) {
+      console.log(`\n🔄 재배치 완료 후 ON_HOLD 자동 승인 처리...`)
+
+      // 재배치가 성공한 주차의 모든 날짜에 대해 ON_HOLD 검토
+      for (const weekInfoId of changeLog.affectedWeekIds) {
+        const weekInfo = await prisma.weekInfo.findUnique({
+          where: { id: weekInfoId },
+          select: { weekStart: true, weekEnd: true, clinicId: true }
+        })
+
+        if (weekInfo) {
+          // 주차 내 각 날짜별로 ON_HOLD 승인 처리
+          const current = new Date(weekInfo.weekStart)
+          const end = new Date(weekInfo.weekEnd)
+
+          while (current <= end) {
+            const onHoldResult = await processOnHoldForDate(
+              weekInfo.clinicId,
+              new Date(current)
+            )
+
+            if (onHoldResult.approved > 0) {
+              console.log(`   ✅ ${current.toISOString().split('T')[0]}: ${onHoldResult.approved}건 자동 승인`)
+            }
+
+            current.setDate(current.getDate() + 1)
+          }
+        }
+      }
+
+      console.log(`✅ ON_HOLD 자동 승인 처리 완료`)
+    }
+  } catch (onHoldError) {
+    console.error('ON_HOLD 자동 승인 실패 (무시):', onHoldError)
+  }
 
   return {
     success: failCount === 0,

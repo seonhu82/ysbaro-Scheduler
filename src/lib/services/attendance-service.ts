@@ -39,7 +39,7 @@ export interface LocationInfo {
  */
 export async function processAttendanceCheck(
   data: CheckInData
-): Promise<{ success: boolean; message: string; recordId?: string }> {
+): Promise<{ success: boolean; message: string; recordId?: string; warning?: string }> {
   const { staffId, token, checkType, deviceInfo, location } = data;
 
   // 1. 직원 정보 조회
@@ -65,29 +65,42 @@ export async function processAttendanceCheck(
     };
   }
 
-  // 3. 디바이스 핑거프린트 생성
+  // 🆕 3. 스케줄 연동: DailyAssignment 확인
+  const todayDate = new Date(now.toDateString())
+  const scheduleCheck = await checkScheduleAlignment(staffId, todayDate, checkType)
+
+  // 3-1. 디바이스 핑거프린트 생성
   const fingerprint = generateDeviceFingerprint(deviceInfo);
 
-  // 4. 출퇴근 기록 저장
+  // 4. 출퇴근 기록 저장 (스케줄 정보 포함)
   const record = await prisma.attendanceRecord.create({
     data: {
       clinicId: staff.clinicId,
       staffId,
       checkType,
       checkTime: now,
-      date: new Date(now.toDateString()),
+      date: todayDate,
       tokenUsed: token,
       deviceFingerprint: fingerprint,
       userAgent: deviceInfo.userAgent,
       ipAddress: location?.ipAddress,
       wifiSSID: location?.wifiSSID,
       gpsLatitude: location?.gpsLatitude,
-      gpsLongitude: location?.gpsLongitude
+      gpsLongitude: location?.gpsLongitude,
+      // 🆕 스케줄 정보 저장
+      staffAssignmentId: scheduleCheck.assignmentId,
+      isScheduled: scheduleCheck.isScheduled,
+      scheduleNote: scheduleCheck.note
     }
   });
 
-  // 5. 의심 패턴 감지
-  const suspiciousCheck = await detectSuspiciousPattern(staffId, now, fingerprint);
+  // 5. 의심 패턴 감지 (스케줄 불일치 포함)
+  const suspiciousCheck = await detectSuspiciousPattern(
+    staffId,
+    now,
+    fingerprint,
+    scheduleCheck.isScheduled
+  );
 
   if (suspiciousCheck.isSuspicious) {
     await prisma.attendanceRecord.update({
@@ -99,10 +112,26 @@ export async function processAttendanceCheck(
     });
   }
 
+  // 🆕 6. 스케줄 불일치 경고 메시지 및 StaffAssignment 업데이트
+  let warningMessage: string | undefined
+  if (!scheduleCheck.isScheduled && checkType === 'IN') {
+    warningMessage = '⚠️ 오늘 근무 스케줄에 없는 출근입니다.'
+  } else if (scheduleCheck.isScheduled && scheduleCheck.assignmentId) {
+    // StaffAssignment에 실제 출퇴근 시간 기록
+    await prisma.staffAssignment.update({
+      where: { id: scheduleCheck.assignmentId },
+      data: {
+        actualCheckInTime: checkType === 'IN' ? now : undefined,
+        actualCheckOutTime: checkType === 'OUT' ? now : undefined
+      }
+    })
+  }
+
   return {
     success: true,
     message: `${checkType === 'IN' ? '출근' : '퇴근'}이 기록되었습니다`,
-    recordId: record.id
+    recordId: record.id,
+    warning: warningMessage
   };
 }
 
@@ -155,17 +184,66 @@ export async function isDuplicateCheck(
 }
 
 /**
- * 의심 패턴 감지
+ * 🆕 스케줄 일치 확인
+ * - StaffAssignment에 해당 직원의 오늘 근무가 있는지 확인
+ */
+export async function checkScheduleAlignment(
+  staffId: string,
+  date: Date,
+  checkType: CheckType
+): Promise<{
+  isScheduled: boolean
+  assignmentId?: string
+  note?: string
+}> {
+  // StaffAssignment에서 해당 날짜의 배치 조회
+  const assignment = await prisma.staffAssignment.findFirst({
+    where: {
+      staffId,
+      date
+    }
+  })
+
+  if (!assignment) {
+    return {
+      isScheduled: false,
+      note: '스케줄에 없는 근무'
+    }
+  }
+
+  // OFF 시프트 확인
+  if (assignment.shiftType === 'OFF') {
+    return {
+      isScheduled: false,
+      assignmentId: assignment.id,
+      note: '오프 예정일에 출근'
+    }
+  }
+
+  return {
+    isScheduled: true,
+    assignmentId: assignment.id
+  }
+}
+
+/**
+ * 의심 패턴 감지 (스케줄 불일치 포함)
  */
 export async function detectSuspiciousPattern(
   staffId: string,
   checkTime: Date,
-  deviceFingerprint: string
+  deviceFingerprint: string,
+  isScheduled: boolean = true
 ): Promise<{
   isSuspicious: boolean;
   patterns: string[];
 }> {
   const patterns: string[] = [];
+
+  // 🆕 0. 스케줄 불일치 감지
+  if (!isScheduled) {
+    patterns.push('스케줄에 없는 근무')
+  }
 
   // 1. 최근 30일간의 기록 조회
   const thirtyDaysAgo = new Date(checkTime);

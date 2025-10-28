@@ -51,7 +51,9 @@
       "Bash(node find-brace-issue.js:*)",
       "Bash(node check-function-start.js:*)",
       "Read(//d//**)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(node test-integration.js:*)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []

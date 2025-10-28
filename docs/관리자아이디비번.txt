@@ -1,0 +1,4 @@
+슈퍼 관리자 (시스템 전체)
+ - 이메일: superadmin@yonsedental.com
+ - 비밀번호: SuperAdmin2025!
+ 

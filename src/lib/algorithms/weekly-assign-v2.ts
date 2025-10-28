@@ -13,6 +13,12 @@ import { calculateCategoryRequirements } from '@/lib/services/category-slot-serv
 import { updateFairnessScoresAfterAssignment } from '@/lib/services/fairness-score-update-service'
 import { createWeeklyAssignmentBackup } from '@/lib/services/assignment-backup-service'
 import { validateWeeklyAssignment } from '@/lib/services/assignment-validation-service'
+import { processOnHoldAutoApproval } from '@/lib/services/on-hold-auto-approval-service'
+import {
+  logWeeklyAssignmentStarted,
+  logWeeklyAssignmentCompleted,
+  logWeeklyAssignmentFailed
+} from '@/lib/services/activity-log-service'
 import {
   calculatePriority,
   getFairnessScore,
@@ -99,6 +105,9 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
     }
 
     const { clinicId, year, weekNumber } = weekInfo
+
+    // 🆕 활동 로그: 배치 시작
+    await logWeeklyAssignmentStarted(clinicId, weekInfoId)
 
     // 배치 전 백업 생성
     console.log('💾 배치 전 백업 생성 중...')
@@ -467,6 +476,51 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
 
               console.log(`           ✅ ${toAssign.length}명 배치`)
             }
+
+            // 🆕 신규 모드에서도 Flexible Staff 시도 (부족한 인원 보충)
+            // 각 카테고리별로 부족한 인원이 있는지 확인
+            for (const [category, config] of Object.entries(deptCategoryConfig)) {
+              const targetCount = config.count
+              const currentAssigned = day.currentAssignments.filter(
+                a => a.category === category
+              ).length
+
+              const shortage = targetCount - currentAssigned
+              if (shortage <= 0) continue
+
+              console.log(`        🔵 Flexible: ${deptName}/${category} (부족 ${shortage}명)`)
+
+              // Flexible Staff 시도
+              const result = await tryFlexibleStaffAssignment(
+                clinicId,
+                category,
+                day.date,
+                shortage,
+                day.excludedStaff,
+                weeklyAssignments,
+                staffWorkDayCount
+              )
+
+              if (result.success && result.assignedStaff) {
+                console.log(`           ✅ Flexible Staff ${result.assignedStaff.length}명 배치 성공`)
+
+                // 배치 기록 업데이트
+                result.assignedStaff.forEach((flexStaff) => {
+                  const dates = weeklyAssignments.get(flexStaff.id)!
+                  dates.add(day.dateKey)
+                  assignedToday.add(flexStaff.id)
+                  day.currentAssignments.push({ staffId: flexStaff.id, category })
+
+                  const workStatus = staffWorkDayCount.get(flexStaff.id)!
+                  workStatus.current++
+                  workStatus.needsMore = (workStatus.current + workStatus.leave) < workStatus.required
+                  assignedCount++
+                })
+              } else {
+                console.log(`           ⚠️ Flexible Staff 배치 실패: ${shortage}명 부족 유지`)
+              }
+            }
+
           } else {
             // 레거시: 비율 계산 방식
             for (const [category, catRequired] of Object.entries(day.categoryRequirements)) {
@@ -1143,14 +1197,52 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
 
     console.log(`✅ ${resultMessage}`)
 
+    // 🆕 활동 로그: 배치 완료
+    await logWeeklyAssignmentCompleted(
+      clinicId,
+      weekInfoId,
+      assignedCount,
+      unresolvedIssues.length
+    )
+
+    // 🆕 ON_HOLD 자동 승인 처리 (배치 성공 시에만)
+    let onHoldApprovalResult
+    if (!hasCriticalIssues) {
+      try {
+        console.log(`\n========== ON_HOLD 자동 승인 처리 ==========`)
+        onHoldApprovalResult = await processOnHoldAutoApproval(weekInfoId)
+        console.log(`========== ON_HOLD 처리 완료 ==========\n`)
+      } catch (onHoldError) {
+        console.error('ON_HOLD 자동 승인 실패 (무시):', onHoldError)
+      }
+    }
+
     return {
       success: !hasCriticalIssues,
       message: resultMessage,
       assignedCount,
-      unresolvedIssues
+      unresolvedIssues,
+      onHoldApproval: onHoldApprovalResult
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Weekly assignment error:', error)
+
+    // 🆕 활동 로그: 배치 실패
+    try {
+      const weekInfo = await prisma.weekInfo.findUnique({
+        where: { id: weekInfoId },
+        select: { clinicId: true }
+      })
+      if (weekInfo) {
+        await logWeeklyAssignmentFailed(
+          weekInfo.clinicId,
+          weekInfoId,
+          error.message || '알 수 없는 오류'
+        )
+      }
+    } catch (logError) {
+      console.error('로그 기록 실패:', logError)
+    }
 
     // 상태 롤백
     await updateWeekStatus(weekInfoId, 'DRAFT')
