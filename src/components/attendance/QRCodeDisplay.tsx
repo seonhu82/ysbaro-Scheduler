@@ -39,12 +39,18 @@ export function QRCodeDisplay() {
     }
   };
 
-  // QR 코드 생성
+  // QR 코드 생성 (전체 URL 포함)
   useEffect(() => {
     if (token && canvasRef.current) {
+      // 전체 URL 생성 (프로토콜 + 호스트 + 경로)
+      const baseUrl = typeof window !== 'undefined'
+        ? `${window.location.protocol}//${window.location.host}`
+        : '';
+      const fullUrl = `${baseUrl}/attendance/check/${token}`;
+
       QRCode.toCanvas(
         canvasRef.current,
-        token,
+        fullUrl,
         {
           width: 256,
           margin: 2,

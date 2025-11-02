@@ -4,6 +4,22 @@ import { hasAdminPrivileges } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 /**
+ * 요일 문자열을 숫자로 변환
+ */
+function getDayOfWeekNumber(dayOfWeek: string): number {
+  const dayMap: Record<string, number> = {
+    'SUNDAY': 0,
+    'MONDAY': 1,
+    'TUESDAY': 2,
+    'WEDNESDAY': 3,
+    'THURSDAY': 4,
+    'FRIDAY': 5,
+    'SATURDAY': 6
+  }
+  return dayMap[dayOfWeek] ?? 0
+}
+
+/**
  * GET /api/settings/weekly-patterns
  * 주간 패턴 목록 조회
  */
@@ -34,13 +50,51 @@ export async function GET() {
           },
         },
       },
-      orderBy: [
-        { isDefault: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: {
+        createdAt: 'desc',
+      },
     })
 
-    return NextResponse.json(patterns)
+    // 디버깅: Prisma 결과 확인
+    if (patterns.length > 0) {
+      console.log('First pattern from Prisma:', JSON.stringify({
+        id: patterns[0].id,
+        name: patterns[0].name,
+        days: patterns[0].days.map(d => ({
+          dayOfWeek: d.dayOfWeek,
+          combinationId: d.combinationId,
+          combination: d.combination
+        }))
+      }, null, 2))
+    }
+
+    // 두 가지 형식 모두 반환 (관리 페이지용 + 배치 페이지용)
+    const formattedPatterns = patterns.map(pattern => ({
+      id: pattern.id,
+      name: pattern.name,
+      description: pattern.description,
+      isActive: pattern.isActive,
+      isDefault: pattern.isDefault,
+      // 주간 패턴 관리 페이지용 (원본 형식)
+      days: pattern.days,
+      // 원장 스케줄 배치 페이지용 (숫자 형식)
+      dailyPatternCount: pattern.days.length,
+      dailyPatterns: pattern.days.map(day => ({
+        dayOfWeek: getDayOfWeekNumber(day.dayOfWeek),
+        combination: day.combination ? {
+          name: day.combination.name,
+          doctors: day.combination.doctors,
+          hasNightShift: day.combination.hasNightShift
+        } : null
+      }))
+    }))
+
+    // 디버깅: 첫 번째 패턴 상세 로그
+    if (formattedPatterns.length > 0) {
+      console.log('First pattern dailyPatterns:', JSON.stringify(formattedPatterns[0].dailyPatterns, null, 2))
+    }
+
+    return NextResponse.json(formattedPatterns)
   } catch (error) {
     console.error('Weekly patterns list error:', error)
     return NextResponse.json(
@@ -69,15 +123,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Clinic not found' }, { status: 400 })
     }
 
-    const { name, description, isDefault, days } = await request.json()
+    const { name, description, days } = await request.json()
 
-    // 기본 패턴으로 설정할 경우 기존 기본 패턴 해제
-    if (isDefault) {
-      await prisma.weeklyPattern.updateMany({
-        where: { clinicId, isDefault: true },
-        data: { isDefault: false },
-      })
-    }
+    // 디버깅: 받은 데이터 확인
+    console.log('Creating weekly pattern:', { name, description })
+    console.log('Days data:', JSON.stringify(days, null, 2))
 
     // 패턴 생성
     const pattern = await prisma.weeklyPattern.create({
@@ -85,7 +135,6 @@ export async function POST(request: NextRequest) {
         clinicId,
         name,
         description,
-        isDefault: isDefault || false,
         days: {
           create: days.map((day: any) => ({
             dayOfWeek: day.dayOfWeek,

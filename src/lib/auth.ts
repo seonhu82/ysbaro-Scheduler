@@ -78,6 +78,7 @@ export const authConfig: NextAuthConfig = {
             clinicId: user.clinicId || '',
             clinicName: user.clinic?.name || '',
             accountStatus: user.accountStatus,
+            setupCompleted: user.clinic?.setupCompleted ?? false,
           }
         } catch (error) {
           console.error('Auth error:', error)
@@ -95,6 +96,7 @@ export const authConfig: NextAuthConfig = {
         token.clinicId = (user as any).clinicId
         token.clinicName = (user as any).clinicName
         token.accountStatus = (user as any).accountStatus
+        token.setupCompleted = (user as any).setupCompleted
       }
       return token
     },
@@ -106,6 +108,7 @@ export const authConfig: NextAuthConfig = {
         (session.user as any).clinicId = token.clinicId as string
         (session.user as any).clinicName = token.clinicName as string
         (session.user as any).accountStatus = token.accountStatus as string
+        (session.user as any).setupCompleted = token.setupCompleted as boolean
       }
       return session
     },

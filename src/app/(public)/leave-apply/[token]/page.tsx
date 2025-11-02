@@ -19,6 +19,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 type LeaveType = 'ANNUAL' | 'OFF'
 
@@ -36,6 +43,12 @@ interface AuthData {
   clinicId: string
 }
 
+interface StaffOption {
+  id: string
+  name: string
+  departmentName: string | null
+}
+
 export default function LeaveApplyPage({
   params,
 }: {
@@ -44,9 +57,11 @@ export default function LeaveApplyPage({
   const { toast } = useToast()
   const [isAuth, setIsAuth] = useState(false)
   const [authData, setAuthData] = useState<AuthData | null>(null)
+  const [staffList, setStaffList] = useState<StaffOption[]>([])
+  const [selectedStaffId, setSelectedStaffId] = useState('')
   const [birthDate, setBirthDate] = useState('')
-  const [pin, setPin] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingStaff, setLoadingStaff] = useState(true)
 
   // 신청 폼 상태
   const [selectedDate, setSelectedDate] = useState<Date>()
@@ -58,9 +73,45 @@ export default function LeaveApplyPage({
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  // 직원 목록 로드
+  useEffect(() => {
+    const loadStaffList = async () => {
+      try {
+        const response = await fetch(`/api/leave-apply/${params.token}/staff-list`)
+        const result = await response.json()
+
+        if (result.success) {
+          setStaffList(result.data)
+        } else {
+          throw new Error(result.error || '직원 목록 로드 실패')
+        }
+      } catch (error: any) {
+        toast({
+          title: '오류',
+          description: error.message || '직원 목록을 불러오는데 실패했습니다.',
+          variant: 'destructive',
+        })
+      } finally {
+        setLoadingStaff(false)
+      }
+    }
+
+    loadStaffList()
+  }, [params.token, toast])
+
   // 인증 처리
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!selectedStaffId) {
+      toast({
+        title: '직원 선택 필요',
+        description: '직원을 선택해주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -68,8 +119,8 @@ export default function LeaveApplyPage({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          staffId: selectedStaffId,
           birthDate,
-          pin
         })
       })
 
@@ -88,7 +139,7 @@ export default function LeaveApplyPage({
     } catch (error: any) {
       toast({
         title: '인증 실패',
-        description: error.message || '생년월일 또는 PIN이 올바르지 않습니다.',
+        description: error.message || '생년월일이 올바르지 않습니다.',
         variant: 'destructive',
       })
     } finally {
@@ -163,38 +214,42 @@ export default function LeaveApplyPage({
 
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
+              <Label htmlFor="staff">직원 선택</Label>
+              <Select
+                value={selectedStaffId}
+                onValueChange={setSelectedStaffId}
+                disabled={loadingStaff}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingStaff ? '로딩 중...' : '직원을 선택하세요'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {staffList.map((staff) => (
+                    <SelectItem key={staff.id} value={staff.id}>
+                      {staff.name} {staff.departmentName && `(${staff.departmentName})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label htmlFor="birthDate">생년월일</Label>
               <Input
                 id="birthDate"
                 type="text"
-                placeholder="예: 19900101"
+                placeholder="예: 900101"
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
-                maxLength={8}
+                maxLength={6}
                 required
               />
               <p className="text-xs text-gray-500 mt-1">
-                8자리 숫자 (YYYYMMDD)
+                6자리 숫자 (YYMMDD)
               </p>
             </div>
 
-            <div>
-              <Label htmlFor="pin">PIN 번호</Label>
-              <Input
-                id="pin"
-                type="password"
-                placeholder="4자리 PIN"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                maxLength={4}
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                4자리 숫자
-              </p>
-            </div>
-
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || loadingStaff}>
               {loading ? '인증 중...' : '인증하기'}
             </Button>
           </form>

@@ -54,11 +54,12 @@ if (SENTRY_DSN && ENVIRONMENT === 'production') {
       }
 
       // 민감한 정보 제거
-      if (event.request?.data) {
+      if (event.request?.data && typeof event.request.data === 'object') {
         const sensitiveFields = ['password', 'token', 'apiKey', 'secret', 'pin']
+        const requestData = event.request.data as Record<string, any>
         sensitiveFields.forEach(field => {
-          if (event.request?.data && field in event.request.data) {
-            event.request.data[field] = '[REDACTED]'
+          if (field in requestData) {
+            requestData[field] = '[REDACTED]'
           }
         })
       }
@@ -78,11 +79,7 @@ if (SENTRY_DSN && ENVIRONMENT === 'production') {
 
     // 통합 설정
     integrations: [
-      new Sentry.BrowserTracing({
-        // API 호출 추적
-        tracingOrigins: ['localhost', /^\//]
-      }),
-      new Sentry.Replay({
+      Sentry.replayIntegration({
         // 마스킹 설정
         maskAllText: true,
         blockAllMedia: true

@@ -26,7 +26,7 @@ setInterval(() => {
 function checkRateLimit(ip: string): boolean {
   const now = Date.now()
   const windowMs = 10000 // 10초
-  const maxRequests = 20 // 10초에 20요청
+  const maxRequests = 100 // 10초에 100요청 (개발 환경용)
 
   const record = rateLimitStore.get(ip)
 
@@ -127,6 +127,10 @@ export async function middleware(request: NextRequest) {
     '/statistics',
     '/settings',
     '/admin',
+    '/calendar',
+    '/notifications',
+    '/logs',
+    '/fairness',
   ]
 
   const isProtected = protectedPaths.some(path => pathname.startsWith(path))
@@ -158,6 +162,22 @@ export async function middleware(request: NextRequest) {
       }
 
       return NextResponse.redirect(new URL('/pending-approval', request.url))
+    }
+
+    // 초기 설정 완료 확인 (setup/initial 페이지는 제외)
+    if (!pathname.startsWith('/setup/initial') && !pathname.startsWith('/api/setup/initial')) {
+      if (token.setupCompleted === false) {
+        // API 요청이면 에러 반환
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json(
+            { success: false, error: '초기 설정이 필요합니다' },
+            { status: 403 }
+          )
+        }
+
+        // 페이지 요청이면 초기 설정으로 리다이렉트
+        return NextResponse.redirect(new URL('/setup/initial', request.url))
+      }
     }
   }
 

@@ -1,6 +1,7 @@
 /**
- * 날짜별 스케줄 조회 API
+ * 날짜별 스케줄 조회 및 수정 API
  * GET: 특정 날짜의 스케줄 데이터 (원장, 직원 배치)
+ * POST: 특정 날짜의 스케줄 데이터 수정 (원장, 직원 배치, 연차/오프)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -75,7 +76,8 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             rank: true,
-            categoryName: true
+            categoryName: true,
+            departmentName: true
           }
         }
       }
@@ -95,7 +97,8 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             rank: true,
-            categoryName: true
+            categoryName: true,
+            departmentName: true
           }
         }
       }
@@ -122,7 +125,8 @@ export async function GET(request: NextRequest) {
         id: la.staff.id,
         name: la.staff.name,
         rank: la.staff.rank,
-        categoryName: la.staff.categoryName
+        categoryName: la.staff.categoryName,
+        departmentName: la.staff.departmentName
       }))
 
     const manualOffDays = leaveApplications
@@ -131,41 +135,40 @@ export async function GET(request: NextRequest) {
         id: la.staff.id,
         name: la.staff.name,
         rank: la.staff.rank,
-        categoryName: la.staff.categoryName
+        categoryName: la.staff.categoryName,
+        departmentName: la.staff.departmentName
       }))
 
-    // 4. 자동 오프 계산: 전체 활성 직원 - 근무 직원 - 연차 직원 - 수동 오프 직원
-    const allActiveStaff = await prisma.staff.findMany({
+    // 4. OFF 배정: StaffAssignment에서 shiftType='OFF'인 직원만
+    const offAssignments = await prisma.staffAssignment.findMany({
       where: {
-        clinicId,
-        isActive: true,
-        departmentName: '진료실'
+        date: dateOnly,
+        shiftType: 'OFF',
+        schedule: scheduleWhere
       },
-      select: {
-        id: true,
-        name: true,
-        rank: true,
-        categoryName: true
+      include: {
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            rank: true,
+            categoryName: true,
+            departmentName: true
+          }
+        }
       }
     })
 
-    // 근무 직원 ID 목록
-    const workingStaffIds = new Set(staffAssignments.map(sa => sa.staff.id))
-    // 연차/수동 오프 직원 ID 목록
-    const leaveStaffIds = new Set(leaveApplications.map(la => la.staff.id))
+    const offDays = offAssignments.map(oa => ({
+      id: oa.staff.id,
+      name: oa.staff.name,
+      rank: oa.staff.rank,
+      categoryName: oa.staff.categoryName,
+      departmentName: oa.staff.departmentName
+    }))
 
-    // 자동 오프 = 전체 - 근무 - 연차/수동오프
-    const autoOffDays = allActiveStaff
-      .filter(staff => !workingStaffIds.has(staff.id) && !leaveStaffIds.has(staff.id))
-      .map(staff => ({
-        id: staff.id,
-        name: staff.name,
-        rank: staff.rank,
-        categoryName: staff.categoryName
-      }))
-
-    // 모든 오프 = 수동 오프 + 자동 오프
-    const allOffDays = [...manualOffDays, ...autoOffDays]
+    // 수동 오프(연차신청의 오프) + 자동배치 OFF 합치기
+    const allOffDays = [...manualOffDays, ...offDays]
 
     // 응답 데이터 구성
     const responseData = {
@@ -174,12 +177,15 @@ export async function GET(request: NextRequest) {
         id: ds.doctor.id,
         name: ds.doctor.name
       })),
-      staff: staffAssignments.map(sa => ({
-        id: sa.staff.id,
-        name: sa.staff.name,
-        rank: sa.staff.rank,
-        categoryName: sa.staff.categoryName
-      })),
+      staff: staffAssignments
+        .filter(sa => sa.shiftType !== 'OFF') // OFF 제외
+        .map(sa => ({
+          id: sa.staff.id,
+          name: sa.staff.name,
+          rank: sa.staff.rank,
+          categoryName: sa.staff.categoryName,
+          departmentName: sa.staff.departmentName
+        })),
       annualLeave,
       offDays: allOffDays, // 수동 오프 + 자동 오프
       isNightShift: doctorSchedules.some(ds => ds.hasNightShift),
@@ -190,5 +196,185 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Get day schedule error:', error)
     return errorResponse('Failed to fetch day schedule', 500)
+  }
+}
+
+/**
+ * POST: 특정 날짜의 스케줄 수정
+ * - 원장 배치 수정
+ * - 직원 근무/연차/오프 상태 변경
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth()
+    if (!session?.user?.clinicId) {
+      return unauthorizedResponse()
+    }
+
+    const body = await request.json()
+    const { date, doctors, staff, annualLeave, offDays, isNightShift, year, month } = body
+
+    if (!date) {
+      return badRequestResponse('Date is required')
+    }
+
+    const clinicId = session.user.clinicId
+    const dateOnly = new Date(date + 'T00:00:00.000Z')
+
+    console.log('Saving day schedule:', { date, doctors: doctors?.length, staff: staff?.length, annualLeave: annualLeave?.length, offDays: offDays?.length })
+
+    // 1. 스케줄 확인 또는 생성
+    let schedule = await prisma.schedule.findFirst({
+      where: {
+        clinicId,
+        year: year || dateOnly.getFullYear(),
+        month: month || (dateOnly.getMonth() + 1)
+      }
+    })
+
+    if (!schedule) {
+      // 스케줄이 없으면 생성
+      schedule = await prisma.schedule.create({
+        data: {
+          clinicId,
+          year: year || dateOnly.getFullYear(),
+          month: month || (dateOnly.getMonth() + 1),
+          status: 'DRAFT'
+        }
+      })
+    }
+
+    // 2. 해당 날짜의 기존 원장 스케줄 삭제
+    await prisma.scheduleDoctor.deleteMany({
+      where: {
+        scheduleId: schedule.id,
+        date: dateOnly
+      }
+    })
+
+    // 3. 새 원장 스케줄 추가
+    if (doctors && doctors.length > 0) {
+      await prisma.scheduleDoctor.createMany({
+        data: doctors.map((doctor: any) => ({
+          scheduleId: schedule.id,
+          doctorId: doctor.id,
+          date: dateOnly,
+          hasNightShift: isNightShift || false
+        }))
+      })
+    }
+
+    // 4. 해당 날짜의 기존 직원 배치 삭제
+    await prisma.staffAssignment.deleteMany({
+      where: {
+        scheduleId: schedule.id,
+        date: dateOnly
+      }
+    })
+
+    // 5. 새 직원 배치 추가 (근무자만)
+    if (staff && staff.length > 0) {
+      await prisma.staffAssignment.createMany({
+        data: staff.map((s: any) => ({
+          scheduleId: schedule.id,
+          staffId: s.id,
+          date: dateOnly,
+          shiftType: isNightShift ? 'NIGHT' : 'DAY'
+        }))
+      })
+    }
+
+    // 6. 해당 날짜의 기존 연차/오프 신청 삭제 (수동으로 생성된 것만)
+    await prisma.leaveApplication.deleteMany({
+      where: {
+        clinicId,
+        date: dateOnly,
+        status: 'CONFIRMED'
+      }
+    })
+
+    // 7. 새 연차 신청 추가
+    if (annualLeave && annualLeave.length > 0) {
+      // ApplicationLink 먼저 생성
+      const annualLink = await prisma.applicationLink.create({
+        data: {
+          clinicId,
+          applicationType: 'MANUAL'
+        }
+      })
+
+      await prisma.leaveApplication.createMany({
+        data: annualLeave.map((s: any) => ({
+          clinicId,
+          linkId: annualLink.id,
+          staffId: s.id,
+          date: dateOnly,
+          leaveType: 'ANNUAL',
+          status: 'CONFIRMED',
+          holdReason: '수동 배정'
+        }))
+      })
+    }
+
+    // 8. 새 오프 신청 추가 (수동 배정만 저장, 자동 오프는 저장하지 않음)
+    // 오프는 자동으로 계산되므로 수동으로 지정한 오프만 저장
+    if (offDays && offDays.length > 0) {
+      // 모든 활성 직원 조회
+      const allActiveStaff = await prisma.staff.findMany({
+        where: {
+          clinicId,
+          isActive: true,
+          departmentName: '진료실'
+        },
+        select: { id: true }
+      })
+
+      const allActiveStaffIds = new Set(allActiveStaff.map(s => s.id))
+      const workingStaffIds = new Set(staff?.map((s: any) => s.id) || [])
+      const annualLeaveIds = new Set(annualLeave?.map((s: any) => s.id) || [])
+
+      // 자동 오프 계산: 전체 - 근무 - 연차
+      const autoOffIds = new Set(
+        Array.from(allActiveStaffIds).filter(
+          id => !workingStaffIds.has(id) && !annualLeaveIds.has(id)
+        )
+      )
+
+      // offDays 중에서 자동 오프가 아닌 것만 수동 오프로 저장
+      const manualOffDays = offDays.filter((s: any) => !autoOffIds.has(s.id))
+
+      if (manualOffDays.length > 0) {
+        // ApplicationLink 먼저 생성
+        const offLink = await prisma.applicationLink.create({
+          data: {
+            clinicId,
+            applicationType: 'MANUAL'
+          }
+        })
+
+        await prisma.leaveApplication.createMany({
+          data: manualOffDays.map((s: any) => ({
+            clinicId,
+            linkId: offLink.id,
+            staffId: s.id,
+            date: dateOnly,
+            leaveType: 'OFF',
+            status: 'CONFIRMED',
+            holdReason: '수동 배정'
+          }))
+        })
+      }
+    }
+
+    console.log('Day schedule saved successfully')
+
+    return successResponse({
+      message: 'Schedule saved successfully',
+      scheduleId: schedule.id
+    })
+
+  } catch (error) {
+    console.error('Save day schedule error:', error)
+    return errorResponse('Failed to save day schedule', 500)
   }
 }

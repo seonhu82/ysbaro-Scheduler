@@ -64,13 +64,42 @@ const RANK_LABELS: Record<string, string> = {
   OTHER: '기타',
 }
 
+type FilterOption = {
+  name: string
+  count: number
+}
+
 export function StaffView() {
   const { toast } = useToast()
   const [staffData, setStaffData] = useState<StaffMember[]>([])
   const [loading, setLoading] = useState(true)
   const [rankFilter, setRankFilter] = useState<string>('all')
+  const [departmentFilter, setDepartmentFilter] = useState<string>('all')
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [yearFilter, setYearFilter] = useState<string>(new Date().getFullYear().toString())
   const [searchTerm, setSearchTerm] = useState('')
+
+  // 동적 필터 옵션
+  const [departments, setDepartments] = useState<FilterOption[]>([])
+  const [categories, setCategories] = useState<FilterOption[]>([])
+  const [loadingOptions, setLoadingOptions] = useState(true)
+
+  const fetchFilterOptions = async () => {
+    try {
+      setLoadingOptions(true)
+      const response = await fetch('/api/leave-management/filter-options')
+      const result = await response.json()
+
+      if (result.success) {
+        setDepartments(result.data.departments)
+        setCategories(result.data.categories)
+      }
+    } catch (error) {
+      console.error('Failed to fetch filter options:', error)
+    } finally {
+      setLoadingOptions(false)
+    }
+  }
 
   const fetchStaffData = async () => {
     try {
@@ -79,6 +108,12 @@ export function StaffView() {
       const params = new URLSearchParams()
       if (rankFilter !== 'all') {
         params.append('rank', rankFilter)
+      }
+      if (departmentFilter !== 'all') {
+        params.append('department', departmentFilter)
+      }
+      if (categoryFilter !== 'all') {
+        params.append('category', categoryFilter)
       }
       if (yearFilter) {
         params.append('year', yearFilter)
@@ -109,8 +144,12 @@ export function StaffView() {
   }
 
   useEffect(() => {
+    fetchFilterOptions()
+  }, [])
+
+  useEffect(() => {
     fetchStaffData()
-  }, [rankFilter, yearFilter])
+  }, [rankFilter, departmentFilter, categoryFilter, yearFilter])
 
   // 검색어 필터링
   const filteredStaff = staffData.filter((member) => {
@@ -152,7 +191,35 @@ export function StaffView() {
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 부서</SelectItem>
+                {departments.map((dept) => (
+                  <SelectItem key={dept.name} value={dept.name}>
+                    {dept.name} ({dept.count})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 구분</SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat.name} value={cat.name}>
+                    {cat.name} ({cat.count})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Select value={rankFilter} onValueChange={setRankFilter}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue />

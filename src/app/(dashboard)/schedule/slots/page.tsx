@@ -40,16 +40,16 @@ export default function SlotsStatusPage() {
     setLoading(true)
 
     try {
-      // 임시 token - 실제로는 인증된 사용자 정보로 조회
-      const token = 'temp_token'
       const response = await fetch(
-        `/api/leave-apply/${token}/status?startDate=${startDate}&endDate=${endDate}`
+        `/api/schedule/slots?startDate=${startDate}&endDate=${endDate}`
       )
 
       const data = await response.json()
 
       if (data.success) {
         setSlotData(data.status)
+      } else {
+        console.error('Failed to fetch slot status:', data.error)
       }
     } catch (error) {
       console.error('Failed to fetch slot status:', error)
@@ -132,10 +132,10 @@ export default function SlotsStatusPage() {
           {slotData.map((day) => (
             <Card key={day.date}>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex justify-between">
+                  <div className="flex gap-3">
                     <Calendar className="w-5 h-5 text-gray-500" />
-                    <div>
+                    <div className="flex flex-col gap-2">
                       <div className="font-semibold">
                         {new Date(day.date).toLocaleDateString('ko-KR')} ({getDayName(day.dayOfWeek)})
                       </div>
@@ -145,11 +145,13 @@ export default function SlotsStatusPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {day.hasNightShift && (
+                  <div className="flex flex-col items-end gap-2">
+                    {day.hasNightShift ? (
                       <Badge variant="outline" className="bg-purple-50 text-purple-700">
                         야간
                       </Badge>
+                    ) : (
+                      <div className="h-[22px]"></div>
                     )}
                     <Badge variant={day.totalAvailable > 0 ? 'default' : 'destructive'}>
                       가용: {day.totalAvailable}

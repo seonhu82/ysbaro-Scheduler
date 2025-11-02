@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import {
-  successResponse,
-  errorResponse,
-  unauthorizedResponse,
-  notFoundResponse,
-  badRequestResponse
-} from '@/lib/utils/api-response'
-import { notifyLeaveApproved, notifyLeaveRejected } from '@/lib/services/notification-helper'
-import { handleLeaveChange } from '@/lib/services/leave-change-tracking-service'
 
-// PATCH: 신청 상태 변경
+/**
+ * PATCH /api/leave-management/[id]
+ * 연차/오프 신청 수정 (관리자만 가능)
+ */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -19,95 +13,88 @@ export async function PATCH(
   try {
     const session = await auth()
     if (!session?.user?.clinicId) {
-      return unauthorizedResponse()
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    const { id } = params
+    // ADMIN 또는 MANAGER 권한 확인
+    if (session.user.role !== 'ADMIN' && session.user.role !== 'MANAGER') {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden - Admin or Manager role required' },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
-    const { status } = body
+    const { leaveType } = body
 
-    if (!status || !['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED'].includes(status)) {
-      return badRequestResponse('Invalid status value')
+    // 타입 검증
+    if (leaveType && leaveType !== 'ANNUAL' && leaveType !== 'OFF') {
+      return NextResponse.json(
+        { success: false, error: 'Invalid leave type' },
+        { status: 400 }
+      )
     }
+
+    const clinicId = session.user.clinicId
 
     // 신청 조회 및 권한 확인
     const application = await prisma.leaveApplication.findUnique({
-      where: { id },
+      where: { id: params.id },
       include: {
         staff: {
-          include: {
-            user: true
+          select: {
+            clinicId: true,
+            name: true
           }
         }
       }
     })
 
     if (!application) {
-      return notFoundResponse('Application not found')
+      return NextResponse.json(
+        { success: false, error: 'Application not found' },
+        { status: 404 }
+      )
     }
 
-    if (application.clinicId !== session.user.clinicId) {
-      return unauthorizedResponse()
+    if (application.staff.clinicId !== clinicId) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden - Not your clinic' },
+        { status: 403 }
+      )
     }
 
-    const oldStatus = application.status
-
-    // 상태 업데이트
+    // 신청 수정
     const updated = await prisma.leaveApplication.update({
-      where: { id },
-      data: { status }
+      where: { id: params.id },
+      data: {
+        ...(leaveType && { leaveType })
+      }
     })
 
-    // 🔔 알림 전송 (비동기)
-    try {
-      if (status === 'CONFIRMED' && application.staff.user) {
-        await notifyLeaveApproved(
-          application.staff.user.id,
-          application.staff.name || '직원',
-          application.date,
-          application.leaveType
-        )
-      } else if (status === 'REJECTED' && application.staff.user) {
-        await notifyLeaveRejected(
-          application.staff.user.id,
-          application.staff.name || '직원',
-          application.date,
-          application.leaveType
-        )
-      }
-    } catch (notificationError) {
-      console.error('알림 전송 실패 (무시):', notificationError)
-    }
+    console.log(`✅ 연차/오프 수정: ${application.staff.name} - ${params.id}`)
 
-    // 🔄 재배치 트리거 (상태 변경 시)
-    // CONFIRMED → REJECTED, CANCELLED 등 변경 시 재배치 필요
-    if (oldStatus !== status && (oldStatus === 'CONFIRMED' || status === 'CONFIRMED')) {
-      console.log(`🔄 연차 상태 변경 감지: ${oldStatus} → ${status}`)
+    return NextResponse.json({
+      success: true,
+      data: updated
+    })
 
-      try {
-        await handleLeaveChange({
-          applicationId: id,
-          staffId: application.staffId,
-          date: application.date,
-          oldStatus,
-          newStatus: status,
-          changedBy: session.user.id
-        })
-        console.log(`✅ 재배치 트리거 완료`)
-      } catch (reassignError) {
-        console.error('재배치 실패 (무시):', reassignError)
-        // 재배치 실패는 무시 (수동 처리 가능)
-      }
-    }
-
-    return successResponse(updated, `Status updated to ${status}`)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Update application error:', error)
-    return errorResponse('Failed to update application', 500)
+    return NextResponse.json(
+      { success: false, error: 'Failed to update application' },
+      { status: 500 }
+    )
   }
 }
 
-// DELETE: 신청 삭제
+/**
+ * DELETE /api/leave-management/[id]
+ * 연차/오프 신청 삭제 (관리자만 가능)
+ */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -115,32 +102,66 @@ export async function DELETE(
   try {
     const session = await auth()
     if (!session?.user?.clinicId) {
-      return unauthorizedResponse()
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    const { id } = params
+    // ADMIN 또는 MANAGER 권한 확인
+    if (session.user.role !== 'ADMIN' && session.user.role !== 'MANAGER') {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden - Admin or Manager role required' },
+        { status: 403 }
+      )
+    }
+
+    const clinicId = session.user.clinicId
 
     // 신청 조회 및 권한 확인
     const application = await prisma.leaveApplication.findUnique({
-      where: { id }
+      where: { id: params.id },
+      include: {
+        staff: {
+          select: {
+            clinicId: true,
+            name: true
+          }
+        }
+      }
     })
 
     if (!application) {
-      return notFoundResponse('Application not found')
+      return NextResponse.json(
+        { success: false, error: 'Application not found' },
+        { status: 404 }
+      )
     }
 
-    if (application.clinicId !== session.user.clinicId) {
-      return unauthorizedResponse()
+    if (application.staff.clinicId !== clinicId) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden - Not your clinic' },
+        { status: 403 }
+      )
     }
 
-    // 삭제
+    // 신청 삭제
     await prisma.leaveApplication.delete({
-      where: { id }
+      where: { id: params.id }
     })
 
-    return successResponse(null, 'Application deleted successfully')
-  } catch (error) {
+    console.log(`✅ 연차/오프 삭제: ${application.staff.name} - ${params.id}`)
+
+    return NextResponse.json({
+      success: true,
+      message: 'Application deleted successfully'
+    })
+
+  } catch (error: any) {
     console.error('Delete application error:', error)
-    return errorResponse('Failed to delete application', 500)
+    return NextResponse.json(
+      { success: false, error: 'Failed to delete application' },
+      { status: 500 }
+    )
   }
 }

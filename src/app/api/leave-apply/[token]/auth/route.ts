@@ -11,11 +11,11 @@ export async function POST(
   { params }: { params: { token: string } }
 ) {
   try {
-    const { birthDate, pin } = await request.json()
+    const { staffId, birthDate } = await request.json()
 
-    if (!birthDate || !pin) {
+    if (!staffId || !birthDate) {
       return NextResponse.json(
-        { success: false, error: '생년월일과 PIN을 입력해주세요' },
+        { success: false, error: '직원과 생년월일을 입력해주세요' },
         { status: 400 }
       )
     }
@@ -23,7 +23,6 @@ export async function POST(
     // Token으로 link 조회
     const link = await prisma.applicationLink.findUnique({
       where: { token: params.token },
-      include: { staff: true }
     })
 
     if (!link) {
@@ -33,43 +32,49 @@ export async function POST(
       )
     }
 
-    // 직원 조회 및 인증
-    let staff
-    if (link.staffId) {
-      // 특정 직원용 링크
-      if (!link.staff) {
-        return NextResponse.json(
-          { success: false, error: '직원 정보를 찾을 수 없습니다' },
-          { status: 404 }
-        )
+    // 직원 조회
+    const staff = await prisma.staff.findFirst({
+      where: {
+        id: staffId,
+        clinicId: link.clinicId,
+        isActive: true,
       }
+    })
 
-      // birthDate와 PIN 확인
-      if (link.staff.birthDate !== birthDate || link.staff.pin !== pin) {
-        return NextResponse.json(
-          { success: false, error: '생년월일 또는 PIN이 올바르지 않습니다' },
-          { status: 401 }
-        )
-      }
+    if (!staff) {
+      return NextResponse.json(
+        { success: false, error: '직원 정보를 찾을 수 없습니다' },
+        { status: 404 }
+      )
+    }
 
-      staff = link.staff
-    } else {
-      // 전체 직원용 링크 - birthDate와 PIN으로 직원 찾기
-      staff = await prisma.staff.findFirst({
-        where: {
-          clinicId: link.clinicId,
-          birthDate,
-          pin,
-          isActive: true
-        }
-      })
+    // 생년월일 형식 변환 및 확인 (6자리 YYMMDD)
+    if (birthDate.length !== 6) {
+      return NextResponse.json(
+        { success: false, error: '생년월일은 6자리로 입력해주세요 (YYMMDD)' },
+        { status: 400 }
+      )
+    }
 
-      if (!staff) {
-        return NextResponse.json(
-          { success: false, error: '생년월일 또는 PIN이 올바르지 않습니다' },
-          { status: 401 }
-        )
-      }
+    const inputYear = parseInt(birthDate.substring(0, 2))
+    const inputMonth = parseInt(birthDate.substring(2, 4))
+    const inputDay = parseInt(birthDate.substring(4, 6))
+
+    // 2000년대/1900년대 판단 (00-49는 2000년대, 50-99는 1900년대)
+    const fullYear = inputYear >= 50 ? 1900 + inputYear : 2000 + inputYear
+
+    const staffBirthDate = new Date(staff.birthDate)
+
+    // 날짜 비교 (연/월/일만)
+    if (
+      fullYear !== staffBirthDate.getFullYear() ||
+      inputMonth !== staffBirthDate.getMonth() + 1 ||
+      inputDay !== staffBirthDate.getDate()
+    ) {
+      return NextResponse.json(
+        { success: false, error: '생년월일이 올바르지 않습니다' },
+        { status: 401 }
+      )
     }
 
     return NextResponse.json({

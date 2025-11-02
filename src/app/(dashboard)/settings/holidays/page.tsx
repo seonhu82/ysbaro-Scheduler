@@ -29,6 +29,7 @@ export default function HolidaysSettingsPage() {
   const { toast } = useToast()
   const [holidays, setHolidays] = useState<Holiday[]>([])
   const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
   const [newHolidayDate, setNewHolidayDate] = useState('')
   const [newHolidayName, setNewHolidayName] = useState('')
 
@@ -142,6 +143,44 @@ export default function HolidaysSettingsPage() {
     }
   }
 
+  const handleImportPublicHolidays = async () => {
+    if (!confirm('공휴일을 자동으로 불러오시겠습니까? (현재 연도 기준)')) return
+
+    try {
+      setImporting(true)
+      const year = new Date().getFullYear()
+      const response = await fetch('/api/settings/holidays/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast({
+          title: '불러오기 완료',
+          description: `${data.count || 0}개의 공휴일이 추가되었습니다`
+        })
+        fetchHolidays()
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '불러오기 실패',
+          description: data.error
+        })
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: '오류 발생',
+        description: '서버 오류가 발생했습니다'
+      })
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -153,6 +192,24 @@ export default function HolidaysSettingsPage() {
           병원의 휴업일과 공휴일을 관리합니다
         </p>
       </div>
+
+      {/* 공휴일 자동 불러오기 */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>공휴일 자동 불러오기</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              한국 공휴일을 자동으로 불러옵니다 (현재 연도 기준)
+            </p>
+            <Button onClick={handleImportPublicHolidays} disabled={importing}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${importing ? 'animate-spin' : ''}`} />
+              {importing ? '불러오는 중...' : '공휴일 불러오기'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 휴업일 추가 */}
       <Card className="mb-6">

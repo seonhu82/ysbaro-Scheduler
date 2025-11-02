@@ -352,6 +352,13 @@ model Staff {
   // 보안 정보
   registeredDevices Json? // 등록된 기기 목록
 
+  // 형평성 누적 점수 (전월 이월)
+  fairnessScoreTotalDays       Float @default(0) // 총근무 형평성
+  fairnessScoreNight           Float @default(0) // 야간 형평성
+  fairnessScoreWeekend         Float @default(0) // 주말 형평성
+  fairnessScoreHoliday         Float @default(0) // 공휴일 형평성
+  fairnessScoreHolidayAdjacent Float @default(0) // 휴일전후 형평성
+
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -391,15 +398,20 @@ enum ScheduleStatus {
 }
 
 model Schedule {
-  id         String         @id @default(cuid())
-  clinicId   String
-  clinic     Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  year       Int
-  month      Int
-  status     ScheduleStatus @default(DRAFT)
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-  deployedAt DateTime?
+  id           String         @id @default(cuid())
+  clinicId     String
+  clinic       Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  year         Int
+  month        Int
+  status       ScheduleStatus @default(DRAFT)
+  weekPatterns Json? // 주차별 패턴 매핑: { "1": "patternId1", "2": "patternId2" }
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deployedAt   DateTime?
+
+  // 배포된 날짜 범위 (다음 달 초반까지 포함)
+  deployedStartDate DateTime? @db.Date // 배포된 시작 날짜 (예: 2025-09-28)
+  deployedEndDate   DateTime? @db.Date // 배포된 종료 날짜 (예: 2025-11-01)
 
   // 관계
   doctors          ScheduleDoctor[]
@@ -408,6 +420,7 @@ model Schedule {
   @@unique([clinicId, year, month])
   @@index([clinicId, year, month])
   @@index([status])
+  @@index([deployedStartDate, deployedEndDate])
 }
 
 model ScheduleDoctor {
@@ -443,6 +456,11 @@ model StaffAssignment {
   // 🆕 실제 출퇴근 시간 (출퇴근 연동)
   actualCheckInTime  DateTime?
   actualCheckOutTime DateTime?
+
+  // 🆕 유연 배치 추적 (형평성 1점 편차 방지용)
+  isFlexible       Boolean @default(false) // 유연 배치 여부
+  originalCategory String? // 원래 카테고리
+  assignedCategory String? // 배치된 카테고리
 
   // 🆕 출퇴근 기록 연결
   attendanceRecords AttendanceRecord[]

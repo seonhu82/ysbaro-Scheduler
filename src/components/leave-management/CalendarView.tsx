@@ -14,6 +14,8 @@ import {
   isSunday,
   isSaturday,
 } from '@/lib/date-utils'
+import { AdminLeaveDialog } from './AdminLeaveDialog'
+import { LeaveDetailDialog } from './LeaveDetailDialog'
 
 type LeaveApplication = {
   id: string
@@ -32,6 +34,7 @@ type LeaveApplication = {
     token: string
     status: string
   }
+  date?: string
 }
 
 const STATUS_COLORS = {
@@ -48,6 +51,10 @@ export function CalendarView() {
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1)
   const [applications, setApplications] = useState<Record<string, LeaveApplication[]>>({})
   const [loading, setLoading] = useState(true)
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  const [selectedApplication, setSelectedApplication] = useState<LeaveApplication | null>(null)
 
   const fetchApplications = async () => {
     try {
@@ -105,6 +112,45 @@ export function CalendarView() {
     const today = new Date()
     setCurrentYear(today.getFullYear())
     setCurrentMonth(today.getMonth() + 1)
+  }
+
+  const handleDateClick = (date: Date) => {
+    // 현재 월의 날짜만 클릭 가능
+    if (isInMonth(date, currentYear, currentMonth)) {
+      setSelectedDate(date)
+      setDialogOpen(true)
+    }
+  }
+
+  const handleDialogClose = (created: boolean) => {
+    setDialogOpen(false)
+    setSelectedDate(null)
+    if (created) {
+      // 새로 생성되었으면 데이터 다시 불러오기
+      fetchApplications()
+    }
+  }
+
+  const handleApplicationClick = (app: LeaveApplication, date: Date) => {
+    // 로컬 타임존을 유지하면서 YYYY-MM-DD 형식으로 변환
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const dateString = `${year}-${month}-${day}`
+
+    setSelectedApplication({
+      ...app,
+      date: dateString
+    })
+    setDetailDialogOpen(true)
+  }
+
+  const handleDetailDialogClose = (updated: boolean) => {
+    setDetailDialogOpen(false)
+    setSelectedApplication(null)
+    if (updated) {
+      fetchApplications()
+    }
   }
 
   const calendarDates = getCalendarGridDates(currentYear, currentMonth)
@@ -194,8 +240,9 @@ export function CalendarView() {
             return (
               <div
                 key={index}
-                className={`min-h-[120px] p-2 border rounded-lg ${
-                  isCurrentMonth ? 'bg-white' : 'bg-gray-50'
+                onClick={() => handleDateClick(date)}
+                className={`min-h-[120px] p-2 border rounded-lg transition-all ${
+                  isCurrentMonth ? 'bg-white hover:bg-blue-50 cursor-pointer' : 'bg-gray-50'
                 } ${isTodayDate ? 'ring-2 ring-blue-500' : ''}`}
               >
                 {/* 날짜 숫자 */}
@@ -219,7 +266,11 @@ export function CalendarView() {
                     {dateApplications.slice(0, 3).map((app) => (
                       <div
                         key={app.id}
-                        className={`text-xs px-2 py-1 rounded border ${STATUS_COLORS[app.status]}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleApplicationClick(app, date)
+                        }}
+                        className={`text-xs px-2 py-1 rounded border cursor-pointer hover:opacity-70 transition-opacity ${STATUS_COLORS[app.status]}`}
                       >
                         <div className="font-medium truncate">{app.staff.name}</div>
                         <div className="text-[10px] opacity-80">
@@ -271,6 +322,20 @@ export function CalendarView() {
           </div>
         </div>
       </Card>
+
+      {/* 관리자 수동 입력 다이얼로그 */}
+      <AdminLeaveDialog
+        open={dialogOpen}
+        onClose={handleDialogClose}
+        selectedDate={selectedDate}
+      />
+
+      {/* 연차/오프 상세 다이얼로그 */}
+      <LeaveDetailDialog
+        open={detailDialogOpen}
+        onClose={handleDetailDialogClose}
+        application={selectedApplication}
+      />
     </div>
   )
 }

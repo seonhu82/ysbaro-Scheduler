@@ -1,0 +1,660 @@
+/**
+ * 주간 패턴 드래그앤드롭 빌더
+ *
+ * 기능:
+ * - 좌측: 사용 가능한 패턴 목록
+ * - 우측: 주차별 슬롯 (드롭 영역)
+ * - 드래그앤드롭으로 패턴 할당
+ * - 일괄 적용 기능
+ */
+
+'use client'
+
+import { useState, useEffect } from 'react'
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { Calendar, Copy, Trash2, Lock } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
+
+interface DailyPattern {
+  dayOfWeek: number
+  combination?: {
+    name: string
+    doctors: string[]
+    hasNightShift: boolean
+  }
+}
+
+interface WeeklyPattern {
+  id: string
+  name: string
+  description?: string
+  dailyPatternCount?: number
+  dailyPatterns?: DailyPattern[]
+}
+
+interface WeekAssignment {
+  weekNumber: number
+  weekLabel: string
+  patternId: string | null
+  patternName: string | null
+  isDeployed?: boolean  // 이미 배포된 주차인지 여부
+  deployedFrom?: string // 어느 스케줄에서 배포되었는지 (예: "2024년 10월")
+}
+
+interface Props {
+  year: number
+  month: number
+  onPatternsAssigned: (assignments: { weekNumber: number; patternId: string }[]) => void
+}
+
+export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }: Props) {
+  const { toast } = useToast()
+  const [patterns, setPatterns] = useState<WeeklyPattern[]>([])
+  const [weekAssignments, setWeekAssignments] = useState<WeekAssignment[]>([])
+  const [activePattern, setActivePattern] = useState<WeeklyPattern | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  useEffect(() => {
+    const initializeData = async () => {
+      await loadPatterns()
+      await loadExistingSchedule()
+    }
+    initializeData()
+  }, [year, month])
+
+  useEffect(() => {
+    // 할당 변경 시 부모에게 알림
+    const assignments = weekAssignments
+      .filter(w => w.patternId)
+      .map(w => ({ weekNumber: w.weekNumber, patternId: w.patternId! }))
+    onPatternsAssigned(assignments)
+  }, [weekAssignments]) // onPatternsAssigned 제거하여 무한 루프 방지
+
+  const loadPatterns = async () => {
+    try {
+      const response = await fetch('/api/settings/weekly-patterns')
+      const data = await response.json()
+
+      if (Array.isArray(data) && data.length > 0) {
+        // 활성화된 패턴만 필터링
+        const activePatterns = data.filter((pattern: any) => pattern.isActive !== false)
+        setPatterns(activePatterns)
+        return activePatterns
+      } else {
+        setPatterns([])
+        return []
+      }
+    } catch (error) {
+      console.error('Failed to load patterns:', error)
+      toast({
+        variant: 'destructive',
+        title: '패턴 로드 실패',
+        description: '주간 패턴을 불러올 수 없습니다'
+      })
+      return []
+    }
+  }
+
+  const initializeWeeks = () => {
+    const monthStart = new Date(year, month - 1, 1)
+    const monthEnd = new Date(year, month, 0)
+    const weeks = getWeeksInMonth(monthStart, monthEnd)
+
+    setWeekAssignments(
+      weeks.map((week, index) => ({
+        weekNumber: index + 1,
+        weekLabel: `${week.start.getMonth() + 1}/${week.start.getDate()} - ${week.end.getMonth() + 1}/${week.end.getDate()}`,
+        patternId: null,
+        patternName: null
+      }))
+    )
+  }
+
+  const loadExistingSchedule = async () => {
+    try {
+      setLoading(true)
+
+      // 1. 이전 달에 배포된 스케줄 확인 (다음 달로 걸쳐있는지)
+      const prevMonth = month === 1 ? 12 : month - 1
+      const prevYear = month === 1 ? year - 1 : year
+
+      const prevDeployedResponse = await fetch(
+        `/api/schedule/doctor-summary?year=${prevYear}&month=${prevMonth}`
+      )
+      const prevDeployedData = await prevDeployedResponse.json()
+
+      console.log('[WeeklyPatternBuilder] Previous month deployed schedule:', prevDeployedData)
+
+      // 2. 기존 스케줄 조회
+      const response = await fetch(`/api/schedule/doctor-summary?year=${year}&month=${month}`)
+      const data = await response.json()
+
+      console.log('[WeeklyPatternBuilder] Doctor summary response:', data)
+
+      // 3. 주차 정보 생성
+      const monthStart = new Date(year, month - 1, 1)
+      const monthEnd = new Date(year, month, 0)
+      const weeks = getWeeksInMonth(monthStart, monthEnd)
+
+      // 4. 이전 달 배포 범위 확인
+      let deployedDateRange: { start: Date; end: Date } | null = null
+      const prevWeekPatterns = prevDeployedData.success && prevDeployedData.weekPatterns
+        ? prevDeployedData.weekPatterns
+        : {}
+
+      if (prevDeployedData.success && prevDeployedData.schedule?.deployedEndDate) {
+        const deployedEnd = new Date(prevDeployedData.schedule.deployedEndDate)
+        // 배포 종료일이 현재 월에 속하는지 확인
+        if (deployedEnd.getFullYear() === year && deployedEnd.getMonth() === month - 1) {
+          deployedDateRange = {
+            start: new Date(year, month - 1, 1), // 현재 월 1일
+            end: deployedEnd
+          }
+          console.log(`[WeeklyPatternBuilder] Deployed date range detected: ${deployedDateRange.start.toISOString().split('T')[0]} ~ ${deployedDateRange.end.toISOString().split('T')[0]}`)
+          console.log(`[WeeklyPatternBuilder] Previous month weekPatterns:`, prevWeekPatterns)
+        }
+      }
+
+      // 5. weekPatterns가 있으면 바로 사용
+      const savedWeekPatterns = data.success && data.hasSchedule ? (data.weekPatterns || {}) : {}
+      console.log('[WeeklyPatternBuilder] Saved weekPatterns:', savedWeekPatterns)
+
+      // 6. 주차별 배정 정보 생성 (배포 여부 체크)
+      const weekAssignmentsWithPattern = weeks.map((week, index) => {
+        const weekNumber = index + 1
+
+        // 이 주차가 이미 배포된 범위에 포함되는지 확인
+        const isDeployed = deployedDateRange
+          ? week.start <= deployedDateRange.end && week.end >= deployedDateRange.start
+          : false
+
+        // 배포된 주차라면 이전 달의 패턴 사용, 아니면 현재 달의 패턴 사용
+        const patternId = isDeployed
+          ? (prevWeekPatterns[weekNumber] || null)
+          : (savedWeekPatterns[weekNumber] || null)
+
+        const pattern = patterns.find(p => p.id === patternId)
+
+        return {
+          weekNumber,
+          weekLabel: `${week.start.getMonth() + 1}/${week.start.getDate()} - ${week.end.getMonth() + 1}/${week.end.getDate()}`,
+          patternId: patternId,
+          patternName: pattern?.name || null,
+          isDeployed,
+          deployedFrom: isDeployed ? `${prevYear}년 ${prevMonth}월` : undefined
+        }
+      })
+
+      setWeekAssignments(weekAssignmentsWithPattern)
+
+      const assignedWeeks = weekAssignmentsWithPattern.filter(w => w.patternId).length
+      const deployedWeeks = weekAssignmentsWithPattern.filter(w => w.isDeployed).length
+
+      if (deployedWeeks > 0) {
+        toast({
+          title: '배포된 주차 감지',
+          description: `${deployedWeeks}개 주차가 이미 배포되어 수정할 수 없습니다`,
+          variant: 'default'
+        })
+      } else if (assignedWeeks > 0) {
+        toast({
+          title: '기존 스케줄 로드 완료',
+          description: `${year}년 ${month}월 주차별 패턴 설정 로드 완료 (${assignedWeeks}개 주차)`
+        })
+      } else {
+        console.log('[WeeklyPatternBuilder] No saved weekPatterns')
+      }
+    } catch (error) {
+      console.error('Failed to load existing schedule:', error)
+      // 오류 시 빈 주차로 초기화
+      initializeWeeks()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const pattern = patterns.find(p => p.id === event.active.id)
+    setActivePattern(pattern || null)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    setActivePattern(null)
+
+    if (!over) return
+
+    // 주차 슬롯에 드롭한 경우
+    if (over.id.toString().startsWith('week-')) {
+      const weekNumber = parseInt(over.id.toString().replace('week-', ''))
+      const targetWeek = weekAssignments.find(w => w.weekNumber === weekNumber)
+
+      // 이미 배포된 주차인지 확인
+      if (targetWeek?.isDeployed) {
+        toast({
+          variant: 'destructive',
+          title: '배포된 주차입니다',
+          description: `${weekNumber}주차는 이미 ${targetWeek.deployedFrom} 스케줄에서 배포되어 수정할 수 없습니다`
+        })
+        return
+      }
+
+      const patternId = active.id.toString()
+      const pattern = patterns.find(p => p.id === patternId)
+
+      if (pattern) {
+        setWeekAssignments(prev =>
+          prev.map(w =>
+            w.weekNumber === weekNumber
+              ? { ...w, patternId: pattern.id, patternName: pattern.name }
+              : w
+          )
+        )
+
+        toast({
+          title: '패턴 할당 완료',
+          description: `${weekNumber}주차에 "${pattern.name}" 패턴이 할당되었습니다`
+        })
+      }
+    }
+  }
+
+  const applyToAllWeeks = () => {
+    if (weekAssignments.length === 0 || !weekAssignments[0].patternId) {
+      toast({
+        variant: 'destructive',
+        title: '패턴 미선택',
+        description: '먼저 1주차에 패턴을 할당해주세요'
+      })
+      return
+    }
+
+    const firstWeekPattern = weekAssignments[0]
+    setWeekAssignments(prev =>
+      prev.map(w => ({
+        ...w,
+        patternId: firstWeekPattern.patternId,
+        patternName: firstWeekPattern.patternName
+      }))
+    )
+
+    toast({
+      title: '일괄 적용 완료',
+      description: `모든 주차에 "${firstWeekPattern.patternName}" 패턴이 적용되었습니다`
+    })
+  }
+
+  const clearWeek = (weekNumber: number) => {
+    const targetWeek = weekAssignments.find(w => w.weekNumber === weekNumber)
+
+    // 이미 배포된 주차인지 확인
+    if (targetWeek?.isDeployed) {
+      toast({
+        variant: 'destructive',
+        title: '배포된 주차입니다',
+        description: `${weekNumber}주차는 이미 ${targetWeek.deployedFrom} 스케줄에서 배포되어 수정할 수 없습니다`
+      })
+      return
+    }
+
+    setWeekAssignments(prev =>
+      prev.map(w =>
+        w.weekNumber === weekNumber
+          ? { ...w, patternId: null, patternName: null }
+          : w
+      )
+    )
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="p-12 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-500">패턴 로딩 중...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 좌측: 사용 가능한 패턴 목록 */}
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Calendar className="w-4 h-4" />
+              사용 가능한 패턴
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {patterns.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 text-sm">
+                <p>등록된 패턴이 없습니다</p>
+                <p className="mt-2">먼저 주간 패턴을 생성해주세요</p>
+              </div>
+            ) : (
+              <SortableContext items={patterns.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-2">
+                  {patterns.map(pattern => (
+                    <DraggablePattern key={pattern.id} pattern={pattern} />
+                  ))}
+                </div>
+              </SortableContext>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 우측: 주차별 드롭 영역 */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                {year}년 {month}월 주차별 패턴
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={applyToAllWeeks}
+                disabled={!weekAssignments[0]?.patternId}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                전체 주에 적용
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {weekAssignments.map(week => (
+                <WeekDropZone
+                  key={week.weekNumber}
+                  week={week}
+                  onClear={() => clearWeek(week.weekNumber)}
+                />
+              ))}
+            </div>
+
+            {weekAssignments.length > 0 && (
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  💡 팁: 좌측의 패턴을 드래그하여 주차 영역에 드롭하세요
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 드래그 오버레이 */}
+      <DragOverlay>
+        {activePattern ? (
+          <div className="bg-white border-2 border-blue-500 rounded-lg p-3 shadow-lg">
+            <div className="font-medium text-sm">{activePattern.name}</div>
+            {activePattern.description && (
+              <div className="text-xs text-gray-500 mt-1">{activePattern.description}</div>
+            )}
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  )
+}
+
+/**
+ * 드래그 가능한 패턴 카드
+ */
+function DraggablePattern({ pattern }: { pattern: WeeklyPattern }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: pattern.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1
+  }
+
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토']
+
+  // 월요일(1)부터 토요일(6)까지만 필터링 및 정렬
+  const sortedPatterns = pattern.dailyPatterns
+    ? [...pattern.dailyPatterns]
+        .filter(dp => dp.dayOfWeek >= 1 && dp.dayOfWeek <= 6) // 월(1)~토(6)만
+        .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
+    : []
+
+  return (
+    <TooltipProvider>
+      <Tooltip delayDuration={300}>
+        <TooltipTrigger asChild>
+          <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
+            className="bg-white border border-gray-200 rounded-lg p-3 cursor-move hover:border-blue-400 hover:shadow-md transition-all"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-medium text-sm">{pattern.name}</div>
+              {pattern.description && (
+                <Badge variant="outline" className="text-xs shrink-0">
+                  {pattern.description}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-sm">
+          <div className="space-y-2">
+            <div className="font-semibold text-sm mb-2">{pattern.name}</div>
+            {sortedPatterns.length > 0 ? (
+              <div className="space-y-1 text-xs">
+                {sortedPatterns.map((dp) => (
+                  <div key={dp.dayOfWeek} className="flex items-start gap-2">
+                    <Badge variant="outline" className="shrink-0 min-w-[32px] justify-center">
+                      {dayNames[dp.dayOfWeek]}
+                    </Badge>
+                    {dp.combination && dp.combination.doctors && dp.combination.doctors.length > 0 ? (
+                      <div className="flex-1">
+                        <div className="text-gray-600">
+                          {dp.combination.doctors.join(', ')}
+                          {dp.combination.hasNightShift && (
+                            <span className="text-blue-600 ml-1">• 야간</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">휴무</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-gray-500">패턴 정보 없음</div>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+/**
+ * 주차 드롭 영역
+ */
+function WeekDropZone({
+  week,
+  onClear
+}: {
+  week: WeekAssignment
+  onClear: () => void
+}) {
+  const {
+    setNodeRef,
+    isOver
+  } = useSortable({ id: `week-${week.weekNumber}` })
+
+  // 배포된 주차 스타일
+  const isDeployed = week.isDeployed
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`border-2 rounded-lg p-4 transition-all ${
+        isDeployed
+          ? 'border-gray-400 bg-gray-100 cursor-not-allowed opacity-75'
+          : isOver
+          ? 'border-blue-500 bg-blue-50 border-dashed'
+          : week.patternId
+          ? 'border-green-300 bg-green-50 border-dashed'
+          : 'border-gray-300 bg-gray-50 border-dashed'
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <Badge variant={isDeployed ? "secondary" : "outline"}>
+              {week.weekNumber}주차
+            </Badge>
+            <span className="text-sm text-gray-600">{week.weekLabel}</span>
+            {isDeployed && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Lock className="w-4 h-4 text-gray-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{week.deployedFrom} 스케줄에서 배포됨</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
+          {week.patternName ? (
+            <div className="mt-2 flex items-center gap-2">
+              <Badge className={isDeployed ? "bg-gray-600" : "bg-green-600"}>
+                {week.patternName}
+              </Badge>
+              {isDeployed && (
+                <span className="text-xs text-gray-500">
+                  ({week.deployedFrom}에서 배포됨)
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-400 mt-2">
+              {isDeployed ? '이미 배포된 주차입니다' : '패턴을 드래그하여 할당하세요'}
+            </div>
+          )}
+        </div>
+        {week.patternId && !isDeployed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClear}
+            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 월의 주 목록 생성 (일요일~토요일 기준)
+ */
+function getWeeksInMonth(monthStart: Date, monthEnd: Date) {
+  const weeks: { start: Date; end: Date }[] = []
+
+  // 해당 월의 첫날이 속한 주의 일요일 찾기
+  let weekStart = new Date(monthStart)
+  const firstDayOfWeek = monthStart.getDay() // 0=일요일
+
+  // 일요일로 조정
+  if (firstDayOfWeek !== 0) {
+    weekStart.setDate(weekStart.getDate() - firstDayOfWeek)
+  }
+
+  // 해당 월의 마지막 날이 속한 주의 토요일 찾기
+  let weekEnd = new Date(monthEnd)
+  const lastDayOfWeek = monthEnd.getDay()
+
+  // 토요일로 조정
+  if (lastDayOfWeek !== 6) {
+    weekEnd.setDate(weekEnd.getDate() + (6 - lastDayOfWeek))
+  }
+
+  // 주 단위로 생성 (일요일 ~ 토요일)
+  let current = new Date(weekStart)
+
+  while (current <= weekEnd) {
+    const start = new Date(current)
+    const end = new Date(current)
+    end.setDate(end.getDate() + 6) // 일요일 + 6일 = 토요일
+
+    // 마지막 주의 끝이 전체 종료일을 넘지 않도록
+    if (end > weekEnd) {
+      weeks.push({ start, end: new Date(weekEnd) })
+      break
+    } else {
+      weeks.push({ start, end })
+    }
+
+    // 다음 주 (일요일)
+    current.setDate(current.getDate() + 7)
+  }
+
+  return weeks
+}

@@ -46,7 +46,7 @@ if (SENTRY_DSN && ENVIRONMENT === 'production') {
       // HTTP 요청 데이터에서 민감한 정보 제거
       if (event.request) {
         // Query parameters
-        if (event.request.query_string) {
+        if (event.request.query_string && typeof event.request.query_string === 'string') {
           event.request.query_string = event.request.query_string.replace(
             /token=[^&]+/g,
             'token=[REDACTED]'
@@ -108,14 +108,8 @@ if (SENTRY_DSN && ENVIRONMENT === 'production') {
 
     // 통합 설정
     integrations: [
-      new Sentry.Integrations.Postgres({
-        // PostgreSQL 쿼리 추적
-        usePgNative: false
-      }),
-      new Sentry.Integrations.Http({
-        // HTTP 요청 추적
-        tracing: true
-      })
+      Sentry.prismaIntegration(),
+      Sentry.httpIntegration()
     ]
   })
 

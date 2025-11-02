@@ -22,7 +22,6 @@ interface WeeklyPattern {
   id: string
   name: string
   description: string | null
-  isDefault: boolean
   isActive: boolean
   days: WeeklyPatternDay[]
 }
@@ -57,8 +56,10 @@ export default function WeeklyPatternsSettings() {
       ])
       const patternsData = await patternsRes.json()
       const combinationsData = await combinationsRes.json()
-      setPatterns(patternsData)
-      setCombinations(combinationsData)
+
+      // patternsData는 배열, combinationsData는 { success: true, data: [...] } 형식
+      setPatterns(Array.isArray(patternsData) ? patternsData : [])
+      setCombinations(combinationsData.success ? combinationsData.data : [])
     } catch (error) {
       console.error('Failed to fetch data:', error)
     } finally {
@@ -66,11 +67,7 @@ export default function WeeklyPatternsSettings() {
     }
   }
 
-  const handleDelete = async (id: string, isDefault: boolean) => {
-    if (isDefault) {
-      alert('기본 패턴은 삭제할 수 없습니다.')
-      return
-    }
+  const handleDelete = async (id: string) => {
     if (!confirm('정말 삭제하시겠습니까?')) return
 
     try {
@@ -85,24 +82,6 @@ export default function WeeklyPatternsSettings() {
       }
     } catch (error) {
       console.error('Failed to delete pattern:', error)
-    }
-  }
-
-  const handleSetDefault = async (pattern: WeeklyPattern) => {
-    try {
-      const res = await fetch(`/api/settings/weekly-patterns/${pattern.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...pattern,
-          isDefault: true,
-        }),
-      })
-      if (res.ok) {
-        fetchData()
-      }
-    } catch (error) {
-      console.error('Failed to set default pattern:', error)
     }
   }
 
@@ -128,7 +107,6 @@ export default function WeeklyPatternsSettings() {
     const newPattern: Partial<WeeklyPattern> = {
       name: `${pattern.name} (복사)`,
       description: pattern.description,
-      isDefault: false,
       days: pattern.days.map((day) => ({
         dayOfWeek: day.dayOfWeek,
         combinationId: day.combinationId,
@@ -188,8 +166,7 @@ export default function WeeklyPatternsSettings() {
                 setEditingPattern(pattern)
                 setShowCreateModal(true)
               }}
-              onDelete={() => handleDelete(pattern.id, pattern.isDefault)}
-              onSetDefault={() => handleSetDefault(pattern)}
+              onDelete={() => handleDelete(pattern.id)}
               onToggleActive={() => handleToggleActive(pattern)}
               onDuplicate={() => handleDuplicate(pattern)}
             />
@@ -223,14 +200,12 @@ function PatternCard({
   pattern,
   onEdit,
   onDelete,
-  onSetDefault,
   onToggleActive,
   onDuplicate,
 }: {
   pattern: WeeklyPattern
   onEdit: () => void
   onDelete: () => void
-  onSetDefault: () => void
   onToggleActive: () => void
   onDuplicate: () => void
 }) {
@@ -241,11 +216,6 @@ function PatternCard({
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-lg text-gray-900">{pattern.name}</h3>
-              {pattern.isDefault && (
-                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                  기본
-                </span>
-              )}
               {!pattern.isActive && (
                 <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
                   비활성
@@ -262,7 +232,7 @@ function PatternCard({
       <div className="p-4">
         <div className="grid grid-cols-7 gap-2">
           {DAYS_OF_WEEK.map((day) => {
-            const patternDay = pattern.days.find((d) => d.dayOfWeek === day.key)
+            const patternDay = pattern.days?.find((d) => d.dayOfWeek === day.key)
             return (
               <div
                 key={day.key}
@@ -304,28 +274,18 @@ function PatternCard({
         >
           복사
         </button>
-        {!pattern.isDefault && (
-          <button
-            onClick={onSetDefault}
-            className="flex-1 px-3 py-2 text-sm bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200"
-          >
-            기본 설정
-          </button>
-        )}
         <button
           onClick={onToggleActive}
           className="flex-1 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
         >
           {pattern.isActive ? '비활성화' : '활성화'}
         </button>
-        {!pattern.isDefault && (
-          <button
-            onClick={onDelete}
-            className="flex-1 px-3 py-2 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
-          >
-            삭제
-          </button>
-        )}
+        <button
+          onClick={onDelete}
+          className="flex-1 px-3 py-2 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+        >
+          삭제
+        </button>
       </div>
     </div>
   )
@@ -347,7 +307,6 @@ function PatternModal({
 }) {
   const [name, setName] = useState(pattern?.name || '')
   const [description, setDescription] = useState(pattern?.description || '')
-  const [isDefault, setIsDefault] = useState(pattern?.isDefault || false)
   const [days, setDays] = useState<WeeklyPatternDay[]>(
     pattern?.days ||
       DAYS_OF_WEEK.map((day) => ({
@@ -395,7 +354,6 @@ function PatternModal({
         body: JSON.stringify({
           name,
           description,
-          isDefault,
           days,
         }),
       })
@@ -452,18 +410,6 @@ function PatternModal({
               />
             </div>
 
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="isDefault"
-                checked={isDefault}
-                onChange={(e) => setIsDefault(e.target.checked)}
-                className="mr-2"
-              />
-              <label htmlFor="isDefault" className="text-sm text-gray-700">
-                기본 패턴으로 설정 (자동 적용됨)
-              </label>
-            </div>
           </div>
 
           {/* 요일별 조합 설정 */}

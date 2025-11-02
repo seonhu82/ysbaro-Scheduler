@@ -35,13 +35,29 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // 메인 캘린더용: DEPLOYED 스케줄만 조회
     const schedule = await prisma.schedule.findFirst({
       where: {
         clinicId,
         year: parseInt(year),
         month: parseInt(month),
+        status: 'DEPLOYED', // 배포된 스케줄만 조회
       },
       include: {
+        doctors: {
+          include: {
+            doctor: {
+              select: {
+                id: true,
+                name: true,
+                shortName: true,
+              },
+            },
+          },
+          orderBy: {
+            date: 'asc',
+          },
+        },
         staffAssignments: {
           include: {
             staff: {
@@ -59,9 +75,30 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    // 해당 월의 승인된 휴가 정보 조회 (schedule이 있을 때만)
+    let leaves: any[] = []
+    if (schedule) {
+      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1)
+      const endDate = new Date(parseInt(year), parseInt(month), 0)
+
+      leaves = await prisma.leaveApplication.findMany({
+        where: {
+          clinicId,
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
+          status: 'CONFIRMED',
+        },
+      })
+    }
+
     return NextResponse.json({
       success: true,
-      data: schedule,
+      data: schedule ? {
+        ...schedule,
+        leaves,
+      } : null,
     })
   } catch (error) {
     console.error('GET /api/schedule error:', error)

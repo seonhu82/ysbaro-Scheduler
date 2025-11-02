@@ -3,11 +3,19 @@
 import { getCalendarGridDates, isInMonth, formatDate } from '@/lib/date-utils'
 import { CalendarCell } from './CalendarCell'
 
+interface DaySchedule {
+  combinationName: string
+  hasNightShift: boolean
+  requiredStaff: number
+  assignedStaff: number
+  doctorShortNames: string[]
+  annualLeaveCount?: number // 연차 인원
+  offCount?: number // 오프 인원
+  leaveCount?: number // 하위 호환용 (연차+오프 합계)
+}
+
 interface ScheduleData {
-  [date: string]: {
-    doctors: { id: string; name: string }[]
-    staffCount: number
-  }
+  [date: string]: DaySchedule
 }
 
 interface CalendarGridProps {
@@ -55,8 +63,7 @@ export function CalendarGrid({
               key={index}
               date={date}
               isCurrentMonth={isCurrentMonthDate}
-              doctors={schedule?.doctors}
-              staffCount={schedule?.staffCount}
+              schedule={schedule}
               onClick={() => onDateClick?.(date)}
             />
           )

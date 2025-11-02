@@ -27,7 +27,10 @@ export async function GET() {
       orderBy: [{ dayOfWeek: 'asc' }, { createdAt: 'asc' }],
     })
 
-    return NextResponse.json(combinations)
+    return NextResponse.json({
+      success: true,
+      data: combinations,
+    })
   } catch (error) {
     console.error('Combinations list error:', error)
     return NextResponse.json(

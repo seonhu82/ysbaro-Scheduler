@@ -18,9 +18,15 @@ const navigation = [
     roles: ['ADMIN', 'MANAGER'],
     children: [
       {
-        name: '자동 배치',
+        name: '원장 스케줄 배치',
         href: '/schedule/auto-assign',
-        icon: '🤖',
+        icon: '👨‍⚕️',
+        roles: ['ADMIN', 'MANAGER'],
+      },
+      {
+        name: '직원 스케줄 배치',
+        href: '/schedule/monthly-wizard',
+        icon: '👥',
         roles: ['ADMIN', 'MANAGER'],
       },
       {
@@ -32,7 +38,7 @@ const navigation = [
     ]
   },
   {
-    name: '연차 관리',
+    name: '연차/오프 관리',
     href: '/leave-management',
     icon: '📋',
     roles: ['ADMIN', 'MANAGER'],
@@ -58,6 +64,12 @@ const navigation = [
     roles: ['ADMIN', 'MANAGER'],
   },
   {
+    name: '공정성 모니터링',
+    href: '/fairness',
+    icon: '⚖️',
+    roles: ['ADMIN', 'MANAGER'],
+  },
+  {
     name: '알림',
     href: '/notifications',
     icon: '🔔',
@@ -74,6 +86,86 @@ const navigation = [
     href: '/settings',
     icon: '⚙️',
     roles: ['ADMIN', 'MANAGER'],
+    children: [
+      {
+        name: '기본 정보 수정',
+        href: '/settings/clinic-info',
+        icon: '🏥',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '부서/구분 관리',
+        href: '/settings/departments',
+        icon: '🏢',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '원장 관리',
+        href: '/settings/doctors',
+        icon: '👨‍⚕️',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '직원 관리',
+        href: '/settings/staff',
+        icon: '👥',
+        roles: ['ADMIN', 'MANAGER'],
+      },
+      {
+        name: '의사 조합',
+        href: '/settings/combinations',
+        icon: '🔗',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '주간 패턴',
+        href: '/settings/weekly-patterns',
+        icon: '📅',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '휴업일 관리',
+        href: '/settings/holidays',
+        icon: '🎉',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '구분별 비율',
+        href: '/settings/category-ratios',
+        icon: '📊',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '공정성 가중치',
+        href: '/settings/fairness',
+        icon: '⚖️',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '근태 설정',
+        href: '/settings/attendance',
+        icon: '⏰',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '규칙 설정',
+        href: '/settings/rules',
+        icon: '📜',
+        roles: ['ADMIN'],
+      },
+      {
+        name: '알림 설정',
+        href: '/settings/notifications',
+        icon: '🔔',
+        roles: ['ADMIN', 'MANAGER'],
+      },
+      {
+        name: '백업 관리',
+        href: '/settings/backup',
+        icon: '💾',
+        roles: ['ADMIN'],
+      },
+    ]
   },
 ]
 

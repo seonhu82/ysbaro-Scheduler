@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
     // 스케줄 조회 조건 결정
     // status 파라미터가 없으면 DEPLOYED만 조회 (메인 대시보드용)
     // status='DRAFT'면 DRAFT만 조회 (Wizard Step 4용)
+    // status='CONFIRMED'면 CONFIRMED만 조회
     // status='DEPLOYED'면 DEPLOYED만 조회
     const scheduleStatus = statusParam || 'DEPLOYED'
 
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
         clinicId,
         year,
         month,
-        status: scheduleStatus
+        status: scheduleStatus as any
       },
       include: {
         doctors: {

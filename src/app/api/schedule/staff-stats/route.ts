@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { successResponse, errorResponse, unauthorizedResponse } from '@/lib/utils/api-response'
+import { calculateStaffFairnessV2 } from '@/lib/services/fairness-calculator-v2'
 
 export async function GET(request: NextRequest) {
   try {
@@ -169,6 +170,11 @@ export async function GET(request: NextRequest) {
       const dateKey = assignmentDate.toISOString().split('T')[0]
       const dayOfWeek = assignmentDate.getDay()
 
+      // 해당 월에 속하는 날짜만 카운팅 (전월/다음월 배정 제외)
+      if (assignmentDate < startDate || assignmentDate > endDate) {
+        continue
+      }
+
       // 이미 초기화되어 있으므로 바로 가져옴
       const stats = staffStatsMap.get(staffId)
       if (!stats) continue // 진료실 직원이 아니면 스킵
@@ -197,7 +203,7 @@ export async function GET(request: NextRequest) {
         stats.holidayDays++
       }
 
-      // 공휴일 전후 근무 (공연장 - 공휴일 당일 제외)
+      // 공휴일 전후 근무 (휴일연장 - 공휴일 당일 제외)
       const isHolidayAdjacent = holidayDates.has(
         new Date(assignmentDate.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       ) || holidayDates.has(
@@ -242,8 +248,33 @@ export async function GET(request: NextRequest) {
       total: s.totalDays
     })))
 
+    // 형평성 점수 계산 (V2 사용)
+    const statsWithFairness = await Promise.all(
+      stats.map(async (stat) => {
+        const fairness = await calculateStaffFairnessV2(
+          stat.staffId,
+          clinicId,
+          year,
+          month,
+          '진료실'
+        )
+
+        return {
+          ...stat,
+          fairness: {
+            total: fairness.dimensions.total,
+            night: fairness.dimensions.night,
+            weekend: fairness.dimensions.weekend,
+            holiday: fairness.dimensions.holiday,
+            holidayAdjacent: fairness.dimensions.holidayAdjacent,
+            overallScore: fairness.overallScore // Step 3과 동일한 점수 사용
+          }
+        }
+      })
+    )
+
     return successResponse({
-      stats,
+      stats: statsWithFairness,
       enabledDimensions // 활성화된 형평성 차원
     })
 

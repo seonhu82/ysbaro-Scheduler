@@ -132,7 +132,40 @@ export async function POST(
     // 6-7. 🔒 트랜잭션: 슬롯 확인 및 신청 생성
     // Serializable 격리 수준으로 Race Condition 방지
     const newApplication = await prisma.$transaction(async (tx) => {
-      // 6-1. 현재 신청 수 카운트 (트랜잭션 내부)
+      // 6-1. 연차 신청인 경우, 일일 최대 연차 신청 인원 확인
+      if (type === 'ANNUAL') {
+        const year = applicationDate.getFullYear()
+        const month = applicationDate.getMonth() + 1
+
+        // LeavePeriod에서 maxSlots 가져오기
+        const leavePeriod = await tx.leavePeriod.findUnique({
+          where: {
+            clinicId_year_month: {
+              clinicId,
+              year,
+              month
+            }
+          }
+        })
+
+        if (leavePeriod && leavePeriod.maxSlots > 0) {
+          // 해당 날짜의 연차 신청 수 카운트 (ANNUAL만)
+          const annualApplicationCount = await tx.leaveApplication.count({
+            where: {
+              date: applicationDate,
+              leaveType: 'ANNUAL',
+              status: { in: ['CONFIRMED', 'PENDING'] },
+              staff: { clinicId }
+            }
+          })
+
+          if (annualApplicationCount >= leavePeriod.maxSlots) {
+            throw new Error(`하루 최대 연차 신청 인원(${leavePeriod.maxSlots}명)을 초과했습니다.`)
+          }
+        }
+      }
+
+      // 6-2. 현재 신청 수 카운트 (트랜잭션 내부)
       const currentApplications = await tx.leaveApplication.count({
         where: {
           date: applicationDate,
@@ -141,7 +174,7 @@ export async function POST(
         }
       })
 
-      // 6-2. 구분별 신청 수 카운트
+      // 6-3. 구분별 신청 수 카운트
       const categoryApplications = await tx.leaveApplication.count({
         where: {
           date: applicationDate,
@@ -158,8 +191,7 @@ export async function POST(
         clinicId,
         applicationDate,
         requiredStaff,
-        staff.categoryName || '',
-        tx // 트랜잭션 컨텍스트 전달
+        staff.categoryName || ''
       )
 
       // 6-4. 중복 신청 방지 (같은 날짜에 이미 신청했는지)
@@ -248,6 +280,17 @@ export async function POST(
           error: '이미 해당 날짜에 신청하셨습니다.'
         },
         { status: 409 }
+      )
+    }
+
+    // 최대 연차 신청 인원 초과 에러 처리
+    if (error.message?.includes('하루 최대 연차 신청 인원')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message
+        },
+        { status: 400 }
       )
     }
 

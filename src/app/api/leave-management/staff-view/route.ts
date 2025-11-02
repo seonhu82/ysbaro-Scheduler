@@ -12,6 +12,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const rank = searchParams.get('rank')
+    const department = searchParams.get('department')
+    const category = searchParams.get('category')
     const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString())
 
     // 직원 목록 조회
@@ -22,6 +24,14 @@ export async function GET(request: NextRequest) {
 
     if (rank && rank !== 'all') {
       staffWhere.rank = rank
+    }
+
+    if (department && department !== 'all') {
+      staffWhere.departmentName = department
+    }
+
+    if (category && category !== 'all') {
+      staffWhere.categoryName = category
     }
 
     const staffList = await prisma.staff.findMany({

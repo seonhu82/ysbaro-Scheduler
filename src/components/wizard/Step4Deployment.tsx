@@ -27,6 +27,9 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [loadingSchedule, setLoadingSchedule] = useState(true)
   const [staffStats, setStaffStats] = useState<any[]>([])
+  const [isDeployed, setIsDeployed] = useState(false)
+  const [scheduleStatus, setScheduleStatus] = useState<'DRAFT' | 'CONFIRMED' | 'DEPLOYED'>('DRAFT')
+  const [undeploying, setUndeploying] = useState(false)
   const [enabledDimensions, setEnabledDimensions] = useState({
     night: true,
     weekend: true,
@@ -44,17 +47,61 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
   const fetchSchedulePreview = async () => {
     try {
       setLoadingSchedule(true)
-      // DRAFT 스케줄만 조회 (배포 전 예정 스케줄)
-      const response = await fetch(`/api/schedule/monthly-view?year=${wizardState.year}&month=${wizardState.month}&status=DRAFT`)
-      const data = await response.json()
+
+      // 스케줄 상태 확인
+      const statusResponse = await fetch(`/api/schedule/status?year=${wizardState.year}&month=${wizardState.month}`)
+      const statusData = await statusResponse.json()
+
+      if (statusData.success && statusData.schedule?.status === 'DEPLOYED') {
+        setIsDeployed(true)
+        setScheduleStatus('DEPLOYED')
+        // DEPLOYED 스케줄 조회
+        const response = await fetch(`/api/schedule/monthly-view?year=${wizardState.year}&month=${wizardState.month}&status=DEPLOYED`)
+        const data = await response.json()
+        if (data.success) {
+          setScheduleData(data.scheduleData || {})
+        }
+
+        // 직원 통계 조회
+        const statsResponse = await fetch(`/api/schedule/staff-stats?year=${wizardState.year}&month=${wizardState.month}&status=DEPLOYED`)
+        const statsData = await statsResponse.json()
+        if (statsData.success && statsData.data?.stats) {
+          setStaffStats(statsData.data.stats)
+          if (statsData.data.enabledDimensions) {
+            setEnabledDimensions(statsData.data.enabledDimensions)
+          }
+        }
+        setLoadingSchedule(false)
+        return
+      }
+
+      // 배포 전 스케줄 조회 (CONFIRMED 우선, 없으면 DRAFT)
+      let response = await fetch(`/api/schedule/monthly-view?year=${wizardState.year}&month=${wizardState.month}&status=CONFIRMED`)
+      let data = await response.json()
+      let currentStatus: 'CONFIRMED' | 'DRAFT' = 'CONFIRMED'
+
+      // CONFIRMED가 없으면 DRAFT 조회
+      if (!data.success || !data.scheduleData || Object.keys(data.scheduleData).length === 0) {
+        response = await fetch(`/api/schedule/monthly-view?year=${wizardState.year}&month=${wizardState.month}&status=DRAFT`)
+        data = await response.json()
+        currentStatus = 'DRAFT'
+      }
+
+      setScheduleStatus(currentStatus)
 
       if (data.success) {
         setScheduleData(data.scheduleData || {})
       }
 
-      // 직원별 근무일수 통계 조회
-      const statsResponse = await fetch(`/api/schedule/staff-stats?year=${wizardState.year}&month=${wizardState.month}&status=DRAFT`)
-      const statsData = await statsResponse.json()
+      // 직원별 근무일수 통계 조회 (CONFIRMED 우선)
+      let statsResponse = await fetch(`/api/schedule/staff-stats?year=${wizardState.year}&month=${wizardState.month}&status=CONFIRMED`)
+      let statsData = await statsResponse.json()
+
+      // CONFIRMED가 없으면 DRAFT 조회
+      if (!statsData.success || !statsData.data?.stats || statsData.data.stats.length === 0) {
+        statsResponse = await fetch(`/api/schedule/staff-stats?year=${wizardState.year}&month=${wizardState.month}&status=DRAFT`)
+        statsData = await statsResponse.json()
+      }
 
       console.log('📊 Staff stats response:', statsData)
       console.log('📊 Stats success:', statsData.success)
@@ -73,46 +120,19 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
         const total = stats.reduce((sum: number, s: any) => sum + s.totalDays, 0)
         setTotalAssignments(total)
 
-        // 평균 형평성 계산 (모든 활성화된 차원의 표준편차 합산)
+        // 평균 형평성 계산 (Step 3과 동일한 방식: overallScore의 평균)
         if (stats.length > 0) {
-          const enabled = statsData.data.enabledDimensions || {}
+          // 각 직원의 overallScore 평균 계산
+          const overallScores = stats
+            .map((s: any) => s.fairness?.overallScore || 0)
+            .filter((score: number) => score > 0)
 
-          // 설정에 따라 동적으로 차원 구성
-          const dimensions = [
-            { key: 'totalDays', enabled: true, weight: 1.0, label: '총 근무' }
-          ]
-
-          if (enabled.night) {
-            dimensions.push({ key: 'nightShiftDays', enabled: true, weight: 1.2, label: '야간' })
+          if (overallScores.length > 0) {
+            const avgScore = overallScores.reduce((sum: number, score: number) => sum + score, 0) / overallScores.length
+            setAverageFairness(Math.round(avgScore))
+          } else {
+            setAverageFairness(0)
           }
-          if (enabled.weekend) {
-            dimensions.push({ key: 'weekendDays', enabled: true, weight: 1.1, label: '주말' })
-          }
-          if (enabled.holiday) {
-            dimensions.push({ key: 'holidayDays', enabled: true, weight: 1.15, label: '공휴일' })
-          }
-          if (enabled.holidayAdjacent) {
-            dimensions.push({ key: 'holidayAdjacentDays', enabled: true, weight: 1.15, label: '공휴일전후' })
-          }
-
-          let totalWeightedStdDev = 0
-
-          for (const dim of dimensions) {
-            const values = stats.map((s: any) => s[dim.key] || 0)
-            const avg = values.reduce((sum: number, v: number) => sum + v, 0) / values.length
-            const variance = values.reduce((sum: number, v: number) =>
-              sum + Math.pow(v - avg, 2), 0
-            ) / values.length
-            const stdDev = Math.sqrt(variance)
-
-            // 가중치 적용한 표준편차를 합산
-            totalWeightedStdDev += stdDev * dim.weight
-          }
-
-          // 형평성 점수: 표준편차 합이 낮을수록 높은 점수
-          // 총합 0 = 100점, 총합 5 = 50점, 총합 10 = 0점
-          const fairnessScore = Math.max(0, Math.min(100, 100 - totalWeightedStdDev * 10))
-          setAverageFairness(Math.round(fairnessScore * 10) / 10)
         } else {
           setAverageFairness(0)
         }
@@ -193,6 +213,124 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
     } catch (error) {
       console.error('ON_HOLD processing error:', error)
     }
+  }
+
+  // 배포 취소
+  const handleUndeploy = async () => {
+    if (!confirm('배포를 취소하시겠습니까?\n배포 취소 후 스케줄을 수정할 수 있습니다.')) {
+      return
+    }
+
+    try {
+      setUndeploying(true)
+
+      const response = await fetch('/api/schedule/undeploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year: wizardState.year,
+          month: wizardState.month,
+          scheduleId: wizardState.assignmentResult?.scheduleId
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast({
+          title: '배포 취소 완료',
+          description: '스케줄을 수정할 수 있습니다'
+        })
+        // 페이지 새로고침하여 DRAFT 상태로 변경
+        setIsDeployed(false)
+        fetchSchedulePreview()
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '배포 취소 실패',
+          description: data.error
+        })
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: '오류',
+        description: '배포 취소 중 오류가 발생했습니다'
+      })
+    } finally {
+      setUndeploying(false)
+    }
+  }
+
+  // 이미 배포된 스케줄인 경우
+  if (isDeployed) {
+    return (
+      <div className="space-y-6">
+        <Card className="bg-green-50 border-green-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-green-800">
+              <CheckCircle className="w-6 h-6" />
+              이미 배포된 스케줄
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-gray-700">
+              {wizardState.year}년 {wizardState.month}월 스케줄은 이미 배포되었습니다.
+              <br />
+              개별 날짜 수정은 캘린더에서 가능하며, 전체 스케줄을 다시 배치하려면 배포를 취소하세요.
+            </p>
+
+            {/* 통계 요약 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <Card className="bg-white">
+                <CardContent className="p-4">
+                  <div className="text-sm text-gray-600">총 근무 배정</div>
+                  <div className="text-2xl font-bold text-gray-900 mt-1">
+                    {staffStats.reduce((sum: number, s: any) => sum + s.totalDays, 0)}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white">
+                <CardContent className="p-4">
+                  <div className="text-sm text-gray-600">배치된 직원</div>
+                  <div className="text-2xl font-bold text-gray-900 mt-1">
+                    {staffStats.length}명
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+              <p className="text-sm text-blue-800">
+                <strong>💡 스케줄 수정 방법</strong>
+              </p>
+              <ul className="text-sm text-blue-800 mt-2 space-y-1 ml-4 list-disc">
+                <li><strong>개별 날짜 수정:</strong> 캘린더에서 날짜를 클릭하여 해당 날짜의 직원 배치를 수정할 수 있습니다.</li>
+                <li><strong>전체 재배치:</strong> 배포를 취소한 후 1단계부터 다시 시작하여 전체 스케줄을 재배치할 수 있습니다.</li>
+              </ul>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <Button
+                variant="destructive"
+                onClick={handleUndeploy}
+                disabled={undeploying}
+              >
+                {undeploying ? '취소 중...' : '배포 취소'}
+              </Button>
+              <Button onClick={() => window.location.href = '/calendar'}>
+                <Calendar className="w-4 h-4 mr-2" />
+                캘린더로 이동
+              </Button>
+              <Button variant="outline" onClick={() => window.location.href = '/schedule'}>
+                스케줄 관리로 돌아가기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -311,43 +449,105 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                             </Badge>
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div className="flex justify-between">
+                        <div className="space-y-2 text-xs">
+                          {/* 총 근무일 (실제 근무) */}
+                          <div className="flex justify-between items-center">
                             <span className="text-gray-600">총 근무:</span>
-                            <span className="font-semibold text-blue-600">{stat.totalDays}일</span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-semibold text-blue-600">{stat.totalDays}일</span>
+                              {stat.fairness?.total && (
+                                <span className={`text-xs ${
+                                  stat.fairness.total.deviation > 0 ? 'text-green-600' :
+                                  stat.fairness.total.deviation < 0 ? 'text-red-600' : 'text-gray-400'
+                                }`}>
+                                  ({stat.fairness.total.deviation > 0 ? '+' : ''}{stat.fairness.total.deviation.toFixed(1)})
+                                </span>
+                              )}
+                            </div>
                           </div>
+                          {/* 연차 */}
+                          {(stat.annualDays || 0) > 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">연차:</span>
+                              <span className="font-semibold text-green-600">{stat.annualDays}일</span>
+                            </div>
+                          )}
+                          {/* 오프 */}
+                          {(stat.offDays || 0) > 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">오프:</span>
+                              <span className="font-semibold text-gray-600">{stat.offDays}일</span>
+                            </div>
+                          )}
+                          <div className="border-t pt-2 mt-2"></div>
+                          {/* 야간 */}
                           {enabledDimensions.night && (
-                            <div className="flex justify-between">
+                            <div className="flex justify-between items-center">
                               <span className="text-gray-600">야간:</span>
-                              <span className="font-semibold text-purple-600">{stat.nightShiftDays}일</span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-semibold text-purple-600">{stat.nightShiftDays}일</span>
+                                {stat.fairness?.night && (
+                                  <span className={`text-xs ${
+                                    stat.fairness.night.deviation > 0 ? 'text-green-600' :
+                                    stat.fairness.night.deviation < 0 ? 'text-red-600' : 'text-gray-400'
+                                  }`}>
+                                    ({stat.fairness.night.deviation > 0 ? '+' : ''}{stat.fairness.night.deviation.toFixed(1)})
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
+                          {/* 주말 */}
                           {enabledDimensions.weekend && (
-                            <div className="flex justify-between">
+                            <div className="flex justify-between items-center">
                               <span className="text-gray-600">주말:</span>
-                              <span className="font-semibold text-pink-600">{stat.weekendDays || 0}일</span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-semibold text-pink-600">{stat.weekendDays || 0}일</span>
+                                {stat.fairness?.weekend && (
+                                  <span className={`text-xs ${
+                                    stat.fairness.weekend.deviation > 0 ? 'text-green-600' :
+                                    stat.fairness.weekend.deviation < 0 ? 'text-red-600' : 'text-gray-400'
+                                  }`}>
+                                    ({stat.fairness.weekend.deviation > 0 ? '+' : ''}{stat.fairness.weekend.deviation.toFixed(1)})
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
+                          {/* 공휴일 */}
                           {enabledDimensions.holiday && (
-                            <div className="flex justify-between">
+                            <div className="flex justify-between items-center">
                               <span className="text-gray-600">공휴일:</span>
-                              <span className="font-semibold text-red-600">{stat.holidayDays || 0}일</span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-semibold text-red-600">{stat.holidayDays || 0}일</span>
+                                {stat.fairness?.holiday && (
+                                  <span className={`text-xs ${
+                                    stat.fairness.holiday.deviation > 0 ? 'text-green-600' :
+                                    stat.fairness.holiday.deviation < 0 ? 'text-red-600' : 'text-gray-400'
+                                  }`}>
+                                    ({stat.fairness.holiday.deviation > 0 ? '+' : ''}{stat.fairness.holiday.deviation.toFixed(1)})
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
+                          {/* 휴일연장 */}
                           {enabledDimensions.holidayAdjacent && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">공연장:</span>
-                              <span className="font-semibold text-amber-600">{stat.holidayAdjacentDays || 0}일</span>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">휴일연장:</span>
+                              <div className="flex items-center gap-1">
+                                <span className="font-semibold text-amber-600">{stat.holidayAdjacentDays || 0}일</span>
+                                {stat.fairness?.holidayAdjacent && (
+                                  <span className={`text-xs ${
+                                    stat.fairness.holidayAdjacent.deviation > 0 ? 'text-green-600' :
+                                    stat.fairness.holidayAdjacent.deviation < 0 ? 'text-red-600' : 'text-gray-400'
+                                  }`}>
+                                    ({stat.fairness.holidayAdjacent.deviation > 0 ? '+' : ''}{stat.fairness.holidayAdjacent.deviation.toFixed(1)})
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">연차:</span>
-                            <span className="font-semibold text-green-600">{stat.annualDays || 0}일</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">오프:</span>
-                            <span className="font-semibold text-orange-600">{stat.offDays || 0}일</span>
-                          </div>
                         </div>
                       </div>
                     ))}
@@ -411,7 +611,7 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
         }}
         year={wizardState.year}
         month={wizardState.month}
-        status="DRAFT"
+        status={scheduleStatus}
       />
     </div>
   )

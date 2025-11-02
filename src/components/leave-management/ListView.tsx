@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
-import { Check, X, RefreshCw, Search, Filter } from 'lucide-react'
+import { Check, X, RefreshCw, Search, Filter, Edit, Trash2 } from 'lucide-react'
+import { LeaveDetailDialog } from './LeaveDetailDialog'
 
 type LeaveApplication = {
   id: string
@@ -68,6 +69,8 @@ export function ListView() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [monthFilter, setMonthFilter] = useState('')
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  const [selectedApplication, setSelectedApplication] = useState<LeaveApplication | null>(null)
 
   const fetchApplications = async () => {
     try {
@@ -279,30 +282,40 @@ export function ListView() {
                       {app.link.year}년 {app.link.month}월
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      {app.status === 'PENDING' ? (
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleStatusChange(app.id, 'CONFIRMED')}
-                            className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                          >
-                            <Check className="w-4 h-4 mr-1" />
-                            승인
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleStatusChange(app.id, 'CANCELLED')}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <X className="w-4 h-4 mr-1" />
-                            취소
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
+                      <div className="flex justify-end gap-2">
+                        {app.status === 'PENDING' && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleStatusChange(app.id, 'CONFIRMED')}
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                            >
+                              <Check className="w-4 h-4 mr-1" />
+                              승인
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleStatusChange(app.id, 'CANCELLED')}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <X className="w-4 h-4 mr-1" />
+                              취소
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedApplication(app)
+                            setDetailDialogOpen(true)
+                          }}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -340,6 +353,19 @@ export function ListView() {
           </div>
         )}
       </Card>
+
+      {/* 연차/오프 상세 다이얼로그 */}
+      <LeaveDetailDialog
+        open={detailDialogOpen}
+        onClose={(updated) => {
+          setDetailDialogOpen(false)
+          setSelectedApplication(null)
+          if (updated) {
+            fetchApplications()
+          }
+        }}
+        application={selectedApplication}
+      />
     </div>
   )
 }

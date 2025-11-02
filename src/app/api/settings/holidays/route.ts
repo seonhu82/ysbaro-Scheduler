@@ -40,7 +40,17 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    return successResponse(holidays)
+    // 정기 휴무일 설정도 함께 조회
+    const settings = await prisma.closedDaySettings.findUnique({
+      where: {
+        clinicId: session.user.clinicId
+      }
+    })
+
+    return successResponse({
+      holidays,
+      settings
+    })
   } catch (error) {
     console.error('Get holidays error:', error)
     return errorResponse('Failed to fetch holidays', 500)

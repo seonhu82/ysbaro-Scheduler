@@ -14,7 +14,7 @@ export default function LeaveManagementPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">연차 관리</h1>
+        <h1 className="text-3xl font-bold mb-2">연차/오프 관리</h1>
         <p className="text-gray-600">
           직원들의 연차 및 오프 신청을 관리합니다
         </p>

@@ -40,27 +40,9 @@ export function CreatePeriodDialog({ open, onClose }: CreatePeriodDialogProps) {
         throw new Error('만료 날짜를 선택해주세요.')
       }
 
-      // 해당 월의 날짜 생성 (슬롯 제한)
-      const daysInMonth = new Date(
-        formData.year,
-        formData.month,
-        0
-      ).getDate()
-
-      const slotLimits = []
-      for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(formData.year, formData.month - 1, day)
-        const dayOfWeek = date.getDay()
-
-        // 일요일은 제외
-        if (dayOfWeek === 0) continue
-
-        slotLimits.push({
-          date: date.toISOString().split('T')[0],
-          dayType: dayOfWeek === 6 ? 'WEEKEND' : 'WEEKDAY',
-          maxSlots: formData.maxSlotsPerDay,
-        })
-      }
+      // 해당 월의 시작일과 종료일 계산
+      const startDate = new Date(formData.year, formData.month - 1, 1)
+      const endDate = new Date(formData.expiresAt)
 
       const response = await fetch('/api/leave-management/period', {
         method: 'POST',
@@ -68,8 +50,9 @@ export function CreatePeriodDialog({ open, onClose }: CreatePeriodDialogProps) {
         body: JSON.stringify({
           year: formData.year,
           month: formData.month,
-          expiresAt: new Date(formData.expiresAt).toISOString(),
-          slotLimits,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          maxSlots: formData.maxSlotsPerDay,
         }),
       })
 
@@ -180,7 +163,7 @@ export function CreatePeriodDialog({ open, onClose }: CreatePeriodDialogProps) {
             {/* 일일 슬롯 수 */}
             <div>
               <Label htmlFor="maxSlotsPerDay">
-                일일 최대 신청 인원 <span className="text-red-500">*</span>
+                연차 최대 신청 인원 <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="maxSlotsPerDay"
@@ -197,7 +180,7 @@ export function CreatePeriodDialog({ open, onClose }: CreatePeriodDialogProps) {
                 required
               />
               <p className="text-xs text-gray-500 mt-1">
-                하루에 최대 몇 명까지 연차/오프를 신청할 수 있는지 설정합니다.
+                하루에 최대 몇 명까지 연차를 신청할 수 있는지 설정합니다. (오프는 제외)
               </p>
             </div>
 
