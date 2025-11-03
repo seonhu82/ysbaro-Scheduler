@@ -98,7 +98,8 @@
       "Bash(npm run cleanup:*)",
       "Bash(git restore:*)",
       "SlashCommand(/cleanup)",
-      "Bash(node fix-circular-error.js:*)"
+      "Bash(node fix-circular-error.js:*)",
+      "Bash(node check-week-calculation.js:*)"
     ],
     "deny": [],
     "ask": []

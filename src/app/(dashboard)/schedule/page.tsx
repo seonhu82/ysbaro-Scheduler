@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Calendar, Users, TrendingUp, AlertCircle, Play, BarChart3, Link as LinkIcon, Copy, Check } from 'lucide-react'
+import { Calendar, Users, TrendingUp, AlertCircle, Play, BarChart3 } from 'lucide-react'
 import Link from 'next/link'
 import { useToast } from '@/hooks/use-toast'
 
@@ -24,32 +24,9 @@ export default function ScheduleManagementPage() {
   const [totalStaff, setTotalStaff] = useState(0)
   const [treatmentStaff, setTreatmentStaff] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [leaveApplyToken, setLeaveApplyToken] = useState<string>('')
-  const [copied, setCopied] = useState(false)
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth() + 1
-
-  // 연차/오프 신청 URL 생성
-  const leaveApplyUrl = typeof window !== 'undefined' && leaveApplyToken
-    ? `${window.location.protocol}//${window.location.host}/leave-apply/${leaveApplyToken}`
-    : ''
-
-  // 토큰 조회
-  useEffect(() => {
-    const fetchToken = async () => {
-      try {
-        const response = await fetch('/api/leave-apply/token')
-        const data = await response.json()
-        if (data.success && data.token) {
-          setLeaveApplyToken(data.token)
-        }
-      } catch (error) {
-        console.error('Failed to fetch leave apply token:', error)
-      }
-    }
-    fetchToken()
-  }, [])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -90,31 +67,6 @@ export default function ScheduleManagementPage() {
 
     fetchData()
   }, [currentMonth, year, month])
-
-  const handleCopyUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(leaveApplyUrl)
-      setCopied(true)
-      toast({
-        title: 'URL 복사 완료',
-        description: '연차/오프 신청 URL이 클립보드에 복사되었습니다.'
-      })
-      setTimeout(() => setCopied(false), 2000)
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: '복사 실패',
-        description: 'URL 복사 중 오류가 발생했습니다.'
-      })
-    }
-  }
-
-  const handleKakaoShare = () => {
-    toast({
-      title: '카카오톡 공유',
-      description: '카카오톡 API 설정 후 사용 가능합니다.'
-    })
-  }
 
   return (
     <div className="p-6">
@@ -191,64 +143,6 @@ export default function ScheduleManagementPage() {
           </Card>
         </Link>
       </div>
-
-      {/* 연차/오프 신청 URL 공유 */}
-      {leaveApplyUrl && (
-        <Card className="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-green-800">
-              <LinkIcon className="w-5 h-5" />
-              연차/오프 신청 URL 공유
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-green-700">
-              직원들이 연차/오프를 신청할 수 있는 URL입니다. 아래 버튼으로 URL을 복사하거나 카카오톡으로 공유할 수 있습니다.
-            </p>
-
-            {/* URL 표시 */}
-            <div className="bg-white border border-green-200 rounded-lg p-3 flex items-center gap-2">
-              <LinkIcon className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <code className="text-sm text-gray-700 flex-1 overflow-x-auto">
-                {leaveApplyUrl}
-              </code>
-            </div>
-
-            {/* 버튼 */}
-            <div className="flex gap-2">
-              <Button
-                onClick={handleCopyUrl}
-                variant={copied ? "default" : "outline"}
-                className={copied ? "bg-green-600 hover:bg-green-700" : ""}
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-4 h-4 mr-2" />
-                    복사 완료
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4 mr-2" />
-                    URL 복사
-                  </>
-                )}
-              </Button>
-
-              <Button
-                onClick={handleKakaoShare}
-                variant="outline"
-                className="border-yellow-400 text-yellow-700 hover:bg-yellow-50"
-              >
-                카카오톡 공유 (API 설정 필요)
-              </Button>
-            </div>
-
-            <p className="text-xs text-green-600">
-              💡 이 URL은 직원들이 이름과 PIN을 입력하여 안전하게 연차/오프를 신청할 수 있습니다.
-            </p>
-          </CardContent>
-        </Card>
-      )}
 
       {/* 현재 달 요약 */}
       <Card className="mb-6">

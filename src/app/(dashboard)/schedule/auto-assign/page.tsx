@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Calendar, CheckCircle2, Loader2 } from 'lucide-react'
+import { Calendar, CheckCircle2, Loader2, ArrowRight } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import WeeklyPatternBuilder from '@/components/wizard/WeeklyPatternBuilder'
+import Link from 'next/link'
 
 export default function AutoAssignPage() {
   const { toast } = useToast()
@@ -124,9 +125,17 @@ export default function AutoAssignPage() {
           <Calendar className="w-8 h-8" />
           원장 스케줄 배치
         </h1>
-        <p className="text-gray-600">
-          주차별 패턴을 선택하여 월간 원장 스케줄을 자동으로 배치합니다
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-gray-600">
+            주차별 패턴을 선택하여 월간 원장 스케줄을 자동으로 배치합니다
+          </p>
+          <Link href="/leave-management">
+            <Button variant="outline" className="gap-2">
+              연차/오프 신청 기간 생성하러 가기
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* 월 선택 */}
