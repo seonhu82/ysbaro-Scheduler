@@ -661,6 +661,16 @@ export function DayDetailPopup({
     // ========== 드래그 검증 로직 ==========
     const warnings: string[] = []
 
+    console.log('🔍 드래그 검증 시작:', {
+      staffName: movedStaff.name,
+      from: activeData.status,
+      to: targetZone,
+      year,
+      month,
+      date: schedule.date,
+      isNightShift: schedule.isNightShift
+    })
+
     // 1. 팀장/실장이 근무에서 빠지면 경고
     if (activeData.status === 'working' && targetZone !== 'working') {
       const isLeader = movedStaff.categoryName === '팀장/실장' || movedStaff.categoryName === '팀장' || movedStaff.categoryName === '실장'
@@ -677,16 +687,26 @@ export function DayDetailPopup({
     }
 
     // 2. 월 형평성 체크 (이동 후 상태 기준) - 편차 ±1 기준
-    if (year && month && targetZone === 'working') {
+    if (targetZone === 'working') {
+      console.log('✅ 월 형평성 체크 실행')
       // working으로 이동하는 경우 형평성 체크
       try {
+        // year/month가 없으면 schedule.date에서 추출
+        const scheduleDate = new Date(schedule.date)
+        const checkYear = year || scheduleDate.getFullYear()
+        const checkMonth = month || (scheduleDate.getMonth() + 1)
+
         const isNightShift = schedule.isNightShift
         const includeHoliday = true // 설정에서 가져와야 함
 
+        console.log('📅 형평성 체크 파라미터:', { checkYear, checkMonth, isNightShift })
+
         const response = await fetch(
-          `/api/staff/work-days?staffId=${movedStaff.id}&year=${year}&month=${month}&includeHoliday=${includeHoliday}`
+          `/api/staff/work-days?staffId=${movedStaff.id}&year=${checkYear}&month=${checkMonth}&includeHoliday=${includeHoliday}`
         )
         const result = await response.json()
+
+        console.log('📊 형평성 API 응답:', result)
 
         if (result.success) {
           const { current, average, deviation } = result.data
@@ -697,6 +717,7 @@ export function DayDetailPopup({
           if (isNightShift) {
             // 야근으로 이동
             const afterNightDeviation = deviation.night + 1
+            console.log('🌙 야근 편차:', { current: current.night, avg: average.night, after: afterNightDeviation })
             if (Math.abs(afterNightDeviation) > 1) {
               warningMessages.push(`야근: ${(current.night + 1)}일 (평균: ${average.night.toFixed(1)}일, 편차: ${afterNightDeviation > 0 ? '+' : ''}${afterNightDeviation.toFixed(1)})`)
             }
@@ -706,18 +727,23 @@ export function DayDetailPopup({
             const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6
             const isHoliday = currentDate.getDay() === 0 // 임시: 일요일만 공휴일로 간주
 
+            console.log('📆 날짜 타입:', { isWeekend, isHoliday, day: currentDate.getDay() })
+
             if (isHoliday && includeHoliday) {
               const afterHolidayDeviation = deviation.holiday + 1
+              console.log('🎉 공휴일 편차:', { current: current.holiday, avg: average.holiday, after: afterHolidayDeviation })
               if (Math.abs(afterHolidayDeviation) > 1) {
                 warningMessages.push(`공휴일: ${(current.holiday + 1)}일 (평균: ${average.holiday.toFixed(1)}일, 편차: ${afterHolidayDeviation > 0 ? '+' : ''}${afterHolidayDeviation.toFixed(1)})`)
               }
             } else if (isWeekend) {
               const afterWeekendDeviation = deviation.weekend + 1
+              console.log('🏖️ 주말 편차:', { current: current.weekend, avg: average.weekend, after: afterWeekendDeviation })
               if (Math.abs(afterWeekendDeviation) > 1) {
                 warningMessages.push(`주말: ${(current.weekend + 1)}일 (평균: ${average.weekend.toFixed(1)}일, 편차: ${afterWeekendDeviation > 0 ? '+' : ''}${afterWeekendDeviation.toFixed(1)})`)
               }
             } else {
               const afterRegularDeviation = deviation.regular + 1
+              console.log('📋 일반 편차:', { current: current.regular, avg: average.regular, after: afterRegularDeviation })
               if (Math.abs(afterRegularDeviation) > 1) {
                 warningMessages.push(`일반: ${(current.regular + 1)}일 (평균: ${average.regular.toFixed(1)}일, 편차: ${afterRegularDeviation > 0 ? '+' : ''}${afterRegularDeviation.toFixed(1)})`)
               }
@@ -726,26 +752,34 @@ export function DayDetailPopup({
 
           // 전체 근무일 수 편차 체크
           const afterTotalDeviation = deviation.total + 1
+          console.log('📊 전체 편차:', { current: current.total, avg: average.total, after: afterTotalDeviation })
           if (Math.abs(afterTotalDeviation) > 1) {
             warningMessages.push(`전체: ${(current.total + 1)}일 (평균: ${average.total.toFixed(1)}일, 편차: ${afterTotalDeviation > 0 ? '+' : ''}${afterTotalDeviation.toFixed(1)})`)
           }
 
           if (warningMessages.length > 0) {
             warnings.push(`⚠️ ${movedStaff.name}: 이번 달 근무 편차 초과\n${warningMessages.join('\n')}`)
+          } else {
+            console.log('✅ 형평성 체크 통과 (편차 ±1 이내)')
           }
         }
       } catch (error) {
-        console.error('월 근무일 수 체크 실패:', error)
+        console.error('❌ 월 근무일 수 체크 실패:', error)
       }
+    } else {
+      console.log('⏭️ 월 형평성 체크 스킵 (working으로 이동 아님)')
     }
 
     // 3. 주4일 근무제 체크 (working으로 이동 시)
     if (targetZone === 'working') {
+      console.log('✅ 주4일 근무제 체크 실행')
       try {
         const response = await fetch(
           `/api/staff/weekly-work-days?staffId=${movedStaff.id}&date=${schedule.date}`
         )
         const result = await response.json()
+
+        console.log('📅 주4일 API 응답:', result)
 
         if (result.success) {
           const weeklyWorkDays = result.data.weeklyWorkDays || 0
@@ -753,17 +787,24 @@ export function DayDetailPopup({
           // 이동 후 주간 근무일 수 = 현재 + 1
           const afterWeeklyWorkDays = weeklyWorkDays + 1
 
+          console.log('📊 주간 근무일:', { current: weeklyWorkDays, after: afterWeeklyWorkDays, limit: 4 })
+
           if (afterWeeklyWorkDays > 4) {
             warnings.push(`⚠️ ${movedStaff.name}: 주4일 근무 초과 예상\n(이동 후: ${afterWeeklyWorkDays}일 근무)`)
+          } else {
+            console.log('✅ 주4일 체크 통과')
           }
         }
       } catch (error) {
-        console.error('주간 근무일 수 체크 실패:', error)
+        console.error('❌ 주간 근무일 수 체크 실패:', error)
       }
+    } else {
+      console.log('⏭️ 주4일 체크 스킵 (working으로 이동 아님)')
     }
 
     // 4. 필수 인원 체크 (working에서 이동하는 경우)
     if (activeData.status === 'working' && targetZone !== 'working') {
+      console.log('✅ 필수 인원 체크 실행')
       try {
         const response = await fetch(
           `/api/schedule/validate-staff-count`,
@@ -779,16 +820,25 @@ export function DayDetailPopup({
         )
         const result = await response.json()
 
+        console.log('👥 필수 인원 API 응답:', result)
+
         if (result.success && result.data.warnings) {
           warnings.push(...result.data.warnings)
+          console.log('⚠️ 필수 인원 경고:', result.data.warnings)
+        } else {
+          console.log('✅ 필수 인원 체크 통과')
         }
       } catch (error) {
-        console.error('필수 인원 체크 실패:', error)
+        console.error('❌ 필수 인원 체크 실패:', error)
       }
+    } else {
+      console.log('⏭️ 필수 인원 체크 스킵 (working에서 나가는 이동 아님)')
     }
 
     // 경고가 있으면 사용자 확인
+    console.log(`🔔 총 경고 수: ${warnings.length}`)
     if (warnings.length > 0) {
+      console.log('⚠️ 경고 내용:', warnings)
       const confirmed = window.confirm(
         `⚠️ 경고\n\n${warnings.join('\n\n')}\n\n그래도 이동하시겠습니까?`
       )
@@ -797,6 +847,9 @@ export function DayDetailPopup({
         console.log('❌ 사용자가 이동 취소 (검증 경고)')
         return
       }
+      console.log('✅ 사용자가 경고 무시하고 진행')
+    } else {
+      console.log('✅ 모든 검증 통과 (경고 없음)')
     }
 
     setSchedule(newSchedule)
