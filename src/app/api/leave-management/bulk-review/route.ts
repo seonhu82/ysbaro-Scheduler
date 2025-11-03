@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
             where: { id: application.id },
             data: {
               status: 'ON_HOLD',
-              holdReason: categoryCheck.reason || '카테고리 슬롯 부족'
+              holdReason: categoryCheck.message || '카테고리 슬롯 부족'
             }
           })
           onHoldCount++

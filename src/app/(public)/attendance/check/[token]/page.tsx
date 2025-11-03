@@ -131,7 +131,7 @@ export default function AttendanceCheckPage({
       const data = await response.json()
 
       if (data.success && data.staff) {
-        setStaffList(data.staff.filter((s: Staff) => s.isActive !== false))
+        setStaffList(data.staff.filter((s: any) => s.isActive !== false))
       }
     } catch (error) {
       console.error('Failed to fetch staff list:', error)

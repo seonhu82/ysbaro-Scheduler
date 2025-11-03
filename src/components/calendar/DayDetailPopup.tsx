@@ -582,7 +582,7 @@ export function DayDetailPopup({
   }
 
   // 드래그 종료
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
 
     console.log('🎯 드래그 종료:', {
