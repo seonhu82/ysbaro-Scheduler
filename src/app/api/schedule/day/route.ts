@@ -299,7 +299,8 @@ export async function POST(request: NextRequest) {
       const annualLink = await prisma.applicationLink.create({
         data: {
           clinicId,
-          applicationType: 'MANUAL'
+          applicationType: 'MANUAL',
+          token: `manual_annual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         }
       })
 
@@ -348,7 +349,8 @@ export async function POST(request: NextRequest) {
         const offLink = await prisma.applicationLink.create({
           data: {
             clinicId,
-            applicationType: 'MANUAL'
+            applicationType: 'MANUAL',
+            token: `manual_off_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
           }
         })
 
