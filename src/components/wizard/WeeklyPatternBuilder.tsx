@@ -94,8 +94,8 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
 
   useEffect(() => {
     const initializeData = async () => {
-      await loadPatterns()
-      await loadExistingSchedule()
+      const loadedPatterns = await loadPatterns()
+      await loadExistingSchedule(loadedPatterns)
     }
     initializeData()
   }, [year, month])
@@ -148,9 +148,11 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
     )
   }
 
-  const loadExistingSchedule = async () => {
+  const loadExistingSchedule = async (loadedPatterns?: any[]) => {
     try {
       setLoading(true)
+
+      const patternsToUse = loadedPatterns || patterns
 
       // 1. 이전 달에 배포된 스케줄 확인 (다음 달로 걸쳐있는지)
       const prevMonth = month === 1 ? 12 : month - 1
@@ -227,7 +229,7 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
           ? (prevWeekPatterns[weekNumber] || null)
           : (savedWeekPatterns[weekNumber] || null)
 
-        const pattern = patterns.find(p => p.id === patternId)
+        const pattern = patternsToUse.find(p => p.id === patternId)
 
         return {
           weekNumber,
