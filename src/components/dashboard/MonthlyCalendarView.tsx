@@ -43,16 +43,26 @@ export default function MonthlyCalendarView() {
   const router = useRouter()
   const { toast } = useToast()
 
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const [currentDate, setCurrentDate] = useState<Date | null>(null)
   const [scheduleData, setScheduleData] = useState<DayScheduleData[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  // Initialize date only on client-side to prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true)
+    setCurrentDate(new Date())
+  }, [])
 
   useEffect(() => {
-    fetchMonthSchedule()
+    if (currentDate) {
+      fetchMonthSchedule()
+    }
   }, [currentDate])
 
   const fetchMonthSchedule = async () => {
+    if (!currentDate) return
     try {
       setLoading(true)
       const year = currentDate.getFullYear()
@@ -92,6 +102,22 @@ export default function MonthlyCalendarView() {
 
   const goToToday = () => {
     setCurrentDate(new Date())
+  }
+
+  // Don't render calendar until mounted on client
+  if (!mounted || !currentDate) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p className="text-gray-500">캘린더 로딩 중...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   // 달력 그리기: 이번 달의 모든 날짜 + 앞뒤 빈 칸

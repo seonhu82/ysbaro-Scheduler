@@ -13,7 +13,9 @@
     "prisma:seed": "prisma db seed",
     "prisma:studio": "prisma studio",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "cleanup": "powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force }\"",
+    "cleanup:all": "powershell -Command \"Get-Process | Where-Object {$_.ProcessName -eq 'node' -and $_.MainWindowTitle -eq ''} | Stop-Process -Force\""
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.0",

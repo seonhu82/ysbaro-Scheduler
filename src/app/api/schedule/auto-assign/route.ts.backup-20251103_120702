@@ -440,8 +440,7 @@ export async function POST(request: NextRequest) {
         }
       }
     })
-    const holidayDatesArray = holidays.map(h => h.date) // For getDayType function
-    const holidayDates = new Set(holidays.map(h => h.date.toISOString().split('T')[0])) // For Set operations
+    const holidayDates = holidays.map(h => h.date)
     console.log(`   ✅ 휴일 ${holidays.length}개 로드`)
 
     // 4. 정기휴무 정보 조회
@@ -607,7 +606,7 @@ export async function POST(request: NextRequest) {
       }
 
       const hasNightShift = doctorsOnThisDay.some(ds => ds.hasNightShift)
-      const dayType = getDayType(currentDate, hasNightShift, holidayDatesArray, closedDays)
+      const dayType = getDayType(currentDate, hasNightShift, holidayDates, closedDays)
 
       datesByType[dayType].push(dateKey)
     }
@@ -670,7 +669,7 @@ export async function POST(request: NextRequest) {
       const hasNightShift = doctorsOnThisDay.some(ds => ds.hasNightShift)
 
       // 날짜 유형 판별
-      const dayType = getDayType(currentDate, hasNightShift, holidayDatesArray, closedDays)
+      const dayType = getDayType(currentDate, hasNightShift, holidayDates, closedDays)
 
       // 해당하는 조합 찾기
       const combination = combinations.find(c => {
@@ -947,38 +946,22 @@ export async function POST(request: NextRequest) {
         dailyAssignments.get(dateKey)!.add(staff.id)
       }
 
-      // 나머지 진료실 직원은 OFF로 저장
+      // 나머지 진료실 직원은 OFF로 저장 (주4일 제한 전의 모든 직원 대상)
       const assignedStaffIds = new Set(assignedStaff.map(s => s.id))
-
-      // 1. 배정되지 않은 가용 직원 (allTreatmentStaff에서 제외)
       const offStaff = allTreatmentStaff.filter(s => !assignedStaffIds.has(s.id))
 
-      // 2. unavailableStaffIds 중 LeaveApplication OFF인 직원
-      const leaveOffStaffIds = Array.from(unavailableStaffIds).filter(staffId => {
-        const leave = confirmedLeaves.find(l =>
-          l.staffId === staffId &&
-          l.date.toISOString().split('T')[0] === dateKey &&
-          l.leaveType === 'OFF'
-        )
-        return !!leave
-      })
-
-      // 3. 모든 OFF 직원 합치기
-      const allOffStaffIds = new Set([...offStaff.map(s => s.id), ...leaveOffStaffIds])
-
-      // 4. StaffAssignment에 OFF 기록
-      for (const staffId of allOffStaffIds) {
+      for (const staff of offStaff) {
         await prisma.staffAssignment.create({
           data: {
             scheduleId: schedule.id,
-            staffId: staffId,
+            staffId: staff.id,
             date: currentDate,
             shiftType: 'OFF'
           }
         })
       }
 
-      console.log(`   ✅ ${dateKey} 배정 완료: 근무 ${assignedStaff.length}명, OFF ${allOffStaffIds.size}명 (관리자 지정 ${leaveOffStaffIds.length}명 포함)`)
+      console.log(`   ✅ ${dateKey} 배정 완료: 근무 ${assignedStaff.length}명, OFF ${offStaff.length}명`)
     }
 
     console.log(`\n✅ 1차 직원 배정 완료:`)
@@ -1090,7 +1073,7 @@ export async function POST(request: NextRequest) {
 
               if (doctorSchedule) {
                 const hasNightShift = doctorSchedule.hasNightShift
-                const dayType = getDayType(new Date(currentDate), hasNightShift, holidayDatesArray, closedDays)
+                const dayType = getDayType(new Date(currentDate), hasNightShift, holidayDates, closedDays)
 
                 offDates.push({
                   date: new Date(currentDate),
@@ -1110,47 +1093,48 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        console.log(`      - ${staff.name}: OFF 날짜 ${offDates.length}일 중 ${Math.min(needed, offDates.length)}일 선택 (형평성 기준 동적 정렬)`)
+        // 형평성 점수 계산
+        const staffFairness = await calculateStaffFairnessV2(
+          staff.id,
+          clinicId,
+          year,
+          month,
+          '진료실',
+          fairnessCache
+        )
 
-        // 필요한 만큼 OFF를 근무로 변경 (동적 재정렬)
-        for (let i = 0; i < needed && offDates.length > 0; i++) {
-          // 배치할 때마다 형평성 점수 재계산 (캐시 무효화)
-          const staffFairness = await calculateStaffFairnessV2(
-            staff.id,
-            clinicId,
-            year,
-            month,
-            '진료실',
-            { ...fairnessCache, schedule: undefined } // 캐시 무효화로 최신 데이터 반영
-          )
-
-          // OFF 날짜를 형평성 기반으로 동적 정렬
-          offDates.sort((a, b) => {
-            const getDeviation = (dayType: DayType) => {
-              switch (dayType) {
-                case 'NIGHT': return staffFairness.dimensions.night.deviation
-                case 'WEEKEND': return staffFairness.dimensions.weekend.deviation
-                case 'HOLIDAY_ADJACENT': return staffFairness.dimensions.holidayAdjacent.deviation
-                case 'NORMAL': return staffFairness.dimensions.total.deviation
-              }
+        // OFF 날짜를 형평성 기반으로 정렬
+        // 우선순위: 1. 각 날짜 유형별 형평성 점수 2. 날짜 순서
+        offDates.sort((a, b) => {
+          // 각 날짜 유형에 대응하는 형평성 deviation 계산
+          const getDeviation = (dayType: DayType) => {
+            switch (dayType) {
+              case 'NIGHT': return staffFairness.dimensions.night.deviation
+              case 'WEEKEND': return staffFairness.dimensions.weekend.deviation
+              case 'HOLIDAY_ADJACENT': return staffFairness.dimensions.holidayAdjacent.deviation
+              case 'NORMAL': return staffFairness.dimensions.total.deviation
             }
+          }
 
-            const deviationA = getDeviation(a.dayType)
-            const deviationB = getDeviation(b.dayType)
+          const deviationA = getDeviation(a.dayType)
+          const deviationB = getDeviation(b.dayType)
 
-            // 1순위: 형평성 점수가 더 큰 날짜 유형 우선
-            if (Math.abs(deviationA - deviationB) >= 0.1) {
-              return deviationB - deviationA
-            }
+          // 1순위: 형평성 점수가 더 큰 날짜 유형 우선 (양수 = 덜 일함 = 배치 필요)
+          // 예: 야간 deviation이 +2.0, 주말 deviation이 +0.5 → 야간 날짜 우선 선택
+          if (Math.abs(deviationA - deviationB) >= 0.1) {
+            return deviationB - deviationA // 내림차순 (큰 deviation 우선)
+          }
 
-            // 2순위: 날짜 순서
-            return a.dateKey.localeCompare(b.dateKey)
-          })
+          // 2순위: 형평성이 비슷하면 날짜 순서
+          return a.dateKey.localeCompare(b.dateKey)
+        })
 
-          // 가장 우선순위 높은 날짜 선택
-          const selectedDate = offDates.shift()!
-          const { date, dateKey, hasNightShift } = selectedDate
+        console.log(`      - ${staff.name}: OFF 날짜 ${offDates.length}일 중 ${Math.min(needed, offDates.length)}일 선택 (형평성 기준 정렬)`)
 
+        // 필요한 만큼 OFF를 근무로 변경
+        const datesToChange = offDates.slice(0, needed)
+
+        for (const { date, dateKey, hasNightShift } of datesToChange) {
           // OFF를 DAY/NIGHT로 변경
           await prisma.staffAssignment.update({
             where: {
@@ -1172,7 +1156,7 @@ export async function POST(request: NextRequest) {
           dailyAssignments.get(dateKey)!.add(staff.id)
 
           totalAssignments++
-          console.log(`         → ${dateKey}: OFF → ${hasNightShift ? 'NIGHT' : 'DAY'} (deviation: ${staffFairness.dimensions.total.deviation.toFixed(1)})`)
+          console.log(`         → ${dateKey}: OFF → ${hasNightShift ? 'NIGHT' : 'DAY'}`)
         }
       }
     }

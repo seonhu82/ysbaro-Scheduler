@@ -85,23 +85,17 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 직원별 연차/오프 맵 생성
-    const staffLeaveMap = new Map<string, { annualDays: number; offDays: number }>()
+    // 직원별 연차 맵 생성 (OFF는 StaffAssignment에서만 카운트)
+    const staffAnnualMap = new Map<string, number>()
     console.log(`📊 LeaveApplications found: ${leaveApplications.length}`)
     for (const leave of leaveApplications) {
-      if (!staffLeaveMap.has(leave.staffId)) {
-        staffLeaveMap.set(leave.staffId, { annualDays: 0, offDays: 0 })
-      }
-      const leaveStats = staffLeaveMap.get(leave.staffId)!
       if (leave.leaveType === 'ANNUAL') {
-        leaveStats.annualDays++
+        staffAnnualMap.set(leave.staffId, (staffAnnualMap.get(leave.staffId) || 0) + 1)
         console.log(`📊 ANNUAL leave for staff ${leave.staffId}`)
-      } else if (leave.leaveType === 'OFF') {
-        leaveStats.offDays++
-        console.log(`📊 OFF leave for staff ${leave.staffId}`)
       }
+      // OFF는 제외 - StaffAssignment에서 카운트됨
     }
-    console.log(`📊 staffLeaveMap size: ${staffLeaveMap.size}`, Array.from(staffLeaveMap.entries()))
+    console.log(`📊 staffAnnualMap size: ${staffAnnualMap.size}`, Array.from(staffAnnualMap.entries()))
 
     // 형평성 활성 차원 조회 (FairnessSettings에서 읽기)
     const fairnessSettings = await prisma.fairnessSettings.findUnique({
@@ -147,7 +141,7 @@ export async function GET(request: NextRequest) {
 
     // 모든 진료실 직원 초기화
     for (const staff of allTreatmentStaff) {
-      const leaveStats = staffLeaveMap.get(staff.id) || { annualDays: 0, offDays: 0 }
+      const annualDays = staffAnnualMap.get(staff.id) || 0
       staffStatsMap.set(staff.id, {
         staffId: staff.id,
         staffName: staff.name,
@@ -158,8 +152,8 @@ export async function GET(request: NextRequest) {
         weekendDays: 0,
         holidayDays: 0,
         holidayAdjacentDays: 0,
-        annualDays: leaveStats.annualDays,
-        offDays: leaveStats.offDays
+        annualDays: annualDays,
+        offDays: 0 // StaffAssignment에서 카운트됨
       })
     }
 

@@ -36,8 +36,10 @@ export default function DashboardPage() {
   const { toast } = useToast()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     fetchDashboardStats()
   }, [])
 
@@ -88,7 +90,7 @@ export default function DashboardPage() {
     }
   }
 
-  if (loading || !stats) {
+  if (!mounted || loading || !stats) {
     return (
       <div className="p-6 flex items-center justify-center min-h-screen">
         <div className="text-center">

@@ -94,7 +94,8 @@
       "Bash(powershell -Command \"Stop-Process -Id 327800,329580 -Force\")",
       "Bash(node check-weekly-4days.js:*)",
       "Bash(node test-auto-assign-warnings.js)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(npm run cleanup:*)"
     ],
     "deny": [],
     "ask": []

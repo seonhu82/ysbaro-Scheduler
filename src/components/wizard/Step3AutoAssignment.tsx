@@ -196,13 +196,30 @@ export default function Step3AutoAssignment({ wizardState, updateWizardState, on
                 )}
 
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 text-green-700">
-                    <TrendingUp className="w-5 h-5" />
-                    <p className="font-medium">자동 배정이 완료되었습니다</p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 text-green-700">
+                        <TrendingUp className="w-5 h-5" />
+                        <p className="font-medium">자동 배정이 완료되었습니다</p>
+                      </div>
+                      <p className="text-sm text-green-600 mt-2">
+                        다음 단계에서 최종 확인 후 배포할 수 있습니다
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setPreview(null)
+                        setWarnings([])
+                        handleAutoAssign(true)
+                      }}
+                      disabled={assigning}
+                      variant="outline"
+                      className="border-green-300 hover:bg-green-100"
+                    >
+                      <Zap className="w-4 h-4 mr-2" />
+                      재배치
+                    </Button>
                   </div>
-                  <p className="text-sm text-green-600 mt-2">
-                    다음 단계에서 최종 확인 후 배포할 수 있습니다
-                  </p>
                 </div>
               </div>
             </>
