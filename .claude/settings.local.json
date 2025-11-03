@@ -95,7 +95,10 @@
       "Bash(node check-weekly-4days.js:*)",
       "Bash(node test-auto-assign-warnings.js)",
       "Bash(powershell:*)",
-      "Bash(npm run cleanup:*)"
+      "Bash(npm run cleanup:*)",
+      "Bash(git restore:*)",
+      "SlashCommand(/cleanup)",
+      "Bash(node fix-circular-error.js:*)"
     ],
     "deny": [],
     "ask": []

@@ -25,6 +25,13 @@ export async function POST(request: NextRequest) {
     const clinicId = session.user.clinicId
     const warnings: string[] = []
 
+    console.log('🔍 필수 인원 검증 시작:', {
+      clinicId,
+      doctors: doctors?.map((d: any) => d.name),
+      staff: staff?.map((s: any) => `${s.name}(${s.categoryName})`),
+      staffCount: staff?.length
+    })
+
     // 1. 원장-직원 조합 확인
     if (doctors && doctors.length > 0) {
       const doctorCombination = await prisma.doctorCombination.findFirst({
@@ -36,13 +43,27 @@ export async function POST(request: NextRequest) {
         }
       })
 
+      console.log('👨‍⚕️ DoctorCombination 조회:', doctorCombination ? '찾음' : '없음')
+
       if (doctorCombination) {
+        console.log('📋 필수 인원 설정:', {
+          requiredStaff: doctorCombination.requiredStaff,
+          departmentCategoryStaff: doctorCombination.departmentCategoryStaff
+        })
         const requiredStaff = doctorCombination.requiredStaff
         const actualStaff = staff?.length || 0
 
         // 1-1. 필수 인원 체크
+        console.log('👥 총 인원 체크:', {
+          required: requiredStaff,
+          actual: actualStaff,
+          shortage: requiredStaff - actualStaff
+        })
+
         if (actualStaff < requiredStaff) {
-          warnings.push(`⚠️ 필수 인원 미달: 필요 ${requiredStaff}명, 현재 ${actualStaff}명 (${requiredStaff - actualStaff}명 부족)`)
+          const warning = `⚠️ 필수 인원 미달: 필요 ${requiredStaff}명, 현재 ${actualStaff}명 (${requiredStaff - actualStaff}명 부족)`
+          warnings.push(warning)
+          console.log('⚠️ 총 인원 경고:', warning)
         }
 
         // 1-2. 카테고리별 필수 인원 체크
@@ -71,18 +92,33 @@ export async function POST(request: NextRequest) {
             const minRequired = reqData.minRequired || 0
             const recommendedCount = reqData.count || 0
 
+            console.log(`📊 ${category} 체크:`, {
+              actual,
+              minRequired,
+              recommendedCount
+            })
+
             // 최소 필수 인원 체크 (경고)
             if (actual < minRequired) {
-              warnings.push(`⚠️ ${category} 최소 인원 미달: 최소 ${minRequired}명 필요, 현재 ${actual}명`)
+              const warning = `⚠️ ${category} 최소 인원 미달: 최소 ${minRequired}명 필요, 현재 ${actual}명`
+              warnings.push(warning)
+              console.log('⚠️ 카테고리 경고:', warning)
             }
             // 권장 인원 체크 (정보성)
             else if (actual < recommendedCount) {
-              warnings.push(`ℹ️ ${category} 권장 인원 부족: 권장 ${recommendedCount}명, 현재 ${actual}명`)
+              const warning = `ℹ️ ${category} 권장 인원 부족: 권장 ${recommendedCount}명, 현재 ${actual}명`
+              warnings.push(warning)
+              console.log('ℹ️ 카테고리 정보:', warning)
             }
           }
         }
       }
     }
+
+    console.log('✅ 검증 완료:', {
+      warningCount: warnings.length,
+      warnings
+    })
 
     return successResponse({
       warnings,

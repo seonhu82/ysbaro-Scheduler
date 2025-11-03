@@ -820,9 +820,9 @@ export function DayDetailPopup({
       console.log('⏭️ 주4일 체크 스킵 (working으로 이동 아님)')
     }
 
-    // 4. 필수 인원 체크 (working에서 이동하는 경우)
-    if (activeData.status === 'working' && targetZone !== 'working') {
-      console.log('✅ 필수 인원 체크 실행')
+    // 4. 필수 인원 체크 (working 관련 이동 시 항상 체크)
+    if (activeData.status === 'working' || targetZone === 'working') {
+      console.log('✅ 필수 인원 체크 실행 (이동 후 상태 기준)')
       try {
         const response = await fetch(
           `/api/schedule/validate-staff-count`,
@@ -831,7 +831,7 @@ export function DayDetailPopup({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               doctors: schedule.doctors,
-              staff: newSchedule.staff,
+              staff: newSchedule.staff, // 이동 후 staff 배열
               date: schedule.date
             })
           }
@@ -839,8 +839,13 @@ export function DayDetailPopup({
         const result = await response.json()
 
         console.log('👥 필수 인원 API 응답:', result)
+        console.log('👥 전송한 데이터:', {
+          doctors: schedule.doctors?.length,
+          staff: newSchedule.staff?.length,
+          staffNames: newSchedule.staff?.map((s: any) => `${s.name}(${s.categoryName})`)
+        })
 
-        if (result.success && result.data.warnings) {
+        if (result.success && result.data.warnings && result.data.warnings.length > 0) {
           warnings.push(...result.data.warnings)
           console.log('⚠️ 필수 인원 경고:', result.data.warnings)
         } else {
@@ -850,7 +855,7 @@ export function DayDetailPopup({
         console.error('❌ 필수 인원 체크 실패:', error)
       }
     } else {
-      console.log('⏭️ 필수 인원 체크 스킵 (working에서 나가는 이동 아님)')
+      console.log('⏭️ 필수 인원 체크 스킵 (working 관련 이동 아님)')
     }
 
     // 경고가 있으면 사용자 확인
