@@ -221,7 +221,7 @@ export default function AutoAssignPage() {
                 <li>• 좌측의 패턴을 드래그하여 주차 영역에 드롭하세요</li>
                 <li>• 기존 원장 스케줄이 있는 경우 덮어씌워집니다</li>
                 <li>• 각 주차별로 다른 패턴을 적용할 수 있습니다</li>
-                <li>• 월요일~일요일 완전한 주 단위로 생성됩니다</li>
+                <li>• 일요일~토요일 완전한 주 단위로 생성됩니다</li>
               </ul>
             </div>
 
@@ -319,8 +319,7 @@ export default function AutoAssignPage() {
 
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="text-sm text-green-900">
-                    원장 스케줄이 배치되었습니다.<br />
-                    캘린더에서 확인하세요.
+                    원장 스케줄이 배치되었습니다.
                   </div>
                 </div>
               </div>
