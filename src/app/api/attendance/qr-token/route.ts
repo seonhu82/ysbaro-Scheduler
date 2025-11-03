@@ -10,6 +10,35 @@ import { generateQRToken, getCurrentActiveToken, cleanupExpiredTokens } from '@/
 
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const tokenParam = searchParams.get('token');
+
+    // 토큰 파라미터가 있으면 공개 검증 (로그인 불필요)
+    if (tokenParam) {
+      console.log('🔍 공개 토큰 검증:', tokenParam);
+
+      const { validateQRToken } = await import('@/lib/services/qr-token-service');
+      const validation = await validateQRToken(tokenParam);
+
+      if (validation.valid && validation.tokenData) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            token: tokenParam,
+            clinicId: validation.tokenData.clinicId,
+            expiresAt: validation.tokenData.expiresAt,
+            valid: true
+          }
+        });
+      } else {
+        return NextResponse.json({
+          success: false,
+          error: validation.message || '유효하지 않은 토큰입니다'
+        });
+      }
+    }
+
+    // 토큰 파라미터가 없으면 인증된 사용자용 조회
     const session = await auth();
 
     if (!session?.user?.clinicId) {

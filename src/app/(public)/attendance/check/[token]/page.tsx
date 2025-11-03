@@ -84,37 +84,38 @@ export default function AttendanceCheckPage({
 
   const validateToken = async () => {
     try {
-      // validateQRToken을 사용한 검증은 API 내부에서 수행됨
-      // 여기서는 토큰이 유효한지만 확인
-      const response = await fetch(`/api/attendance/qr-token`)
+      console.log('🔍 토큰 검증 시작:', params.token)
+
+      // URL 토큰을 API로 전달하여 검증
+      const response = await fetch(`/api/attendance/qr-token?token=${params.token}`)
       const data = await response.json()
 
+      console.log('📋 토큰 검증 응답:', data)
+
       if (data.success && data.data) {
-        // 토큰이 일치하는지 확인
-        if (data.data.token === params.token) {
-          setTokenValid({
-            valid: true,
-            message: '유효한 토큰입니다',
-            tokenData: {
-              clinicId: '', // API에서 clinicId를 반환하도록 수정 필요
-              expiresAt: data.data.expiresAt
-            }
-          })
-          // 직원 목록 조회 (임시로 모든 활성 직원 조회)
-          fetchStaffList()
-        } else {
-          setTokenValid({
-            valid: false,
-            message: '유효하지 않거나 만료된 토큰입니다'
-          })
-        }
+        // 토큰이 유효하면
+        setTokenValid({
+          valid: true,
+          message: '유효한 토큰입니다',
+          tokenData: {
+            clinicId: data.data.clinicId || '',
+            expiresAt: data.data.expiresAt
+          }
+        })
+        setClinicId(data.data.clinicId || '')
+        console.log('✅ 토큰 유효:', data.data)
+
+        // 직원 목록 조회
+        fetchStaffList()
       } else {
+        console.error('❌ 토큰 무효:', data)
         setTokenValid({
           valid: false,
-          message: 'QR 코드가 유효하지 않습니다'
+          message: data.error || '유효하지 않거나 만료된 토큰입니다'
         })
       }
     } catch (error) {
+      console.error('❌ 토큰 검증 오류:', error)
       setTokenValid({
         valid: false,
         message: 'QR 코드 검증 중 오류가 발생했습니다'
