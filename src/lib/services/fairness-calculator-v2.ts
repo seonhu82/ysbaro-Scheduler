@@ -395,10 +395,51 @@ async function calculateSpecialDimension(
     }
   })
 
-  // 7. 기준 = 총 필요인원 / 전체 인원
-  const baseline = totalStaffInDepartment > 0 ? totalRequired / totalStaffInDepartment : 0
+  // 7. 실제 배치된 해당 차원의 총 슬롯 수 계산
+  // (2차 배치 시 OFF→근무 변경이 실시간 반영되도록)
+  const allAssignments = await prisma.staffAssignment.findMany({
+    where: {
+      scheduleId: schedule.id,
+      date: { gte: startDate, lte: endDate },
+      shiftType: { not: 'OFF' }
+    },
+    select: {
+      date: true,
+      shiftType: true
+    }
+  })
 
-  // 8. 실제 근무일 = 실제 배치만 (연차 포함 안 함!)
+  let totalActualDimensionSlots = 0
+  for (const assignment of allAssignments) {
+    const assignmentDate = assignment.date
+    const dateKey = assignmentDate.toISOString().split('T')[0]
+    const dayOfWeek = assignmentDate.getDay()
+    const isWeekend = dayOfWeek === 6
+    const isHoliday = holidayDates.has(dateKey)
+    const isNight = assignment.shiftType === 'NIGHT'
+
+    // 공휴일 전후 판별
+    const yesterday = new Date(assignmentDate)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const tomorrow = new Date(assignmentDate)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const isHolidayAdjacent = !isHoliday && (
+      holidayDates.has(yesterday.toISOString().split('T')[0]) ||
+      holidayDates.has(tomorrow.toISOString().split('T')[0])
+    )
+
+    // 해당 차원인지 체크
+    if (dimension === 'night' && isNight) totalActualDimensionSlots++
+    else if (dimension === 'weekend' && isWeekend) totalActualDimensionSlots++
+    else if (dimension === 'holiday' && isHoliday) totalActualDimensionSlots++
+    else if (dimension === 'holidayAdjacent' && isHolidayAdjacent) totalActualDimensionSlots++
+  }
+
+  // 8. 기준 = 실제 배치된 총 슬롯 수 / 전체 인원
+  // (이렇게 하면 2차 배치 시 OFF→근무 변경이 즉시 반영됨)
+  const baseline = totalStaffInDepartment > 0 ? totalActualDimensionSlots / totalStaffInDepartment : 0
+
+  // 9. 실제 근무일 = 실제 배치만 (연차 포함 안 함!)
   const staffAssignments = await prisma.staffAssignment.findMany({
     where: {
       staffId,
@@ -441,7 +482,7 @@ async function calculateSpecialDimension(
   // ⚠️ 중요: 연차(OFF)는 특수 근무일에 카운트하지 않음!
   // 연차는 총근무일에만 카운트됨
 
-  // 9. 편차 및 점수 계산
+  // 10. 편차 및 점수 계산
   const deviation = baseline - actual
   const score = Math.max(0, Math.min(100, 50 + deviation * 10))
   const percentage = baseline > 0 ? Math.round((actual / baseline) * 100) : 0
