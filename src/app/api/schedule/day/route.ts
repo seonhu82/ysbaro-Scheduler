@@ -247,7 +247,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { date, doctors, staff, annualLeave, offDays, isNightShift, year, month } = body
+    const { date, doctors, staff, annualLeave, offDays, isNightShift, year, month, skipValidation } = body
 
     if (!date) {
       return badRequestResponse('Date is required')
@@ -256,7 +256,91 @@ export async function POST(request: NextRequest) {
     const clinicId = session.user.clinicId
     const dateOnly = new Date(date + 'T00:00:00.000Z')
 
-    console.log('Saving day schedule:', { date, doctors: doctors?.length, staff: staff?.length, annualLeave: annualLeave?.length, offDays: offDays?.length })
+    console.log('Saving day schedule:', { date, doctors: doctors?.length, staff: staff?.length, annualLeave: annualLeave?.length, offDays: offDays?.length, skipValidation })
+
+    // ========== 검증 로직 (skipValidation이 true면 건너뜀) ==========
+    const warnings: string[] = []
+    if (!skipValidation) {
+
+    // 1. 원장-직원 조합 확인
+    if (doctors && doctors.length > 0) {
+      const doctorCombination = await prisma.doctorCombination.findFirst({
+        where: {
+          clinicId,
+          doctors: {
+            hasSome: doctors.map((d: any) => d.id)
+          }
+        }
+      })
+
+      if (doctorCombination) {
+        const requiredStaff = doctorCombination.requiredStaff
+        const actualStaff = staff?.length || 0
+
+        // 1-1. 필수 인원 체크
+        if (actualStaff < requiredStaff) {
+          warnings.push(`⚠️ 필수 인원 미달: 필요 ${requiredStaff}명, 현재 ${actualStaff}명 (${requiredStaff - actualStaff}명 부족)`)
+        }
+
+        // 1-2. 카테고리별 필수 인원 체크
+        if (doctorCombination.departmentCategoryStaff) {
+          const categoryStaff = doctorCombination.departmentCategoryStaff as any
+          const requiredCategories = categoryStaff['진료실'] || {}
+
+          // 실제 배치된 카테고리별 인원 계산
+          const actualCategories: any = {}
+          for (const s of staff || []) {
+            const cat = s.categoryName || '미분류'
+            actualCategories[cat] = (actualCategories[cat] || 0) + 1
+          }
+
+          // 카테고리별 체크
+          for (const [category, required] of Object.entries(requiredCategories)) {
+            const actual = actualCategories[category] || 0
+            if (actual < (required as number)) {
+              warnings.push(`⚠️ ${category} 인원 부족: 필요 ${required}명, 현재 ${actual}명`)
+            }
+          }
+        }
+      }
+    }
+
+    // 2. 주4일 제한 체크 (해당 주차에서 4일 초과 여부)
+    const weekStart = new Date(dateOnly)
+    weekStart.setDate(dateOnly.getDate() - dateOnly.getDay()) // 일요일로
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekStart.getDate() + 6) // 토요일까지
+
+    for (const s of staff || []) {
+      const weeklyWorkDays = await prisma.staffAssignment.count({
+        where: {
+          staffId: s.id,
+          date: {
+            gte: weekStart,
+            lte: weekEnd
+          },
+          shiftType: {
+            in: ['DAY', 'NIGHT']
+          }
+        }
+      })
+
+      if (weeklyWorkDays >= 4) {
+        warnings.push(`⚠️ ${s.name}: 주4일 초과 (현재 ${weeklyWorkDays}일 근무 예정)`)
+      }
+    }
+
+      // 경고가 있으면 반환 (저장하지 않음)
+      if (warnings.length > 0) {
+        return successResponse({
+          warnings,
+          message: '경고 사항이 있습니다. 계속하시겠습니까?',
+          requireConfirmation: true
+        })
+      }
+    } // end of !skipValidation
+
+    // ========== 검증 통과, 저장 진행 ==========
 
     // 1. 스케줄 확인 또는 생성
     let schedule = await prisma.schedule.findFirst({
@@ -307,7 +391,7 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // 5. 새 직원 배치 추가 (근무자만)
+    // 5. 새 직원 배치 추가 (근무자)
     if (staff && staff.length > 0) {
       await prisma.staffAssignment.createMany({
         data: staff.map((s: any) => ({
@@ -315,6 +399,18 @@ export async function POST(request: NextRequest) {
           staffId: s.id,
           date: dateOnly,
           shiftType: isNightShift ? 'NIGHT' : 'DAY'
+        }))
+      })
+    }
+
+    // 5-2. OFF 직원 배치 추가 (StaffAssignment에 저장)
+    if (offDays && offDays.length > 0) {
+      await prisma.staffAssignment.createMany({
+        data: offDays.map((s: any) => ({
+          scheduleId: schedule.id,
+          staffId: s.id,
+          date: dateOnly,
+          shiftType: 'OFF'
         }))
       })
     }

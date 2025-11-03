@@ -367,7 +367,7 @@ export function DayDetailPopup({
     fetchDaySchedule()
   }, [date, isOpen, year, month, status])
 
-  const handleSave = async () => {
+  const handleSave = async (skipValidation = false) => {
     if (!schedule) return
 
     try {
@@ -385,7 +385,8 @@ export function DayDetailPopup({
           offDays: schedule.offDays,
           isNightShift: schedule.isNightShift,
           year,
-          month
+          month,
+          skipValidation
         })
       })
 
@@ -393,6 +394,24 @@ export function DayDetailPopup({
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to save schedule')
+      }
+
+      // 경고가 있으면 사용자에게 확인
+      if (result.data?.requireConfirmation && result.data?.warnings) {
+        const warningMessage = result.data.warnings.join('\n')
+        const confirmed = window.confirm(
+          `${result.data.message}\n\n${warningMessage}\n\n계속하시겠습니까?`
+        )
+
+        if (confirmed) {
+          // 경고 무시하고 저장
+          setLoading(false)
+          await handleSave(true) // skipValidation = true로 재시도
+          return
+        } else {
+          setLoading(false)
+          return
+        }
       }
 
       console.log('Schedule saved successfully:', result)
