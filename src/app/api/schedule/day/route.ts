@@ -325,8 +325,65 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      if (weeklyWorkDays >= 4) {
+      if (weeklyWorkDays > 4) {
         warnings.push(`⚠️ ${s.name}: 주4일 초과 (현재 ${weeklyWorkDays}일 근무 예정)`)
+      }
+    }
+
+    // 3. 형평성 체크 (이번 달 전체 근무일 수 비교)
+    if (year && month) {
+      const monthStart = new Date(year, month - 1, 1)
+      const monthEnd = new Date(year, month, 0)
+
+      // 전체 진료실 직원 조회
+      const allTreatmentStaff = await prisma.staff.findMany({
+        where: {
+          clinicId,
+          isActive: true,
+          departmentName: '진료실'
+        },
+        select: {
+          id: true,
+          name: true
+        }
+      })
+
+      // 각 직원별 이번 달 근무일 수 계산
+      const staffWorkDays = new Map<string, { name: string; workDays: number }>()
+      for (const s of allTreatmentStaff) {
+        const workDays = await prisma.staffAssignment.count({
+          where: {
+            staffId: s.id,
+            date: {
+              gte: monthStart,
+              lte: monthEnd
+            },
+            shiftType: {
+              in: ['DAY', 'NIGHT']
+            }
+          }
+        })
+        staffWorkDays.set(s.id, { name: s.name, workDays })
+      }
+
+      // 평균 근무일 계산
+      const totalWorkDays = Array.from(staffWorkDays.values()).reduce((sum, s) => sum + s.workDays, 0)
+      const avgWorkDays = totalWorkDays / staffWorkDays.size
+
+      // 편집 중인 직원들의 근무일 체크
+      for (const s of staff || []) {
+        const staffInfo = staffWorkDays.get(s.id)
+        if (staffInfo && staffInfo.workDays > avgWorkDays + 3) {
+          warnings.push(`⚠️ ${s.name}: 이번 달 과다 근무 (${staffInfo.workDays}일, 평균 ${avgWorkDays.toFixed(1)}일)`)
+        }
+      }
+
+      // OFF인 직원들 중 너무 적게 일한 사람 체크
+      for (const s of offDays || []) {
+        const staffInfo = staffWorkDays.get(s.id)
+        if (staffInfo && staffInfo.workDays < avgWorkDays - 3) {
+          warnings.push(`⚠️ ${s.name}: 이번 달 과소 근무 (${staffInfo.workDays}일, 평균 ${avgWorkDays.toFixed(1)}일) - OFF 배정 재고`)
+        }
       }
     }
 
