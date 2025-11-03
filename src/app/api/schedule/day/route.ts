@@ -167,8 +167,43 @@ export async function GET(request: NextRequest) {
       departmentName: oa.staff.departmentName
     }))
 
-    // 수동 오프(연차신청의 오프) + 자동배치 OFF 합치기
-    const allOffDays = [...manualOffDays, ...offDays]
+    // 5. 만약 StaffAssignment에 OFF가 없으면 자동 계산
+    let allOffDays = [...manualOffDays, ...offDays]
+
+    // OFF가 0명인 경우 자동 계산 (배정되지 않은 직원들)
+    if (allOffDays.length === 0 && staffAssignments.length > 0) {
+      // 전체 진료실 활성 직원 조회
+      const allActiveStaff = await prisma.staff.findMany({
+        where: {
+          clinicId,
+          isActive: true,
+          departmentName: '진료실'
+        },
+        select: {
+          id: true,
+          name: true,
+          rank: true,
+          categoryName: true,
+          departmentName: true
+        }
+      })
+
+      // 근무자 ID
+      const workingStaffIds = new Set(staffAssignments.map(sa => sa.staff.id))
+      // 연차 ID
+      const annualLeaveIds = new Set(annualLeave.map(al => al.id))
+
+      // 자동 OFF 계산: 전체 - 근무 - 연차
+      allOffDays = allActiveStaff
+        .filter(staff => !workingStaffIds.has(staff.id) && !annualLeaveIds.has(staff.id))
+        .map(staff => ({
+          id: staff.id,
+          name: staff.name,
+          rank: staff.rank,
+          categoryName: staff.categoryName,
+          departmentName: staff.departmentName
+        }))
+    }
 
     // 응답 데이터 구성
     const responseData = {
