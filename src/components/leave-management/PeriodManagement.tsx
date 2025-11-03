@@ -205,64 +205,6 @@ export function PeriodManagement() {
 
   return (
     <div className="space-y-4">
-      {/* 연차/오프 신청 URL 공유 */}
-      {leaveApplyUrl && (
-        <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-green-800">
-              <LinkIcon className="w-5 h-5" />
-              연차/오프 신청 URL 공유
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-green-700">
-              직원들이 연차/오프를 신청할 수 있는 URL입니다. 아래 버튼으로 URL을 복사하거나 카카오톡으로 공유할 수 있습니다.
-            </p>
-
-            {/* URL 표시 */}
-            <div className="bg-white border border-green-200 rounded-lg p-3 flex items-center gap-2">
-              <LinkIcon className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <code className="text-sm text-gray-700 flex-1 overflow-x-auto">
-                {leaveApplyUrl}
-              </code>
-            </div>
-
-            {/* 버튼 */}
-            <div className="flex gap-2">
-              <Button
-                onClick={handleCopyUrl}
-                variant={copied ? "default" : "outline"}
-                className={copied ? "bg-green-600 hover:bg-green-700" : ""}
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-4 h-4 mr-2" />
-                    복사 완료
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4 mr-2" />
-                    URL 복사
-                  </>
-                )}
-              </Button>
-
-              <Button
-                onClick={handleKakaoShare}
-                variant="outline"
-                className="border-yellow-400 text-yellow-700 hover:bg-yellow-50"
-              >
-                카카오톡 공유 (API 설정 필요)
-              </Button>
-            </div>
-
-            <p className="text-xs text-green-600">
-              💡 이 URL은 직원들이 이름과 PIN을 입력하여 안전하게 연차/오프를 신청할 수 있습니다.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">신청 기간 관리</h2>
         <Button onClick={() => setShowCreateDialog(true)}>
@@ -347,6 +289,64 @@ export function PeriodManagement() {
             </Card>
           ))}
         </div>
+      )}
+
+      {/* 연차/오프 신청 URL 공유 */}
+      {leaveApplyUrl && (
+        <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-green-800">
+              <LinkIcon className="w-5 h-5" />
+              연차/오프 신청 URL 공유
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-green-700">
+              직원들이 연차/오프를 신청할 수 있는 URL입니다. 아래 버튼으로 URL을 복사하거나 카카오톡으로 공유할 수 있습니다.
+            </p>
+
+            {/* URL 표시 */}
+            <div className="bg-white border border-green-200 rounded-lg p-3 flex items-center gap-2">
+              <LinkIcon className="w-4 h-4 text-green-600 flex-shrink-0" />
+              <code className="text-sm text-gray-700 flex-1 overflow-x-auto">
+                {leaveApplyUrl}
+              </code>
+            </div>
+
+            {/* 버튼 */}
+            <div className="flex gap-2">
+              <Button
+                onClick={handleCopyUrl}
+                variant={copied ? "default" : "outline"}
+                className={copied ? "bg-green-600 hover:bg-green-700" : ""}
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    복사 완료
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 mr-2" />
+                    URL 복사
+                  </>
+                )}
+              </Button>
+
+              <Button
+                onClick={handleKakaoShare}
+                variant="outline"
+                className="border-yellow-400 text-yellow-700 hover:bg-yellow-50"
+              >
+                카카오톡 공유 (API 설정 필요)
+              </Button>
+            </div>
+
+            <p className="text-xs text-green-600">
+              💡 이 URL은 직원들이 이름과 PIN을 입력하여 안전하게 연차/오프를 신청할 수 있습니다.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       <CreatePeriodDialog
