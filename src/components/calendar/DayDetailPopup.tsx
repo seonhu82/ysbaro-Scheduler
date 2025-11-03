@@ -373,21 +373,41 @@ export function DayDetailPopup({
     try {
       setLoading(true)
 
-      // API로 직접 저장
+      // API로 직접 저장 (필요한 필드만 추출)
+      const payload = {
+        date: schedule.date,
+        doctors: schedule.doctors?.map((d: any) => ({ id: d.id, name: d.name })) || [],
+        staff: schedule.staff?.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          rank: s.rank,
+          categoryName: s.categoryName,
+          departmentName: s.departmentName
+        })) || [],
+        annualLeave: schedule.annualLeave?.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          rank: s.rank,
+          categoryName: s.categoryName,
+          departmentName: s.departmentName
+        })) || [],
+        offDays: schedule.offDays?.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          rank: s.rank,
+          categoryName: s.categoryName,
+          departmentName: s.departmentName
+        })) || [],
+        isNightShift: schedule.isNightShift,
+        year,
+        month,
+        skipValidation
+      }
+
       const response = await fetch('/api/schedule/day', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: schedule.date,
-          doctors: schedule.doctors,
-          staff: schedule.staff,
-          annualLeave: schedule.annualLeave,
-          offDays: schedule.offDays,
-          isNightShift: schedule.isNightShift,
-          year,
-          month,
-          skipValidation
-        })
+        body: JSON.stringify(payload)
       })
 
       const result = await response.json()
