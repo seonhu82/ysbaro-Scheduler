@@ -3,6 +3,31 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 /**
+ * 주어진 날짜가 월 내에서 몇 주차인지 계산
+ */
+function getWeekNumberInMonth(date: Date, monthStart: Date, monthEnd: Date): number | null {
+  if (date < monthStart || date > monthEnd) {
+    return null
+  }
+
+  // 월의 첫 날이 속한 주의 월요일 찾기
+  const firstMonday = new Date(monthStart)
+  const firstDayOfWeek = monthStart.getDay()
+  const daysUntilMonday = firstDayOfWeek === 0 ? -6 : 1 - firstDayOfWeek
+  firstMonday.setDate(monthStart.getDate() + daysUntilMonday)
+
+  // date가 속한 주의 월요일 찾기
+  const currentMonday = new Date(date)
+  const currentDayOfWeek = date.getDay()
+  const daysUntilCurrentMonday = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek
+  currentMonday.setDate(date.getDate() + daysUntilCurrentMonday)
+
+  // 주차 계산 (1부터 시작)
+  const weeksDiff = Math.floor((currentMonday.getTime() - firstMonday.getTime()) / (7 * 24 * 60 * 60 * 1000))
+  return weeksDiff + 1
+}
+
+/**
  * GET /api/schedule/doctor-summary
  * 특정 월의 원장 스케줄 요약
  */
@@ -40,7 +65,8 @@ export async function GET(request: NextRequest) {
         success: true,
         hasSchedule: false,
         doctorSchedules: [],
-        slots: []
+        slots: [],
+        weeksWithData: []
       })
     }
 
@@ -107,6 +133,41 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, any>)
 
+    // 주차별 실제 배포 데이터 존재 여부 계산 (StaffAssignment 기준)
+    const monthStart = new Date(year, month - 1, 1)
+    const monthEnd = new Date(year, month, 0)
+    const weeksWithData: number[] = []
+
+    // 이 월의 날짜 범위에 해당하는 직원 배치 데이터 조회
+    // (이전 달 배포가 현재 달로 걸쳐있을 수 있으므로 clinicId + 날짜 범위로 조회)
+    const staffAssignments = await prisma.staffAssignment.findMany({
+      where: {
+        schedule: {
+          clinicId
+        },
+        date: {
+          gte: monthStart,
+          lte: monthEnd
+        }
+      },
+      select: {
+        date: true
+      },
+      distinct: ['date']
+    })
+
+    console.log(`[doctor-summary] StaffAssignment 조회: ${year}년 ${month}월, ${staffAssignments.length}개 날짜`)
+
+    // 각 배치 날짜가 어느 주차에 속하는지 계산
+    staffAssignments.forEach(sa => {
+      const weekNumber = getWeekNumberInMonth(sa.date, monthStart, monthEnd)
+      if (weekNumber && !weeksWithData.includes(weekNumber)) {
+        weeksWithData.push(weekNumber)
+      }
+    })
+
+    console.log('[doctor-summary] Weeks with deployed data (StaffAssignment):', weeksWithData)
+
     // 진료실 직원 총원 (categoryName이 있는 직원만) - 한 번만 조회
     const totalTreatmentStaff = await prisma.staff.count({
       where: {
@@ -153,6 +214,7 @@ export async function GET(request: NextRequest) {
       doctorSchedules: Object.values(doctorStats),
       slots,
       weekPatterns: schedule.weekPatterns || null, // 주차별 패턴 정보 추가
+      weeksWithData, // 실제 데이터가 있는 주차 번호 배열 추가
       schedule: {
         id: schedule.id,
         status: schedule.status,

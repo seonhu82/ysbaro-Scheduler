@@ -174,11 +174,14 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
       const monthEnd = new Date(year, month, 0)
       const weeks = getWeeksInMonth(monthStart, monthEnd)
 
-      // 4. 이전 달 배포 범위 확인
+      // 4. 이전 달 배포 범위 확인 및 현재 월의 실제 배포 데이터 확인
       let deployedDateRange: { start: Date; end: Date } | null = null
       const prevWeekPatterns = prevDeployedData.success && prevDeployedData.weekPatterns
         ? prevDeployedData.weekPatterns
         : {}
+
+      // 현재 월의 실제 배포 데이터가 있는 주차 (StaffAssignment 기준)
+      const currentWeeksWithData: number[] = data.weeksWithData || []
 
       if (prevDeployedData.success && prevDeployedData.schedule?.deployedEndDate) {
         const deployedEnd = new Date(prevDeployedData.schedule.deployedEndDate)
@@ -189,7 +192,8 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
           deployedEnd: deployedEnd.toISOString().split('T')[0],
           currentMonth: `${year}-${month}`,
           currentMonthStart: currentMonthStart.toISOString().split('T')[0],
-          currentMonthEnd: currentMonthEnd.toISOString().split('T')[0]
+          currentMonthEnd: currentMonthEnd.toISOString().split('T')[0],
+          currentWeeksWithData
         })
 
         // 배포 종료일이 현재 월에 걸쳐있는지 확인
@@ -215,10 +219,8 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
       const weekAssignmentsWithPattern = weeks.map((week, index) => {
         const weekNumber = index + 1
 
-        // 이 주차가 이미 배포된 범위에 포함되는지 확인
-        const isDeployed = deployedDateRange
-          ? week.start <= deployedDateRange.end && week.end >= deployedDateRange.start
-          : false
+        // 이 주차에 실제 StaffAssignment 데이터가 있는지 확인
+        const isDeployed = currentWeeksWithData.includes(weekNumber)
 
         // 배포된 주차라면 이전 달의 패턴 사용, 아니면 현재 달의 패턴 사용
         const patternId = isDeployed
@@ -312,27 +314,31 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
   }
 
   const applyToAllWeeks = () => {
-    if (weekAssignments.length === 0 || !weekAssignments[0].patternId) {
+    // 마지막으로 할당된 패턴 찾기
+    const lastAssignedWeek = [...weekAssignments].reverse().find(w => w.patternId)
+
+    if (!lastAssignedWeek) {
       toast({
         variant: 'destructive',
         title: '패턴 미선택',
-        description: '먼저 1주차에 패턴을 할당해주세요'
+        description: '먼저 패턴을 할당해주세요'
       })
       return
     }
 
-    const firstWeekPattern = weekAssignments[0]
     setWeekAssignments(prev =>
-      prev.map(w => ({
-        ...w,
-        patternId: firstWeekPattern.patternId,
-        patternName: firstWeekPattern.patternName
-      }))
+      prev.map(w =>
+        w.isDeployed ? w : {
+          ...w,
+          patternId: lastAssignedWeek.patternId,
+          patternName: lastAssignedWeek.patternName
+        }
+      )
     )
 
     toast({
       title: '일괄 적용 완료',
-      description: `모든 주차에 "${firstWeekPattern.patternName}" 패턴이 적용되었습니다`
+      description: `모든 주차에 "${lastAssignedWeek.patternName}" 패턴이 적용되었습니다`
     })
   }
 
@@ -415,7 +421,7 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
                 variant="outline"
                 size="sm"
                 onClick={applyToAllWeeks}
-                disabled={!weekAssignments[0]?.patternId}
+                disabled={!weekAssignments.some(w => w.patternId)}
               >
                 <Copy className="w-4 h-4 mr-2" />
                 전체 주에 적용
