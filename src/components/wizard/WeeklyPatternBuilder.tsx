@@ -182,14 +182,28 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
 
       if (prevDeployedData.success && prevDeployedData.schedule?.deployedEndDate) {
         const deployedEnd = new Date(prevDeployedData.schedule.deployedEndDate)
-        // 배포 종료일이 현재 월에 속하는지 확인
-        if (deployedEnd.getFullYear() === year && deployedEnd.getMonth() === month - 1) {
+        const currentMonthStart = new Date(year, month - 1, 1)
+        const currentMonthEnd = new Date(year, month, 0)
+
+        console.log(`[WeeklyPatternBuilder] 배포 종료일 체크:`, {
+          deployedEnd: deployedEnd.toISOString().split('T')[0],
+          currentMonth: `${year}-${month}`,
+          currentMonthStart: currentMonthStart.toISOString().split('T')[0],
+          currentMonthEnd: currentMonthEnd.toISOString().split('T')[0]
+        })
+
+        // 배포 종료일이 현재 월에 걸쳐있는지 확인
+        // 예: 10월 스케줄인데 배포가 11/1까지 완료 → 10월 전체가 배포됨
+        if (deployedEnd >= currentMonthStart) {
+          // 배포 종료일이 현재 월 시작일 이후면 현재 월이 영향받음
           deployedDateRange = {
-            start: new Date(year, month - 1, 1), // 현재 월 1일
-            end: deployedEnd
+            start: currentMonthStart,
+            end: deployedEnd > currentMonthEnd ? currentMonthEnd : deployedEnd // 현재 월 내에서만
           }
-          console.log(`[WeeklyPatternBuilder] Deployed date range detected: ${deployedDateRange.start.toISOString().split('T')[0]} ~ ${deployedDateRange.end.toISOString().split('T')[0]}`)
+          console.log(`[WeeklyPatternBuilder] ✅ Deployed date range detected: ${deployedDateRange.start.toISOString().split('T')[0]} ~ ${deployedDateRange.end.toISOString().split('T')[0]}`)
           console.log(`[WeeklyPatternBuilder] Previous month weekPatterns:`, prevWeekPatterns)
+        } else {
+          console.log(`[WeeklyPatternBuilder] ⏭️ 배포 종료일이 현재 월 이전임 (영향 없음)`)
         }
       }
 
