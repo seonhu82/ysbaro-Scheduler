@@ -198,10 +198,31 @@ async function calculateTotalDimension(
     }
   })
 
-  // 6. 기준 = 총 필요인원 / 전체 인원
-  const baseline = totalStaffInDepartment > 0 ? totalRequired / totalStaffInDepartment : 0
+  // 6. 실제 배치된 총 근무 슬롯 수 계산 (연차 포함)
+  const totalActualAssignments = await prisma.staffAssignment.count({
+    where: {
+      scheduleId: schedule.id,
+      date: { gte: startDate, lte: endDate },
+      shiftType: { not: 'OFF' }
+    }
+  })
 
-  // 7. 실제 근무일 = 실제 배치 + 연차
+  const totalLeaveCount = await prisma.leaveApplication.count({
+    where: {
+      clinicId,
+      leaveType: 'OFF',
+      status: 'CONFIRMED',
+      date: { gte: startDate, lte: endDate }
+    }
+  })
+
+  const totalActualSlots = totalActualAssignments + totalLeaveCount
+
+  // 7. 기준 = 실제 배치된 총 슬롯 수 / 전체 인원
+  // (이렇게 하면 실제로 일한 평균이 기준이 되어 deviation이 0에 가까워짐)
+  const baseline = totalStaffInDepartment > 0 ? totalActualSlots / totalStaffInDepartment : 0
+
+  // 8. 이 직원의 실제 근무일 = 실제 배치 + 연차
   const actualAssignments = await prisma.staffAssignment.count({
     where: {
       staffId,
@@ -223,7 +244,7 @@ async function calculateTotalDimension(
 
   const actual = actualAssignments + leaveCount
 
-  // 8. 편차 및 점수 계산
+  // 9. 편차 및 점수 계산
   const deviation = baseline - actual
   const score = Math.max(0, Math.min(100, 50 + deviation * 10))
   const percentage = baseline > 0 ? Math.round((actual / baseline) * 100) : 0

@@ -1051,130 +1051,143 @@ export async function POST(request: NextRequest) {
       const weekEnd = new Date(sundayOfWeek)
       weekEnd.setDate(weekEnd.getDate() + 6)
 
-      // 각 직원별로 추가 배치 시도
-      for (const { staff, workDays } of staffBelowMinimum) {
-        const needed = 4 - workDays
+      // ========== 새로운 2차 배치 로직: 날짜별 OFF 균등 분배 ==========
 
-        // 이 주차의 날짜 중 해당 직원이 OFF인 날짜 찾기
-        const offDates: Array<{
-          date: Date
-          dateKey: string
-          dayType: DayType
-          hasNightShift: boolean
-        }> = []
-
-        let currentDate = new Date(weekStart)
-        while (currentDate <= weekEnd) {
-          const dateKey = currentDate.toISOString().split('T')[0]
-
-          // 이 날짜가 스케줄 범위에 포함되는지 확인
-          if (sortedDates.includes(dateKey)) {
-            // OFF인지 확인
-            const assignment = await prisma.staffAssignment.findFirst({
-              where: {
-                scheduleId: schedule.id,
-                staffId: staff.id,
-                date: currentDate,
-                shiftType: 'OFF'
-              }
-            })
-
-            if (assignment) {
-              // 이 날짜의 의사 정보 가져오기
-              const doctorSchedule = await prisma.scheduleDoctor.findFirst({
-                where: {
-                  scheduleId: schedule.id,
-                  date: currentDate
-                }
-              })
-
-              if (doctorSchedule) {
-                const hasNightShift = doctorSchedule.hasNightShift
-                const dayType = getDayType(new Date(currentDate), hasNightShift, holidayDatesArray, closedDays)
-
-                offDates.push({
-                  date: new Date(currentDate),
-                  dateKey,
-                  dayType,
-                  hasNightShift
-                })
-              }
+      // 1. 이 주차의 모든 날짜별 현재 OFF 수 계산
+      const dailyOffCounts = new Map<string, number>()
+      let currentDate = new Date(weekStart)
+      while (currentDate <= weekEnd) {
+        const dateKey = currentDate.toISOString().split('T')[0]
+        if (sortedDates.includes(dateKey)) {
+          const offCount = await prisma.staffAssignment.count({
+            where: {
+              scheduleId: schedule.id,
+              date: currentDate,
+              shiftType: 'OFF'
             }
-          }
+          })
+          dailyOffCounts.set(dateKey, offCount)
+        }
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
 
-          currentDate.setDate(currentDate.getDate() + 1)
+      console.log(`   📊 날짜별 현재 OFF 수:`, Object.fromEntries(dailyOffCounts))
+
+      // 2. 총 필요 배치 수 계산
+      const totalNeed = staffBelowMinimum.reduce((sum, s) => sum + (4 - s.workDays), 0)
+      console.log(`   📦 총 추가 배치 필요: ${totalNeed}건`)
+
+      // 3. OFF가 많은 날부터 하나씩 배치
+      let assignmentsMade = 0
+      while (assignmentsMade < totalNeed) {
+        // 3-1. 현재 OFF가 가장 많은 날짜 찾기
+        let maxOffDate = ''
+        let maxOffCount = -1
+        for (const [dateKey, count] of dailyOffCounts) {
+          if (count > maxOffCount) {
+            maxOffCount = count
+            maxOffDate = dateKey
+          }
         }
 
-        if (offDates.length === 0) {
-          console.log(`      - ${staff.name}: OFF 날짜 없음 (추가 배치 불가)`)
+        if (maxOffDate === '' || maxOffCount === 0) {
+          console.log(`   ⚠️  더 이상 배치 가능한 OFF 날짜 없음`)
+          break
+        }
+
+        // 3-2. 이 날짜가 OFF인 주4일 미달 직원 찾기
+        const candidateStaff = []
+        for (const { staff, workDays } of staffBelowMinimum) {
+          const needed = 4 - workDays
+
+          // 이미 충분히 배치된 직원은 제외
+          const currentWorkDays = await calculateWeeklyWorkDays(
+            staff.id,
+            weekKey,
+            schedule.id,
+            confirmedLeaves,
+            dailyAssignments,
+            previousDeployedSchedule?.id || null
+          )
+          if (currentWorkDays >= 4) continue
+
+          // 이 날짜에 OFF인지 확인
+          const assignment = await prisma.staffAssignment.findFirst({
+            where: {
+              scheduleId: schedule.id,
+              staffId: staff.id,
+              date: new Date(maxOffDate + 'T00:00:00.000Z'),
+              shiftType: 'OFF'
+            }
+          })
+
+          if (assignment) {
+            // 형평성 점수 계산
+            const fairness = await calculateStaffFairnessV2(
+              staff.id,
+              clinicId,
+              year,
+              month,
+              '진료실',
+              { ...fairnessCache, schedule: undefined }
+            )
+            candidateStaff.push({ staff, fairness })
+          }
+        }
+
+        if (candidateStaff.length === 0) {
+          console.log(`   ⚠️  ${maxOffDate}에 배치 가능한 직원 없음, OFF 수 유지`)
+          dailyOffCounts.set(maxOffDate, 0) // 이 날짜는 더 이상 선택 안되도록
           continue
         }
 
-        console.log(`      - ${staff.name}: OFF 날짜 ${offDates.length}일 중 ${Math.min(needed, offDates.length)}일 선택 (형평성 기준 동적 정렬)`)
+        // 3-3. 형평성 기준으로 정렬 (deviation 큰 순 = 덜 일한 순)
+        candidateStaff.sort((a, b) => b.fairness.dimensions.total.deviation - a.fairness.dimensions.total.deviation)
+        const selected = candidateStaff[0]
 
-        // 필요한 만큼 OFF를 근무로 변경 (동적 재정렬)
-        for (let i = 0; i < needed && offDates.length > 0; i++) {
-          // 배치할 때마다 형평성 점수 재계산 (캐시 무효화)
-          const staffFairness = await calculateStaffFairnessV2(
-            staff.id,
-            clinicId,
-            year,
-            month,
-            '진료실',
-            { ...fairnessCache, schedule: undefined } // 캐시 무효화로 최신 데이터 반영
-          )
-
-          // OFF 날짜를 형평성 기반으로 동적 정렬
-          offDates.sort((a, b) => {
-            const getDeviation = (dayType: DayType) => {
-              switch (dayType) {
-                case 'NIGHT': return staffFairness.dimensions.night.deviation
-                case 'WEEKEND': return staffFairness.dimensions.weekend.deviation
-                case 'HOLIDAY_ADJACENT': return staffFairness.dimensions.holidayAdjacent.deviation
-                case 'NORMAL': return staffFairness.dimensions.total.deviation
-              }
-            }
-
-            const deviationA = getDeviation(a.dayType)
-            const deviationB = getDeviation(b.dayType)
-
-            // 1순위: 형평성 점수가 더 큰 날짜 유형 우선
-            if (Math.abs(deviationA - deviationB) >= 0.1) {
-              return deviationB - deviationA
-            }
-
-            // 2순위: 날짜 순서
-            return a.dateKey.localeCompare(b.dateKey)
-          })
-
-          // 가장 우선순위 높은 날짜 선택
-          const selectedDate = offDates.shift()!
-          const { date, dateKey, hasNightShift } = selectedDate
-
-          // OFF를 DAY/NIGHT로 변경
-          await prisma.staffAssignment.update({
-            where: {
-              scheduleId_staffId_date: {
-                scheduleId: schedule.id,
-                staffId: staff.id,
-                date: date
-              }
-            },
-            data: {
-              shiftType: hasNightShift ? 'NIGHT' : 'DAY'
-            }
-          })
-
-          // dailyAssignments 업데이트
-          if (!dailyAssignments.has(dateKey)) {
-            dailyAssignments.set(dateKey, new Set())
+        // 3-4. OFF를 근무로 변경
+        const selectedDate = new Date(maxOffDate + 'T00:00:00.000Z')
+        const doctorSchedule = await prisma.scheduleDoctor.findFirst({
+          where: {
+            scheduleId: schedule.id,
+            date: selectedDate
           }
-          dailyAssignments.get(dateKey)!.add(staff.id)
+        })
 
-          totalAssignments++
-          console.log(`         → ${dateKey}: OFF → ${hasNightShift ? 'NIGHT' : 'DAY'} (deviation: ${staffFairness.dimensions.total.deviation.toFixed(1)})`)
+        if (!doctorSchedule) {
+          console.log(`   ⚠️  ${maxOffDate}의 의사 스케줄 없음`)
+          dailyOffCounts.set(maxOffDate, 0)
+          continue
         }
+
+        const hasNightShift = doctorSchedule.hasNightShift
+
+        await prisma.staffAssignment.update({
+          where: {
+            scheduleId_staffId_date: {
+              scheduleId: schedule.id,
+              staffId: selected.staff.id,
+              date: selectedDate
+            }
+          },
+          data: {
+            shiftType: hasNightShift ? 'NIGHT' : 'DAY'
+          }
+        })
+
+        // 3-5. 상태 업데이트
+        dailyOffCounts.set(maxOffDate, maxOffCount - 1)
+        if (!dailyAssignments.has(maxOffDate)) {
+          dailyAssignments.set(maxOffDate, new Set())
+        }
+        dailyAssignments.get(maxOffDate)!.add(selected.staff.id)
+
+        assignmentsMade++
+        totalAssignments++
+        console.log(`   ✅ ${maxOffDate} (OFF ${maxOffCount}→${maxOffCount-1}): ${selected.staff.name} 배치 (deviation: ${selected.fairness.dimensions.total.deviation.toFixed(1)})`)
       }
+
+      console.log(`   📊 최종 날짜별 OFF 수:`, Object.fromEntries(dailyOffCounts))
     }
 
     console.log(`\n✅ 주4일 최소 보장 완료\n`)
