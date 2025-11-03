@@ -484,11 +484,17 @@ export async function POST(request: NextRequest) {
     // 7. 새 연차 신청 추가
     if (annualLeave && annualLeave.length > 0) {
       // ApplicationLink 먼저 생성
+      const expiresAt = new Date()
+      expiresAt.setMonth(expiresAt.getMonth() + 3) // 3개월 후 만료
+
       const annualLink = await prisma.applicationLink.create({
         data: {
           clinicId,
           applicationType: 'MANUAL',
-          token: `manual_annual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          token: `manual_annual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          year: year || dateOnly.getFullYear(),
+          month: month || (dateOnly.getMonth() + 1),
+          expiresAt
         }
       })
 
@@ -534,11 +540,17 @@ export async function POST(request: NextRequest) {
 
       if (manualOffDays.length > 0) {
         // ApplicationLink 먼저 생성
+        const expiresAtOff = new Date()
+        expiresAtOff.setMonth(expiresAtOff.getMonth() + 3) // 3개월 후 만료
+
         const offLink = await prisma.applicationLink.create({
           data: {
             clinicId,
             applicationType: 'MANUAL',
-            token: `manual_off_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+            token: `manual_off_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            year: year || dateOnly.getFullYear(),
+            month: month || (dateOnly.getMonth() + 1),
+            expiresAt: expiresAtOff
           }
         })
 
