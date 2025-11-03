@@ -246,7 +246,8 @@ async function calculateTotalDimension(
 
   // 9. 편차 및 점수 계산
   const deviation = baseline - actual
-  const score = Math.max(0, Math.min(100, 50 + deviation * 10))
+  // 점수: 편차가 작을수록 높음 (100점 만점, 편차 0 = 완벽)
+  const score = Math.max(0, Math.min(100, 100 - Math.abs(deviation) * 10))
   const percentage = baseline > 0 ? Math.round((actual / baseline) * 100) : 0
 
   let status: 'ahead' | 'behind' | 'onTrack'
@@ -484,7 +485,8 @@ async function calculateSpecialDimension(
 
   // 10. 편차 및 점수 계산
   const deviation = baseline - actual
-  const score = Math.max(0, Math.min(100, 50 + deviation * 10))
+  // 점수: 편차가 작을수록 높음 (100점 만점, 편차 0 = 완벽)
+  const score = Math.max(0, Math.min(100, 100 - Math.abs(deviation) * 10))
   const percentage = baseline > 0 ? Math.round((actual / baseline) * 100) : 0
 
   let status: 'ahead' | 'behind' | 'onTrack'
@@ -621,7 +623,8 @@ export async function calculateStaffFairnessV2(
   }
 
   const weightedDeviation = totalWeight > 0 ? weightedSum / totalWeight : 0
-  const overallScore = Math.max(0, Math.min(100, 50 + weightedDeviation * 10))
+  // 종합 점수: 편차가 작을수록 높음 (100점 만점)
+  const overallScore = Math.max(0, Math.min(100, 100 - Math.abs(weightedDeviation) * 10))
   const canApplyLeave = overallScore >= 60
 
   return {
