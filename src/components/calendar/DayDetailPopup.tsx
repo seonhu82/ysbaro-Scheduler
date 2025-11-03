@@ -91,7 +91,11 @@ function DraggableStaffCard({
     isDragging,
   } = useDraggable({
     id: staff.id,
-    data: { staff, status },
+    data: {
+      staffId: staff.id,
+      staffName: staff.name,
+      status
+    },
     disabled: !isEditing
   })
 
@@ -367,47 +371,104 @@ export function DayDetailPopup({
     fetchDaySchedule()
   }, [date, isOpen, year, month, status])
 
-  const handleSave = async (skipValidation = false) => {
+  const handleSave = async (skipValidation: boolean | any = false) => {
     if (!schedule) return
+
+    // skipValidation이 이벤트 객체인 경우 false로 처리
+    const shouldSkipValidation = typeof skipValidation === 'boolean' ? skipValidation : false
 
     try {
       setLoading(true)
 
       // API로 직접 저장 (필요한 필드만 추출)
-      const payload = {
-        date: schedule.date,
-        doctors: schedule.doctors?.map((d: any) => ({ id: d.id, name: d.name })) || [],
-        staff: schedule.staff?.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          rank: s.rank,
-          categoryName: s.categoryName,
-          departmentName: s.departmentName
-        })) || [],
-        annualLeave: schedule.annualLeave?.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          rank: s.rank,
-          categoryName: s.categoryName,
-          departmentName: s.departmentName
-        })) || [],
-        offDays: schedule.offDays?.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          rank: s.rank,
-          categoryName: s.categoryName,
-          departmentName: s.departmentName
-        })) || [],
-        isNightShift: schedule.isNightShift,
-        year,
-        month,
-        skipValidation
+      // Circular reference 완전 제거: 배열을 JSON으로 직렬화한 후 역직렬화
+      const cleanDoctors: any[] = []
+      for (const d of (schedule.doctors || [])) {
+        cleanDoctors.push({ id: String(d.id), name: String(d.name) })
+      }
+
+      const cleanStaff: any[] = []
+      for (const s of (schedule.staff || [])) {
+        cleanStaff.push({
+          id: String(s.id),
+          name: String(s.name),
+          rank: String(s.rank || ''),
+          categoryName: s.categoryName ? String(s.categoryName) : undefined,
+          departmentName: s.departmentName ? String(s.departmentName) : undefined
+        })
+      }
+
+      const cleanAnnualLeave: any[] = []
+      for (const s of (schedule.annualLeave || [])) {
+        cleanAnnualLeave.push({
+          id: String(s.id),
+          name: String(s.name),
+          rank: String(s.rank || ''),
+          categoryName: s.categoryName ? String(s.categoryName) : undefined,
+          departmentName: s.departmentName ? String(s.departmentName) : undefined
+        })
+      }
+
+      const cleanOffDays: any[] = []
+      for (const s of (schedule.offDays || [])) {
+        cleanOffDays.push({
+          id: String(s.id),
+          name: String(s.name),
+          rank: String(s.rank || ''),
+          categoryName: s.categoryName ? String(s.categoryName) : undefined,
+          departmentName: s.departmentName ? String(s.departmentName) : undefined
+        })
+      }
+
+      const cleanPayload = {
+        date: String(schedule.date),
+        doctors: cleanDoctors,
+        staff: cleanStaff,
+        annualLeave: cleanAnnualLeave,
+        offDays: cleanOffDays,
+        isNightShift: Boolean(schedule.isNightShift),
+        year: year,
+        month: month,
+        skipValidation: shouldSkipValidation
+      }
+
+      console.log('📤 Attempting to send payload...')
+
+      // 각 필드를 개별적으로 직렬화 테스트
+      try {
+        console.log('Testing date:', JSON.stringify(cleanPayload.date))
+      } catch (e) {
+        console.error('❌ Date has circular ref')
+      }
+
+      try {
+        console.log('Testing doctors:', JSON.stringify(cleanPayload.doctors))
+      } catch (e) {
+        console.error('❌ Doctors has circular ref:', cleanPayload.doctors)
+      }
+
+      try {
+        console.log('Testing staff:', JSON.stringify(cleanPayload.staff))
+      } catch (e) {
+        console.error('❌ Staff has circular ref:', cleanPayload.staff)
+      }
+
+      try {
+        console.log('Testing annualLeave:', JSON.stringify(cleanPayload.annualLeave))
+      } catch (e) {
+        console.error('❌ AnnualLeave has circular ref:', cleanPayload.annualLeave)
+      }
+
+      try {
+        console.log('Testing offDays:', JSON.stringify(cleanPayload.offDays))
+      } catch (e) {
+        console.error('❌ OffDays has circular ref:', cleanPayload.offDays)
       }
 
       const response = await fetch('/api/schedule/day', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(cleanPayload)
       })
 
       const result = await response.json()
@@ -424,8 +485,7 @@ export function DayDetailPopup({
         )
 
         if (confirmed) {
-          // 경고 무시하고 저장
-          setLoading(false)
+          // 경고 무시하고 저장 (loading 상태 유지)
           await handleSave(true) // skipValidation = true로 재시도
           return
         } else {
@@ -534,11 +594,12 @@ export function DayDetailPopup({
       return
     }
 
-    const activeData = active.data.current as { staff: StaffMember; status: string }
+    const activeData = active.data.current as { staffId: string; staffName: string; status: string }
     const targetZone = over.id as string // 'working', 'annual', 'off'
 
     console.log('📌 이동 시도:', {
-      staff: activeData?.staff?.name,
+      staffId: activeData?.staffId,
+      staffName: activeData?.staffName,
       from: activeData?.status,
       to: targetZone
     })
@@ -555,16 +616,31 @@ export function DayDetailPopup({
       return
     }
 
-    const movedStaff = activeData.staff
+    const staffId = activeData.staffId
+
+    // 이동할 직원 찾기
+    let movedStaff: StaffMember | undefined
+    if (activeData.status === 'working') {
+      movedStaff = schedule.staff.find(s => s.id === staffId)
+    } else if (activeData.status === 'annual') {
+      movedStaff = schedule.annualLeave?.find(s => s.id === staffId)
+    } else if (activeData.status === 'off') {
+      movedStaff = schedule.offDays?.find(s => s.id === staffId)
+    }
+
+    if (!movedStaff) {
+      console.log('❌ 이동할 직원을 찾을 수 없습니다')
+      return
+    }
 
     // 현재 위치에서 제거
     const newSchedule = { ...schedule }
     if (activeData.status === 'working') {
-      newSchedule.staff = schedule.staff.filter(s => s.id !== movedStaff.id)
+      newSchedule.staff = schedule.staff.filter(s => s.id !== staffId)
     } else if (activeData.status === 'annual') {
-      newSchedule.annualLeave = (schedule.annualLeave || []).filter(s => s.id !== movedStaff.id)
+      newSchedule.annualLeave = (schedule.annualLeave || []).filter(s => s.id !== staffId)
     } else if (activeData.status === 'off') {
-      newSchedule.offDays = (schedule.offDays || []).filter(s => s.id !== movedStaff.id)
+      newSchedule.offDays = (schedule.offDays || []).filter(s => s.id !== staffId)
     }
 
     // 새 위치에 추가
@@ -574,6 +650,29 @@ export function DayDetailPopup({
       newSchedule.annualLeave = [...(newSchedule.annualLeave || []), movedStaff]
     } else if (targetZone === 'off') {
       newSchedule.offDays = [...(newSchedule.offDays || []), movedStaff]
+    }
+
+    // 검증: 팀장/실장이 근무에서 빠지면 경고
+    if (activeData.status === 'working' && targetZone !== 'working') {
+      // 팀장/실장 체크
+      const isLeader = movedStaff.categoryName === '팀장/실장' || movedStaff.categoryName === '팀장' || movedStaff.categoryName === '실장'
+
+      if (isLeader) {
+        const remainingLeaders = newSchedule.staff.filter(s =>
+          s.categoryName === '팀장/실장' || s.categoryName === '팀장' || s.categoryName === '실장'
+        )
+
+        if (remainingLeaders.length === 0) {
+          const confirmed = window.confirm(
+            `⚠️ 경고\n\n${movedStaff.name}은(는) 팀장/실장입니다.\n이동하면 근무 중인 팀장/실장이 0명이 됩니다.\n\n그래도 이동하시겠습니까?`
+          )
+
+          if (!confirmed) {
+            console.log('❌ 사용자가 이동 취소 (팀장/실장 필수)')
+            return
+          }
+        }
+      }
     }
 
     setSchedule(newSchedule)
@@ -728,19 +827,29 @@ export function DayDetailPopup({
                         <SelectValue placeholder="직원 추가하기 (추가 후 드래그로 이동 가능)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableStaff
-                          .filter(s => {
-                            const isAlreadyAdded =
-                              schedule?.staff.find(ss => ss.id === s.id) ||
-                              schedule?.annualLeave?.find(ss => ss.id === s.id) ||
-                              schedule?.offDays?.find(ss => ss.id === s.id)
-                            return !isAlreadyAdded
+                        {(() => {
+                          const allStaffIds = new Set([
+                            ...(schedule?.staff || []).map(s => s.id),
+                            ...(schedule?.annualLeave || []).map(s => s.id),
+                            ...(schedule?.offDays || []).map(s => s.id)
+                          ])
+
+                          const filtered = availableStaff.filter(s => !allStaffIds.has(s.id))
+
+                          console.log('🔍 필터링 상태:', {
+                            전체: availableStaff.length,
+                            근무: schedule?.staff?.length || 0,
+                            연차: schedule?.annualLeave?.length || 0,
+                            오프: schedule?.offDays?.length || 0,
+                            선택가능: filtered.length
                           })
-                          .map(staff => (
+
+                          return filtered.map(staff => (
                             <SelectItem key={staff.id} value={staff.id}>
                               {staff.name} ({staff.categoryName || staff.rank})
                             </SelectItem>
-                          ))}
+                          ))
+                        })()}
                       </SelectContent>
                     </Select>
                   </div>
