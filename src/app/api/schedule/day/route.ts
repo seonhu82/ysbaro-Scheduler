@@ -247,7 +247,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { date, doctors, staff, annualLeave, offDays, isNightShift, year, month, skipValidation } = body
+    const { date, doctors, staff, annualLeave, offDays, isNightShift, year, month, skipValidation, dryRun } = body
 
     if (!date) {
       return badRequestResponse('Date is required')
@@ -256,7 +256,7 @@ export async function POST(request: NextRequest) {
     const clinicId = session.user.clinicId
     const dateOnly = new Date(date + 'T00:00:00.000Z')
 
-    console.log('Saving day schedule:', { date, doctors: doctors?.length, staff: staff?.length, annualLeave: annualLeave?.length, offDays: offDays?.length, skipValidation })
+    console.log('Saving day schedule:', { date, doctors: doctors?.length, staff: staff?.length, annualLeave: annualLeave?.length, offDays: offDays?.length, skipValidation, dryRun })
 
     // ========== 검증 로직 (skipValidation이 true면 건너뜀) ==========
     const warnings: string[] = []
@@ -294,11 +294,27 @@ export async function POST(request: NextRequest) {
             actualCategories[cat] = (actualCategories[cat] || 0) + 1
           }
 
+          console.log('📊 카테고리 검증:', {
+            required: requiredCategories,
+            actual: actualCategories
+          })
+
           // 카테고리별 체크
           for (const [category, required] of Object.entries(requiredCategories)) {
             const actual = actualCategories[category] || 0
-            if (actual < (required as number)) {
-              warnings.push(`⚠️ ${category} 인원 부족: 필요 ${required}명, 현재 ${actual}명`)
+            const reqData = required as any
+
+            // count: 권장 인원, minRequired: 최소 필수 인원
+            const minRequired = reqData.minRequired || 0
+            const recommendedCount = reqData.count || 0
+
+            // 최소 필수 인원 체크 (경고)
+            if (actual < minRequired) {
+              warnings.push(`⚠️ ${category} 최소 인원 미달: 최소 ${minRequired}명 필요, 현재 ${actual}명`)
+            }
+            // 권장 인원 체크 (정보성)
+            else if (actual < recommendedCount) {
+              warnings.push(`ℹ️ ${category} 권장 인원 부족: 권장 ${recommendedCount}명, 현재 ${actual}명`)
             }
           }
         }
@@ -396,6 +412,15 @@ export async function POST(request: NextRequest) {
         })
       }
     } // end of !skipValidation
+
+    // dryRun이면 검증만 하고 저장하지 않음
+    if (dryRun) {
+      return successResponse({
+        message: '검증 완료',
+        warnings: warnings.length > 0 ? warnings : undefined,
+        requireConfirmation: warnings.length > 0
+      })
+    }
 
     // ========== 검증 통과, 저장 진행 ==========
 

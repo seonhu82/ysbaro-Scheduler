@@ -343,14 +343,20 @@ export function DayDetailPopup({
           setAvailableDoctors(doctorsResult.data || [])
         }
         if (staffResult.success) {
-          // 진료실 소속이면서 카테고리가 있는 활성 직원만 필터링
-          setAvailableStaff(
-            staffResult.data.filter((s: any) =>
-              s.isActive &&
-              s.departmentName === '진료실' &&
-              s.categoryName
-            ) || []
-          )
+          // 진료실 소속 활성 직원만 필터링
+          const filteredStaff = staffResult.data.filter((s: any) =>
+            s.isActive && s.departmentName === '진료실'
+          ) || []
+
+          console.log('📋 Available staff filter:', {
+            total: staffResult.data.length,
+            active: staffResult.data.filter((s: any) => s.isActive).length,
+            treatment: staffResult.data.filter((s: any) => s.departmentName === '진료실').length,
+            filtered: filteredStaff.length,
+            filteredNames: filteredStaff.map((s: any) => `${s.name}(${s.categoryName || '미분류'})`)
+          })
+
+          setAvailableStaff(filteredStaff)
         }
       } catch (error) {
         console.error('Failed to fetch day schedule:', error)
@@ -652,9 +658,11 @@ export function DayDetailPopup({
       newSchedule.offDays = [...(newSchedule.offDays || []), movedStaff]
     }
 
-    // 검증: 팀장/실장이 근무에서 빠지면 경고
+    // ========== 드래그 검증 로직 ==========
+    const warnings: string[] = []
+
+    // 1. 팀장/실장이 근무에서 빠지면 경고
     if (activeData.status === 'working' && targetZone !== 'working') {
-      // 팀장/실장 체크
       const isLeader = movedStaff.categoryName === '팀장/실장' || movedStaff.categoryName === '팀장' || movedStaff.categoryName === '실장'
 
       if (isLeader) {
@@ -663,15 +671,93 @@ export function DayDetailPopup({
         )
 
         if (remainingLeaders.length === 0) {
-          const confirmed = window.confirm(
-            `⚠️ 경고\n\n${movedStaff.name}은(는) 팀장/실장입니다.\n이동하면 근무 중인 팀장/실장이 0명이 됩니다.\n\n그래도 이동하시겠습니까?`
-          )
+          warnings.push(`⚠️ ${movedStaff.name}은(는) 팀장/실장입니다.\n이동하면 근무 중인 팀장/실장이 0명이 됩니다.`)
+        }
+      }
+    }
 
-          if (!confirmed) {
-            console.log('❌ 사용자가 이동 취소 (팀장/실장 필수)')
-            return
+    // 2. 월 최대/최소 근무일 수 제한 (이동 후 상태 기준)
+    if (year && month && targetZone === 'working') {
+      // working으로 이동하는 경우 과다 근무 체크
+      try {
+        const response = await fetch(
+          `/api/staff/work-days?staffId=${movedStaff.id}&year=${year}&month=${month}`
+        )
+        const result = await response.json()
+
+        if (result.success) {
+          const workDays = result.data.workDays || 0
+          const avgWorkDays = result.data.avgWorkDays || 0
+
+          // 이동 후 근무일 수 = 현재 + 1
+          const afterWorkDays = workDays + 1
+
+          if (afterWorkDays > avgWorkDays + 3) {
+            warnings.push(`⚠️ ${movedStaff.name}: 이번 달 과다 근무 예상\n(이동 후: ${afterWorkDays}일, 평균: ${avgWorkDays.toFixed(1)}일)`)
           }
         }
+      } catch (error) {
+        console.error('월 근무일 수 체크 실패:', error)
+      }
+    }
+
+    // 3. 주4일 근무제 체크 (working으로 이동 시)
+    if (targetZone === 'working') {
+      try {
+        const response = await fetch(
+          `/api/staff/weekly-work-days?staffId=${movedStaff.id}&date=${schedule.date}`
+        )
+        const result = await response.json()
+
+        if (result.success) {
+          const weeklyWorkDays = result.data.weeklyWorkDays || 0
+
+          // 이동 후 주간 근무일 수 = 현재 + 1
+          const afterWeeklyWorkDays = weeklyWorkDays + 1
+
+          if (afterWeeklyWorkDays > 4) {
+            warnings.push(`⚠️ ${movedStaff.name}: 주4일 근무 초과 예상\n(이동 후: ${afterWeeklyWorkDays}일 근무)`)
+          }
+        }
+      } catch (error) {
+        console.error('주간 근무일 수 체크 실패:', error)
+      }
+    }
+
+    // 4. 필수 인원 체크 (working에서 이동하는 경우)
+    if (activeData.status === 'working' && targetZone !== 'working') {
+      try {
+        const response = await fetch(
+          `/api/schedule/validate-staff-count`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              doctors: schedule.doctors,
+              staff: newSchedule.staff,
+              date: schedule.date
+            })
+          }
+        )
+        const result = await response.json()
+
+        if (result.success && result.data.warnings) {
+          warnings.push(...result.data.warnings)
+        }
+      } catch (error) {
+        console.error('필수 인원 체크 실패:', error)
+      }
+    }
+
+    // 경고가 있으면 사용자 확인
+    if (warnings.length > 0) {
+      const confirmed = window.confirm(
+        `⚠️ 경고\n\n${warnings.join('\n\n')}\n\n그래도 이동하시겠습니까?`
+      )
+
+      if (!confirmed) {
+        console.log('❌ 사용자가 이동 취소 (검증 경고)')
+        return
       }
     }
 
