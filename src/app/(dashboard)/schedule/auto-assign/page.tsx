@@ -125,17 +125,9 @@ export default function AutoAssignPage() {
           <Calendar className="w-8 h-8" />
           원장 스케줄 배치
         </h1>
-        <div className="flex items-center justify-between">
-          <p className="text-gray-600">
-            주차별 패턴을 선택하여 월간 원장 스케줄을 자동으로 배치합니다
-          </p>
-          <Link href="/leave-management">
-            <Button variant="outline" className="gap-2">
-              연차/오프 신청 기간 생성하러 가기
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </Link>
-        </div>
+        <p className="text-gray-600">
+          주차별 패턴을 선택하여 월간 원장 스케줄을 자동으로 배치합니다
+        </p>
       </div>
 
       {/* 월 선택 */}
@@ -231,6 +223,28 @@ export default function AutoAssignPage() {
                 <li>• 각 주차별로 다른 패턴을 적용할 수 있습니다</li>
                 <li>• 월요일~일요일 완전한 주 단위로 생성됩니다</li>
               </ul>
+            </div>
+
+            {/* 연차/오프 신청 기간 생성 안내 */}
+            <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 rounded-lg p-4 mt-4">
+              <h4 className="font-semibold text-emerald-900 mb-2">
+                💡 원장 스케줄 배치 완료 후 다음 단계
+              </h4>
+              <p className="text-sm text-emerald-700 mb-3">
+                원장 스케줄 배치가 완료되면 직원들의 <strong>연차/오프 신청 기간</strong>을 생성해주세요.
+              </p>
+              <ul className="text-sm text-emerald-600 space-y-1 mb-4">
+                <li>• 직원들이 연차/오프를 신청할 수 있는 기간을 설정합니다</li>
+                <li>• 신청 URL을 생성하여 직원들과 공유할 수 있습니다</li>
+                <li>• 신청된 연차/오프는 최종 직원 배치 시 자동으로 반영됩니다</li>
+              </ul>
+              <Link href="/leave-management">
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 w-full">
+                  <Calendar className="w-4 h-4" />
+                  신청 기간 생성하러 가기
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>
