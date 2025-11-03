@@ -782,15 +782,33 @@ export function DayDetailPopup({
         console.log('📅 주4일 API 응답:', result)
 
         if (result.success) {
-          const weeklyWorkDays = result.data.weeklyWorkDays || 0
+          let weeklyWorkDays = result.data.weeklyWorkDays || 0
 
-          // 이동 후 주간 근무일 수 = 현재 + 1
-          const afterWeeklyWorkDays = weeklyWorkDays + 1
+          // 현재 이 직원이 이미 해당 날짜에 working으로 배정되어 있는지 확인
+          const isAlreadyWorking = activeData.status === 'working'
 
-          console.log('📊 주간 근무일:', { current: weeklyWorkDays, after: afterWeeklyWorkDays, limit: 4 })
+          console.log('📋 현재 상태:', {
+            from: activeData.status,
+            to: targetZone,
+            isAlreadyWorking,
+            weeklyWorkDays
+          })
+
+          // 이동 후 주간 근무일 수 계산
+          // - 이미 working이었으면: 그대로 (같은 주에서 이동)
+          // - off/annual에서 오면: +1
+          const afterWeeklyWorkDays = isAlreadyWorking ? weeklyWorkDays : weeklyWorkDays + 1
+
+          console.log('📊 주간 근무일:', {
+            current: weeklyWorkDays,
+            after: afterWeeklyWorkDays,
+            limit: 4,
+            willAdd: !isAlreadyWorking
+          })
 
           if (afterWeeklyWorkDays > 4) {
-            warnings.push(`⚠️ ${movedStaff.name}: 주4일 근무 초과 예상\n(이동 후: ${afterWeeklyWorkDays}일 근무)`)
+            warnings.push(`⚠️ ${movedStaff.name}: 주4일 근무 초과 예상\n(이동 후: ${afterWeeklyWorkDays}일 근무, 주간 허용: 4일)`)
+            console.log('⚠️ 주4일 경고 발생!')
           } else {
             console.log('✅ 주4일 체크 통과')
           }
