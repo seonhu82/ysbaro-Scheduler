@@ -676,24 +676,62 @@ export function DayDetailPopup({
       }
     }
 
-    // 2. 월 최대/최소 근무일 수 제한 (이동 후 상태 기준)
+    // 2. 월 형평성 체크 (이동 후 상태 기준) - 편차 ±1 기준
     if (year && month && targetZone === 'working') {
-      // working으로 이동하는 경우 과다 근무 체크
+      // working으로 이동하는 경우 형평성 체크
       try {
+        const isNightShift = schedule.isNightShift
+        const includeHoliday = true // 설정에서 가져와야 함
+
         const response = await fetch(
-          `/api/staff/work-days?staffId=${movedStaff.id}&year=${year}&month=${month}`
+          `/api/staff/work-days?staffId=${movedStaff.id}&year=${year}&month=${month}&includeHoliday=${includeHoliday}`
         )
         const result = await response.json()
 
         if (result.success) {
-          const workDays = result.data.workDays || 0
-          const avgWorkDays = result.data.avgWorkDays || 0
+          const { current, average, deviation } = result.data
 
-          // 이동 후 근무일 수 = 현재 + 1
-          const afterWorkDays = workDays + 1
+          const warningMessages: string[] = []
 
-          if (afterWorkDays > avgWorkDays + 3) {
-            warnings.push(`⚠️ ${movedStaff.name}: 이번 달 과다 근무 예상\n(이동 후: ${afterWorkDays}일, 평균: ${avgWorkDays.toFixed(1)}일)`)
+          // 이동 후 각 타입별 편차 계산
+          if (isNightShift) {
+            // 야근으로 이동
+            const afterNightDeviation = deviation.night + 1
+            if (Math.abs(afterNightDeviation) > 1) {
+              warningMessages.push(`야근: ${(current.night + 1)}일 (평균: ${average.night.toFixed(1)}일, 편차: ${afterNightDeviation > 0 ? '+' : ''}${afterNightDeviation.toFixed(1)})`)
+            }
+          } else {
+            // 일반 근무로 이동 - 현재 날짜가 주말/공휴일인지 체크
+            const currentDate = new Date(schedule.date)
+            const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6
+            const isHoliday = currentDate.getDay() === 0 // 임시: 일요일만 공휴일로 간주
+
+            if (isHoliday && includeHoliday) {
+              const afterHolidayDeviation = deviation.holiday + 1
+              if (Math.abs(afterHolidayDeviation) > 1) {
+                warningMessages.push(`공휴일: ${(current.holiday + 1)}일 (평균: ${average.holiday.toFixed(1)}일, 편차: ${afterHolidayDeviation > 0 ? '+' : ''}${afterHolidayDeviation.toFixed(1)})`)
+              }
+            } else if (isWeekend) {
+              const afterWeekendDeviation = deviation.weekend + 1
+              if (Math.abs(afterWeekendDeviation) > 1) {
+                warningMessages.push(`주말: ${(current.weekend + 1)}일 (평균: ${average.weekend.toFixed(1)}일, 편차: ${afterWeekendDeviation > 0 ? '+' : ''}${afterWeekendDeviation.toFixed(1)})`)
+              }
+            } else {
+              const afterRegularDeviation = deviation.regular + 1
+              if (Math.abs(afterRegularDeviation) > 1) {
+                warningMessages.push(`일반: ${(current.regular + 1)}일 (평균: ${average.regular.toFixed(1)}일, 편차: ${afterRegularDeviation > 0 ? '+' : ''}${afterRegularDeviation.toFixed(1)})`)
+              }
+            }
+          }
+
+          // 전체 근무일 수 편차 체크
+          const afterTotalDeviation = deviation.total + 1
+          if (Math.abs(afterTotalDeviation) > 1) {
+            warningMessages.push(`전체: ${(current.total + 1)}일 (평균: ${average.total.toFixed(1)}일, 편차: ${afterTotalDeviation > 0 ? '+' : ''}${afterTotalDeviation.toFixed(1)})`)
+          }
+
+          if (warningMessages.length > 0) {
+            warnings.push(`⚠️ ${movedStaff.name}: 이번 달 근무 편차 초과\n${warningMessages.join('\n')}`)
           }
         }
       } catch (error) {

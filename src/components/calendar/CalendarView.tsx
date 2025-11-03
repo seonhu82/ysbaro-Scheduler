@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { MonthNavigator } from './MonthNavigator'
 import { CalendarGrid } from './CalendarGrid'
 import { DayDetailPopup } from './DayDetailPopup'
-import { PatternApplyButton } from './PatternApplyButton'
+// import { PatternApplyButton } from './PatternApplyButton' // 메인 캘린더에서는 미사용
 
 // Updated: Now includes both leave applications and scheduled OFF days
 
@@ -212,14 +212,7 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
     }
   }
 
-  const handleApplyPattern = async (year: number, month: number) => {
-    // 패턴 적용 후 스케줄 데이터 새로고침
-    const response = await fetch(`/api/schedule?year=${year}&month=${month}`)
-    const result = await response.json()
-    if (result.success && result.data) {
-      setScheduleData({})
-    }
-  }
+  // handleApplyPattern 함수 제거 (메인 캘린더에서는 미사용)
 
   return (
     <div>
@@ -233,7 +226,6 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
             onToday={handleToday}
           />
         </div>
-        <PatternApplyButton onApply={handleApplyPattern} />
       </div>
 
       {loading && (
