@@ -11,10 +11,14 @@ export async function GET(
   { params }: { params: { token: string } }
 ) {
   try {
+    console.log('📋 직원 목록 요청:', params.token)
+
     // Token으로 link 조회
     const link = await prisma.applicationLink.findUnique({
       where: { token: params.token },
     })
+
+    console.log('🔗 ApplicationLink 조회:', link ? `찾음 (clinicId: ${link.clinicId})` : '없음')
 
     if (!link) {
       return NextResponse.json(
@@ -40,12 +44,15 @@ export async function GET(
       ],
     })
 
+    console.log('✅ 직원 목록 조회 성공:', staffList.length, '명')
+    console.log('👥 직원:', staffList.map(s => `${s.name}(${s.departmentName})`))
+
     return NextResponse.json({
       success: true,
       data: staffList,
     })
   } catch (error: any) {
-    console.error('직원 목록 조회 오류:', error)
+    console.error('❌ 직원 목록 조회 오류:', error)
     return NextResponse.json(
       { success: false, error: '직원 목록을 불러오는데 실패했습니다' },
       { status: 500 }
