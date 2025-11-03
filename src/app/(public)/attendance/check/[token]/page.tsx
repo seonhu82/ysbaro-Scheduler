@@ -128,13 +128,19 @@ export default function AttendanceCheckPage({
     try {
       // 모든 활성 직원 조회 (향후 clinicId로 필터링)
       const response = await fetch('/api/settings/staff')
-      const data = await response.json()
+      const result = await response.json()
 
-      if (data.success && data.staff) {
-        setStaffList(data.staff.filter((s: any) => s.isActive !== false))
+      console.log('📋 Staff API 응답:', result)
+
+      if (result.success && result.data) {
+        const activeStaff = result.data.filter((s: any) => s.isActive !== false)
+        console.log('✅ 활성 직원:', activeStaff.length, activeStaff.map((s: any) => s.name))
+        setStaffList(activeStaff)
+      } else {
+        console.error('❌ Staff API 응답 형식 오류:', result)
       }
     } catch (error) {
-      console.error('Failed to fetch staff list:', error)
+      console.error('❌ Failed to fetch staff list:', error)
     }
   }
 
