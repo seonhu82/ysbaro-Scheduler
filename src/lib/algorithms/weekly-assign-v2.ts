@@ -14,6 +14,7 @@ import { updateFairnessScoresAfterAssignment, updateStaffFairnessScores } from '
 import { createWeeklyAssignmentBackup } from '@/lib/services/assignment-backup-service'
 import { validateWeeklyAssignment } from '@/lib/services/assignment-validation-service'
 import { processOnHoldAutoApproval } from '@/lib/services/on-hold-auto-approval-service'
+import { getAutoAssignDepartmentNames } from '@/lib/utils/department-utils'
 import {
   logWeeklyAssignmentStarted,
   logWeeklyAssignmentCompleted,
@@ -247,8 +248,12 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
 
     // ========== Phase 2: 우선 배치 (Step 4-5) ==========
 
+    // 자동 배치 대상 부서 조회
+    const autoAssignDepartmentNames = await getAutoAssignDepartmentNames(clinicId)
+    console.log(`📋 자동 배치 대상 부서: ${Array.from(autoAssignDepartmentNames).join(', ')}`)
+
     // 모든 활성 직원 로드
-    const allActiveStaff = await prisma.staff.findMany({
+    const allStaff = await prisma.staff.findMany({
       where: {
         clinicId,
         isActive: true
@@ -262,7 +267,12 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
       }
     })
 
-    console.log(`👥 활성 직원: ${allActiveStaff.length}명`)
+    // 자동 배치 대상 부서의 직원만 필터링
+    const allActiveStaff = allStaff.filter(staff =>
+      autoAssignDepartmentNames.has(staff.departmentName ?? '')
+    )
+
+    console.log(`👥 활성 직원: ${allActiveStaff.length}명 (전체 ${allStaff.length}명 중 자동 배치 대상만)`)
 
     // 주간 배치 추적 맵 초기화
     const weeklyAssignments = new Map<string, Set<string>>() // staffId → Set<dateKey>

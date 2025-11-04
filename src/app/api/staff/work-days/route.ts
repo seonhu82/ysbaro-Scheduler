@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { successResponse, errorResponse, unauthorizedResponse, badRequestResponse } from '@/lib/utils/api-response'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 // 공휴일 판단 함수 (간단한 예시 - 실제로는 ClosedDaySettings에서 가져와야 함)
 function isHoliday(date: Date): boolean {
@@ -84,12 +85,13 @@ export async function GET(request: NextRequest) {
 
     const totalWorkDays = staffAssignments.length
 
-    // 전체 진료실 직원의 평균 근무일 수 계산 (타입별)
+    // 자동 배치 부서의 전체 직원 평균 근무일 수 계산 (타입별)
+    const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
     const allTreatmentStaff = await prisma.staff.findMany({
       where: {
         clinicId,
         isActive: true,
-        departmentName: '진료실'
+        departmentName: { in: autoAssignDeptNames }
       },
       select: { id: true }
     })

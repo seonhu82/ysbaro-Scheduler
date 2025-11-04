@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 /**
  * GET /api/schedule/slots
@@ -227,11 +228,12 @@ export async function GET(request: NextRequest) {
     }
 
     // 각 날짜의 구분별 필요 인원 및 가용 인원 계산
+    const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
     const allStaff = await prisma.staff.findMany({
       where: {
         clinicId,
         isActive: true,
-        departmentName: '진료실',
+        departmentName: { in: autoAssignDeptNames },
       },
     })
 

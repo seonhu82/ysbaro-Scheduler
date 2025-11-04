@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { eachDayOfInterval, startOfMonth, endOfMonth } from 'date-fns'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,12 +78,13 @@ export async function GET(request: NextRequest) {
       where: { clinicId }
     })
 
-    // 전체 활성 직원 수 조회 (오프 계산용)
+    // 자동 배치 부서의 전체 활성 직원 수 조회 (오프 계산용)
+    const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
     const totalActiveStaff = await prisma.staff.count({
       where: {
         clinicId,
         isActive: true,
-        departmentName: '진료실' // 진료실 직원만
+        departmentName: { in: autoAssignDeptNames }
       }
     })
 

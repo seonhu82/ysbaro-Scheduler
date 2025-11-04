@@ -8,6 +8,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { successResponse, errorResponse, unauthorizedResponse } from '@/lib/utils/api-response'
 import { calculateStaffFairnessV2 } from '@/lib/services/fairness-calculator-v2'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -109,12 +110,15 @@ export async function GET(request: NextRequest) {
       holidayAdjacent: fairnessSettings?.enableHolidayAdjacentFairness ?? false
     }
 
-    // 모든 진료실 활성 직원 조회 (편차 포함)
+    // 자동 배치 부서 조회
+    const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
+
+    // 자동 배치 부서의 모든 활성 직원 조회 (편차 포함)
     const allTreatmentStaff = await prisma.staff.findMany({
       where: {
         clinicId,
         isActive: true,
-        departmentName: '진료실'
+        departmentName: { in: autoAssignDeptNames }
       },
       select: {
         id: true,
@@ -129,7 +133,7 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 직원별로 그룹화하여 통계 계산 (모든 진료실 직원 먼저 초기화)
+    // 직원별로 그룹화하여 통계 계산 (자동 배치 부서의 모든 직원 먼저 초기화)
     const staffStatsMap = new Map<string, {
       staffId: string
       staffName: string
@@ -144,7 +148,7 @@ export async function GET(request: NextRequest) {
       offDays: number
     }>()
 
-    // 모든 진료실 직원 초기화
+    // 자동 배치 부서의 모든 직원 초기화
     for (const staff of allTreatmentStaff) {
       const annualDays = staffAnnualMap.get(staff.id) || 0
       staffStatsMap.set(staff.id, {
@@ -176,7 +180,7 @@ export async function GET(request: NextRequest) {
 
       // 이미 초기화되어 있으므로 바로 가져옴
       const stats = staffStatsMap.get(staffId)
-      if (!stats) continue // 진료실 직원이 아니면 스킵
+      if (!stats) continue // 자동 배치 부서 직원이 아니면 스킵
 
       // OFF 처리
       if (assignment.shiftType === 'OFF') {
@@ -213,28 +217,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Map을 배열로 변환하고 카테고리별로 정렬
-    const categoryOrder: { [key: string]: number } = {
-      '팀장/실장': 0,
-      '고년차': 1,
-      '중간년차': 2,
-      '저년차': 3
-    }
+    // Map을 배열로 변환하고 부서/카테고리별로 정렬
+    const categoryOrder = await getCategoryOrderMap(clinicId)
+    const autoAssignDeptSet = new Set(autoAssignDeptNames)
 
     const stats = Array.from(staffStatsMap.values()).sort((a, b) => {
-      // 진료실 직원만 표시 (필터링)
-      const deptA = a.departmentName === '진료실' ? 0 : 1
-      const deptB = b.departmentName === '진료실' ? 0 : 1
+      // 부서 순서 (자동 배치 부서만 표시)
+      const deptA = autoAssignDeptSet.has(a.departmentName) ? 0 : 1
+      const deptB = autoAssignDeptSet.has(b.departmentName) ? 0 : 1
       if (deptA !== deptB) return deptA - deptB
 
-      // 카테고리별 정렬
+      // 카테고리별 정렬 (동적으로 조회된 순서 사용)
       const orderA = categoryOrder[a.categoryName] ?? 999
       const orderB = categoryOrder[b.categoryName] ?? 999
       if (orderA !== orderB) return orderA - orderB
 
       // 이름순 정렬
       return a.staffName.localeCompare(b.staffName)
-    }).filter(s => s.departmentName === '진료실') // 진료실만 표시
+    }).filter(s => autoAssignDeptSet.has(s.departmentName)) // 자동 배치 부서만 표시
 
     console.log('📊 Stats sorting result:', stats.map(s => `${s.staffName}(${s.categoryName})`))
 

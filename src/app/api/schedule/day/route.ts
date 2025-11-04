@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { successResponse, errorResponse, unauthorizedResponse, badRequestResponse } from '@/lib/utils/api-response'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -172,12 +173,13 @@ export async function GET(request: NextRequest) {
 
     // OFF가 0명인 경우 자동 계산 (배정되지 않은 직원들)
     if (allOffDays.length === 0 && staffAssignments.length > 0) {
-      // 전체 진료실 활성 직원 조회
+      // 자동 배치 부서의 전체 활성 직원 조회
+      const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
       const allActiveStaff = await prisma.staff.findMany({
         where: {
           clinicId,
           isActive: true,
-          departmentName: '진료실'
+          departmentName: { in: autoAssignDeptNames }
         },
         select: {
           id: true,
@@ -285,7 +287,7 @@ export async function POST(request: NextRequest) {
         // 1-2. 카테고리별 필수 인원 체크
         if (doctorCombination.departmentCategoryStaff) {
           const categoryStaff = doctorCombination.departmentCategoryStaff as any
-          const requiredCategories = categoryStaff['진료실'] || {}
+          const requiredCategories = categoryStaff['진료실'] || {} // Note: This uses legacy key for backward compatibility
 
           // 실제 배치된 카테고리별 인원 계산
           const actualCategories: any = {}
@@ -351,12 +353,13 @@ export async function POST(request: NextRequest) {
       const monthStart = new Date(year, month - 1, 1)
       const monthEnd = new Date(year, month, 0)
 
-      // 전체 진료실 직원 조회
+      // 자동 배치 부서의 전체 직원 조회
+      const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
       const allTreatmentStaff = await prisma.staff.findMany({
         where: {
           clinicId,
           isActive: true,
-          departmentName: '진료실'
+          departmentName: { in: autoAssignDeptNames }
         },
         select: {
           id: true,
@@ -539,12 +542,13 @@ export async function POST(request: NextRequest) {
     // 8. 새 오프 신청 추가 (수동 배정만 저장, 자동 오프는 저장하지 않음)
     // 오프는 자동으로 계산되므로 수동으로 지정한 오프만 저장
     if (offDays && offDays.length > 0) {
-      // 모든 활성 직원 조회
+      // 자동 배치 부서의 모든 활성 직원 조회
+      const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
       const allActiveStaff = await prisma.staff.findMany({
         where: {
           clinicId,
           isActive: true,
-          departmentName: '진료실'
+          departmentName: { in: autoAssignDeptNames }
         },
         select: { id: true }
       })

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 /**
  * 주어진 날짜가 월 내에서 몇 주차인지 계산
@@ -167,13 +168,14 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, any>)
 
-    // 진료실 직원 총원 (categoryName이 있는 직원만) - 한 번만 조회
+    // 자동 배치 부서 직원 총원 (categoryName이 있는 직원만) - 한 번만 조회
+    const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
     const totalTreatmentStaff = await prisma.staff.count({
       where: {
         clinicId,
         isActive: true,
         categoryName: { not: null },
-        departmentName: '진료실'
+        departmentName: { in: autoAssignDeptNames }
       }
     })
 

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { calculateStaffFairnessV2 } from '@/lib/services/fairness-calculator-v2'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -48,18 +49,20 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 진료실 직원 목록 조회
+    // 자동 배치 부서의 직원 목록 조회
+    const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
     const staffList = await prisma.staff.findMany({
       where: {
         clinicId,
         isActive: true,
-        departmentName: '진료실'
+        departmentName: { in: autoAssignDeptNames }
       },
       select: {
         id: true,
         name: true,
         rank: true,
-        categoryName: true
+        categoryName: true,
+        departmentName: true
       },
       orderBy: {
         name: 'asc'
@@ -72,13 +75,13 @@ export async function GET(request: NextRequest) {
     const workloadData = await Promise.all(
       staffList.map(async (staff) => {
         try {
-          // 형평성 계산 (전월 편차 포함)
+          // 형평성 계산 (전월 편차 포함) - 직원의 실제 부서명 사용
           const fairness = await calculateStaffFairnessV2(
             staff.id,
             clinicId,
             year,
             month,
-            '진료실'
+            staff.departmentName
           )
 
           // 총 근무일, 야간, 주말 횟수

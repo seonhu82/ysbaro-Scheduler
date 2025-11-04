@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { successResponse, errorResponse, unauthorizedResponse, badRequestResponse } from '@/lib/utils/api-response'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
         // 1-2. 카테고리별 필수 인원 체크
         if (doctorCombination.departmentCategoryStaff) {
           const categoryStaff = doctorCombination.departmentCategoryStaff as any
-          const requiredCategories = categoryStaff['진료실'] || {}
+          const requiredCategories = categoryStaff['진료실'] || {} // Note: This uses legacy key for backward compatibility
 
           // 실제 배치된 카테고리별 인원 계산
           const actualCategories: any = {}

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { successResponse, errorResponse, unauthorizedResponse, badRequestResponse } from '@/lib/utils/api-response'
+import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 export async function POST(request: NextRequest) {
   try {
@@ -60,12 +61,13 @@ export async function POST(request: NextRequest) {
         return unauthorizedResponse()
       }
     } else {
-      // 이전 달 Staff 테이블의 편차를 previousMonthFairness로 설정
+      // 이전 달 Staff 테이블의 편차를 previousMonthFairness로 설정 (자동 배치 부서만)
+      const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(session.user.clinicId)
       const staffList = await prisma.staff.findMany({
         where: {
           clinicId: session.user.clinicId,
           isActive: true,
-          departmentName: '진료실'
+          departmentName: { in: autoAssignDeptNames }
         },
         select: {
           id: true,

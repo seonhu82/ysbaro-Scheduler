@@ -27,6 +27,7 @@ import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { calculateStaffFairnessV2, FairnessCache, FairnessScoreV2 } from '@/lib/services/fairness-calculator-v2'
 import { updateStaffFairnessScores } from '@/lib/services/fairness-score-update-service'
+import { getAutoAssignDepartmentNamesWithFallback } from '@/lib/utils/department-utils'
 
 interface WeeklyPattern {
   weekNumber: number
@@ -322,6 +323,10 @@ export async function POST(request: NextRequest) {
     const clinicId = (session.user as any).clinicId
 
     console.log(`\n🚀 직원 자동 배정 시작: ${year}년 ${month}월`)
+
+    // ==================== 자동 배치 대상 부서 조회 ====================
+    const autoAssignDepartments = await getAutoAssignDepartmentNamesWithFallback(clinicId)
+    console.log(`📋 자동 배치 대상 부서: ${autoAssignDepartments.join(', ')}`)
 
     // ==================== 공통 데이터 사전 로드 (캐시) ====================
     console.log(`\n📦 공통 데이터 로드 중...`)
@@ -647,12 +652,12 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // 원장 근무가 없는 날 처리 (모든 직원 OFF)
+      // 원장 근무가 없는 날 처리 (자동 배치 대상 부서의 모든 직원 OFF)
       if (!doctorsOnThisDay || doctorsOnThisDay.length === 0) {
         console.log(`📅 ${dateKey}: 원장 근무 없음 (모든 직원 OFF 배치)`)
 
-        const allTreatmentStaff = allStaff.filter(s => s.departmentName === '진료실')
-        for (const staff of allTreatmentStaff) {
+        const allAutoAssignStaff = allStaff.filter(s => autoAssignDepartments.includes(s.departmentName ?? ''))
+        for (const staff of allAutoAssignStaff) {
           await prisma.staffAssignment.create({
             data: {
               scheduleId: schedule.id,
@@ -663,7 +668,7 @@ export async function POST(request: NextRequest) {
           })
         }
 
-        console.log(`   ✅ ${dateKey} 배정 완료: OFF ${allTreatmentStaff.length}명\n`)
+        console.log(`   ✅ ${dateKey} 배정 완료: OFF ${allAutoAssignStaff.length}명\n`)
         continue
       }
 
@@ -705,15 +710,15 @@ export async function POST(request: NextRequest) {
       const currentWeekKey = getWeekKey(currentDate)
       console.log(`   - 주차: ${currentWeekKey}`)
 
-      // 진료실 직원만 필터링 (연차/오프 제외한 가용 직원)
-      const allTreatmentStaff = allStaff.filter(s =>
-        s.departmentName === '진료실' &&
+      // 자동 배치 대상 부서 직원만 필터링 (연차/오프 제외한 가용 직원)
+      const allAutoAssignDeptStaff = allStaff.filter(s =>
+        autoAssignDepartments.includes(s.departmentName ?? '') &&
         !unavailableStaffIds.has(s.id)
       )
 
-      console.log(`   - 초기 가용 진료실 직원: ${allTreatmentStaff.length}명`)
+      console.log(`   - 초기 가용 직원: ${allAutoAssignDeptStaff.length}명 (${autoAssignDepartments.join(', ')})`)
 
-      let availableTreatmentStaff = [...allTreatmentStaff]
+      let availableTreatmentStaff = [...allAutoAssignDeptStaff]
 
       // ============= 주간 4일 근무 제한 필터링 (최우선 제약) =============
       const weeklyWorkCounts = await Promise.all(
@@ -752,20 +757,26 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // 카테고리별 필요 인원 확인
+      // 카테고리별 필요 인원 확인 (자동 배치 대상 부서만)
       const departmentCategoryStaff = combination.departmentCategoryStaff as any
       let categoryRequirements: { [category: string]: number } = {}
 
-      if (departmentCategoryStaff && departmentCategoryStaff['진료실']) {
-        const treatmentRoomCategories = departmentCategoryStaff['진료실']
-        for (const [category, config] of Object.entries(treatmentRoomCategories as any)) {
-          if (config && typeof config === 'object' && 'count' in config) {
-            categoryRequirements[category] = (config as any).count as number
+      // 자동 배치 대상 부서들에서 카테고리별 필요 인원 수집
+      if (departmentCategoryStaff) {
+        for (const deptName of autoAssignDepartments) {
+          if (departmentCategoryStaff[deptName]) {
+            const deptCategories = departmentCategoryStaff[deptName]
+            for (const [category, config] of Object.entries(deptCategories as any)) {
+              if (config && typeof config === 'object' && 'count' in config) {
+                const count = (config as any).count as number
+                categoryRequirements[category] = (categoryRequirements[category] || 0) + count
+              }
+            }
           }
         }
       }
 
-      console.log('   - 카테고리별 필요 인원:', categoryRequirements)
+      console.log('   - 카테고리별 필요 인원 (자동 배치 부서):', categoryRequirements)
 
       // 카테고리별로 배치할 직원 목록
       const assignedStaff: any[] = []
@@ -783,7 +794,7 @@ export async function POST(request: NextRequest) {
 
           console.log(`      - 가용 ${category} 직원: ${categoryStaff.length}명`)
 
-          // 형평성 점수 계산 (캐시 사용) - 진료실 부서만 고려
+          // 형평성 점수 계산 (캐시 사용) - 해당 직원의 부서로 필터 적용
           const staffWithScores: StaffWithScore[] = await Promise.all(
             categoryStaff.map(async staff => {
               const fairness = await calculateStaffFairnessV2(
@@ -791,7 +802,7 @@ export async function POST(request: NextRequest) {
                 clinicId,
                 year,
                 month,
-                '진료실', // 부서 필터 적용
+                staff.departmentName ?? undefined, // 직원의 부서로 필터 적용
                 fairnessCache // 캐시 전달
               )
 
@@ -843,7 +854,7 @@ export async function POST(request: NextRequest) {
                     clinicId,
                     year,
                     month,
-                    '진료실',
+                    staff.departmentName ?? undefined,
                     fairnessCache
                   )
                   return {
@@ -897,7 +908,7 @@ export async function POST(request: NextRequest) {
               clinicId,
               year,
               month,
-              '진료실', // 부서 필터 적용
+              staff.departmentName ?? undefined, // 직원의 부서로 필터 적용
               fairnessCache
             )
             return {
@@ -948,11 +959,11 @@ export async function POST(request: NextRequest) {
         dailyAssignments.get(dateKey)!.add(staff.id)
       }
 
-      // 나머지 진료실 직원은 OFF로 저장
+      // 나머지 자동 배치 부서 직원은 OFF로 저장
       const assignedStaffIds = new Set(assignedStaff.map(s => s.id))
 
-      // 1. 배정되지 않은 가용 직원 (allTreatmentStaff에서 제외)
-      const offStaff = allTreatmentStaff.filter(s => !assignedStaffIds.has(s.id))
+      // 1. 배정되지 않은 가용 직원 (allAutoAssignDeptStaff에서 제외)
+      const offStaff = allAutoAssignDeptStaff.filter(s => !assignedStaffIds.has(s.id))
 
       // 2. unavailableStaffIds 중 LeaveApplication OFF인 직원
       const leaveOffStaffIds = Array.from(unavailableStaffIds).filter(staffId => {
@@ -998,7 +1009,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`   📅 검사 대상 주차: ${Array.from(allWeekKeys).sort().join(', ')}\n`)
 
-    const treatmentStaff = allStaff.filter(s => s.departmentName === '진료실')
+    const autoAssignStaff = allStaff.filter(s => autoAssignDepartments.includes(s.departmentName ?? ''))
 
     // 각 주차별로 처리
     for (const weekKey of Array.from(allWeekKeys).sort()) {
@@ -1007,7 +1018,7 @@ export async function POST(request: NextRequest) {
       // 이 주차에 4일 미만 근무한 직원 찾기
       const staffBelowMinimum: Array<{ staff: any; workDays: number }> = []
 
-      for (const staff of treatmentStaff) {
+      for (const staff of autoAssignStaff) {
         const workDays = await calculateWeeklyWorkDays(
           staff.id,
           weekKey,
@@ -1129,7 +1140,7 @@ export async function POST(request: NextRequest) {
               clinicId,
               year,
               month,
-              '진료실',
+              staff.departmentName ?? undefined,
               { ...fairnessCache, schedule: undefined }
             )
             candidateStaff.push({ staff, fairness })
@@ -1193,9 +1204,9 @@ export async function POST(request: NextRequest) {
 
     console.log(`\n✅ 주4일 최소 보장 완료\n`)
 
-    // 최종 평균 형평성 계산 (진료실 직원만)
+    // 최종 평균 형평성 계산 (자동 배치 부서 직원만)
     const fairnessScores = await Promise.all(
-      treatmentStaff.map(staff => calculateStaffFairnessV2(staff.id, clinicId, year, month, '진료실', fairnessCache))
+      autoAssignStaff.map(staff => calculateStaffFairnessV2(staff.id, clinicId, year, month, staff.departmentName ?? undefined, fairnessCache))
     )
     const averageFairness = fairnessScores.length > 0 ? Math.round(
       fairnessScores.reduce((sum, s) => sum + s.overallScore, 0) / fairnessScores.length
