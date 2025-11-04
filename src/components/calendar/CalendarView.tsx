@@ -53,14 +53,12 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
           setCombinations(combResult.data)
         }
 
-        // 전체 활성 직원 수 조회 (진료실만)
+        // 전체 활성 직원 수 조회 (API가 자동 배치 부서 직원만 반환)
         const staffResponse = await fetch('/api/staff', { cache: 'no-store' })
         const staffResult = await staffResponse.json()
         if (staffResult.success && Array.isArray(staffResult.data)) {
-          const treatmentStaff = staffResult.data.filter((s: any) =>
-            s.isActive && s.departmentName === '진료실'
-          )
-          setTotalActiveStaff(treatmentStaff.length)
+          const activeStaff = staffResult.data.filter((s: any) => s.isActive)
+          setTotalActiveStaff(activeStaff.length)
         }
 
         // 스케줄 조회

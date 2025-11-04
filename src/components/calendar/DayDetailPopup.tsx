@@ -46,6 +46,8 @@ interface StaffMember {
   rank: string
   categoryName?: string
   departmentName?: string
+  departmentOrder?: number
+  categoryOrder?: number
   isFlexible?: boolean
   originalCategory?: string
   assignedCategory?: string
@@ -273,30 +275,17 @@ export function DayDetailPopup({
           console.log('Annual leave:', scheduleResult.data.annualLeave)
           console.log('Off days:', scheduleResult.data.offDays)
 
-          // 부서 → 카테고리 → 이름 순으로 정렬하는 함수
+          // 부서 → 카테고리 → 이름 순으로 정렬하는 함수 (동적 order 사용)
           const sortByDepartmentAndCategory = (staffList: StaffMember[]) => {
-            const departmentOrder: { [key: string]: number } = {
-              '원장': 0,
-              '진료실': 1,
-              '데스크': 2
-            }
-
-            const categoryOrder: { [key: string]: number } = {
-              '팀장/실장': 0,
-              '고년차': 1,
-              '중간년차': 2,
-              '저년차': 3
-            }
-
             const sorted = [...staffList].sort((a, b) => {
-              // 1. 부서별 정렬 (원장 → 진료실 → 데스크)
-              const deptA = departmentOrder[a.departmentName || ''] ?? 999
-              const deptB = departmentOrder[b.departmentName || ''] ?? 999
+              // 1. 부서별 정렬 (departmentOrder 필드 사용)
+              const deptA = a.departmentOrder ?? 999
+              const deptB = b.departmentOrder ?? 999
               if (deptA !== deptB) return deptA - deptB
 
-              // 2. 카테고리별 정렬 (팀장 → 고년차 → 중년차 → 저년차)
-              const orderA = categoryOrder[a.categoryName || ''] ?? 999
-              const orderB = categoryOrder[b.categoryName || ''] ?? 999
+              // 2. 카테고리별 정렬 (categoryOrder 필드 사용)
+              const orderA = a.categoryOrder ?? 999
+              const orderB = b.categoryOrder ?? 999
               if (orderA !== orderB) return orderA - orderB
 
               // 3. 이름 정렬
@@ -343,17 +332,13 @@ export function DayDetailPopup({
           setAvailableDoctors(doctorsResult.data || [])
         }
         if (staffResult.success) {
-          // 진료실 소속 활성 직원만 필터링
-          const filteredStaff = staffResult.data.filter((s: any) =>
-            s.isActive && s.departmentName === '진료실'
-          ) || []
+          // 활성 직원만 필터링 (부서 필터링은 제거 - API가 이미 처리)
+          const filteredStaff = staffResult.data.filter((s: any) => s.isActive) || []
 
           console.log('📋 Available staff filter:', {
             total: staffResult.data.length,
-            active: staffResult.data.filter((s: any) => s.isActive).length,
-            treatment: staffResult.data.filter((s: any) => s.departmentName === '진료실').length,
-            filtered: filteredStaff.length,
-            filteredNames: filteredStaff.map((s: any) => `${s.name}(${s.categoryName || '미분류'})`)
+            active: filteredStaff.length,
+            filteredNames: filteredStaff.map((s: any) => `${s.name}(${s.departmentName}/${s.categoryName || '미분류'})`)
           })
 
           setAvailableStaff(filteredStaff)
@@ -510,33 +495,34 @@ export function DayDetailPopup({
       const refreshResult = await refreshResponse.json()
 
       if (refreshResult.success && refreshResult.data) {
-        // 카테고리별로 정렬
-        const sortByCategory = (staffList: StaffMember[]) => {
-          const categoryOrder: { [key: string]: number } = {
-            '팀장': 0,
-            '실팀장': 0,
-            '고년차': 1,
-            '중년차': 2,
-            '저년차': 3
-          }
+        // 부서 → 카테고리별로 정렬 (동적 order 사용)
+        const sortByDepartmentAndCategory = (staffList: StaffMember[]) => {
           const sorted = [...staffList].sort((a, b) => {
-            const orderA = categoryOrder[a.categoryName || ''] ?? 999
-            const orderB = categoryOrder[b.categoryName || ''] ?? 999
+            // 1. 부서별 정렬 (departmentOrder 필드 사용)
+            const deptA = a.departmentOrder ?? 999
+            const deptB = b.departmentOrder ?? 999
+            if (deptA !== deptB) return deptA - deptB
+
+            // 2. 카테고리별 정렬 (categoryOrder 필드 사용)
+            const orderA = a.categoryOrder ?? 999
+            const orderB = b.categoryOrder ?? 999
             if (orderA !== orderB) return orderA - orderB
+
+            // 3. 이름 정렬
             return a.name.localeCompare(b.name)
           })
 
-          console.log('🔤 Category sorting (after save):', {
-            before: staffList.map(s => `${s.name}(${s.categoryName})`),
-            after: sorted.map(s => `${s.name}(${s.categoryName})`)
+          console.log('🔤 Department + Category sorting (after save):', {
+            before: staffList.map(s => `${s.name}(${s.departmentName}/${s.categoryName})`),
+            after: sorted.map(s => `${s.name}(${s.departmentName}/${s.categoryName})`)
           })
 
           return sorted
         }
 
-        const sortedStaff = sortByCategory(refreshResult.data.staff || [])
-        const sortedAnnualLeave = sortByCategory(refreshResult.data.annualLeave || [])
-        const sortedOffDays = sortByCategory(refreshResult.data.offDays || [])
+        const sortedStaff = sortByDepartmentAndCategory(refreshResult.data.staff || [])
+        const sortedAnnualLeave = sortByDepartmentAndCategory(refreshResult.data.annualLeave || [])
+        const sortedOffDays = sortByDepartmentAndCategory(refreshResult.data.offDays || [])
 
         setSchedule({
           id: refreshResult.data.id,
@@ -673,6 +659,8 @@ export function DayDetailPopup({
 
     // 1. 팀장/실장이 근무에서 빠지면 경고
     if (activeData.status === 'working' && targetZone !== 'working') {
+      // TODO: 향후 StaffCategory 모델에 isLeaderCategory 플래그 추가하여 동적으로 체크
+      // 현재는 하드코딩된 카테고리명으로 판단 (팀장/실장, 팀장, 실장)
       const isLeader = movedStaff.categoryName === '팀장/실장' || movedStaff.categoryName === '팀장' || movedStaff.categoryName === '실장'
 
       if (isLeader) {

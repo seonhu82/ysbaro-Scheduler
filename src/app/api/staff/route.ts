@@ -25,6 +25,25 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // 부서 및 카테고리 정보 조회 (order 포함)
+    const departments = await prisma.department.findMany({
+      where: { clinicId },
+      select: { name: true, order: true }
+    })
+    const departmentOrderMap = departments.reduce((acc, dept) => {
+      acc[dept.name] = dept.order
+      return acc
+    }, {} as Record<string, number>)
+
+    const categories = await prisma.staffCategory.findMany({
+      where: { clinicId },
+      select: { name: true, order: true }
+    })
+    const categoryOrderMap = categories.reduce((acc, cat) => {
+      acc[cat.name] = cat.order
+      return acc
+    }, {} as Record<string, number>)
+
     // 직원 목록 조회
     const staff = await prisma.staff.findMany({
       where: {
@@ -42,6 +61,8 @@ export async function GET(request: NextRequest) {
       data: staff.map(s => ({
         ...s,
         pin: undefined, // PIN은 보안상 제외
+        departmentOrder: s.departmentName ? departmentOrderMap[s.departmentName] : 999,
+        categoryOrder: s.categoryName ? categoryOrderMap[s.categoryName] : 999,
       })),
     })
   } catch (error) {
