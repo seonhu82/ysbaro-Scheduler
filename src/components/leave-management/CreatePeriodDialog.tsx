@@ -187,8 +187,8 @@ export function CreatePeriodDialog({ open, onClose }: CreatePeriodDialogProps) {
             {/* 안내 */}
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-900">
-                <strong>자동 생성:</strong> 선택한 월의 모든 평일(월~토)에 대해
-                슬롯이 자동으로 생성됩니다. 일요일은 자동으로 제외됩니다.
+                <strong>자동 생성:</strong> 선택한 월의 모든 근무일에 대해
+                슬롯이 자동으로 생성됩니다. 설정에서 설정한 휴무일은 자동으로 제외됩니다.
               </p>
             </div>
           </div>

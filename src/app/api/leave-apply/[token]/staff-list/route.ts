@@ -27,11 +27,28 @@ export async function GET(
       )
     }
 
-    // 해당 병원의 활성화된 직원 목록 조회
+    // 자동배치를 사용하는 부서 목록 조회
+    const autoAssignDepartments = await prisma.department.findMany({
+      where: {
+        clinicId: link.clinicId,
+        useAutoAssignment: true,
+      },
+      select: {
+        name: true,
+      },
+    })
+
+    const autoAssignDepartmentNames = autoAssignDepartments.map(d => d.name)
+    console.log('🏢 자동배치 사용 부서:', autoAssignDepartmentNames)
+
+    // 해당 병원의 활성화된 직원 중 자동배치 사용 부서만 조회
     const staffList = await prisma.staff.findMany({
       where: {
         clinicId: link.clinicId,
         isActive: true,
+        departmentName: {
+          in: autoAssignDepartmentNames,
+        },
       },
       select: {
         id: true,

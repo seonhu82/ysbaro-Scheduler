@@ -60,13 +60,44 @@ export async function POST(request: NextRequest) {
         return unauthorizedResponse()
       }
     } else {
+      // 이전 달 Staff 테이블의 편차를 previousMonthFairness로 설정
+      const staffList = await prisma.staff.findMany({
+        where: {
+          clinicId: session.user.clinicId,
+          isActive: true,
+          departmentName: '진료실'
+        },
+        select: {
+          id: true,
+          fairnessScoreTotalDays: true,
+          fairnessScoreNight: true,
+          fairnessScoreWeekend: true,
+          fairnessScoreHoliday: true,
+          fairnessScoreHolidayAdjacent: true
+        }
+      })
+
+      const previousMonthFairness: Record<string, any> = {}
+      for (const staff of staffList) {
+        previousMonthFairness[staff.id] = {
+          total: staff.fairnessScoreTotalDays,
+          night: staff.fairnessScoreNight,
+          weekend: staff.fairnessScoreWeekend,
+          holiday: staff.fairnessScoreHoliday,
+          holidayAdjacent: staff.fairnessScoreHolidayAdjacent
+        }
+      }
+
+      console.log(`📊 이전 달 편차를 previousMonthFairness에 저장: ${staffList.length}명`)
+
       // 새 스케줄 생성
       schedule = await prisma.schedule.create({
         data: {
           clinicId: session.user.clinicId,
           year,
           month,
-          status: 'DRAFT'
+          status: 'DRAFT',
+          previousMonthFairness
         }
       })
     }

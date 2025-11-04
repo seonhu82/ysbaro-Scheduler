@@ -198,7 +198,7 @@ export function StaffView() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">전체 부서</SelectItem>
-                {departments.map((dept) => (
+                {departments.filter(dept => dept.name && dept.name.trim() !== '').map((dept) => (
                   <SelectItem key={dept.name} value={dept.name}>
                     {dept.name} ({dept.count})
                   </SelectItem>
@@ -212,7 +212,7 @@ export function StaffView() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">전체 구분</SelectItem>
-                {categories.map((cat) => (
+                {categories.filter(cat => cat.name && cat.name.trim() !== '').map((cat) => (
                   <SelectItem key={cat.name} value={cat.name}>
                     {cat.name} ({cat.count})
                   </SelectItem>

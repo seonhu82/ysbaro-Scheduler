@@ -87,10 +87,15 @@ export async function POST(request: NextRequest) {
       // 5. 직원 생성
       for (const staffMember of staff) {
         // birthDate를 DateTime으로 변환 (YYMMDD -> Date)
-        const year = parseInt('20' + staffMember.birthDate.substring(0, 2))
-        const month = parseInt(staffMember.birthDate.substring(2, 4))
-        const day = parseInt(staffMember.birthDate.substring(4, 6))
-        const birthDate = new Date(year, month - 1, day)
+        const yy = parseInt(staffMember.birthDate.substring(0, 2))
+        const mm = parseInt(staffMember.birthDate.substring(2, 4))
+        const dd = parseInt(staffMember.birthDate.substring(4, 6))
+
+        // 2000년대/1900년대 판단 (00-49는 2000년대, 50-99는 1900년대)
+        const yyyy = yy >= 50 ? 1900 + yy : 2000 + yy
+
+        // UTC 기준으로 Date 생성 (타임존 문제 방지)
+        const birthDate = new Date(Date.UTC(yyyy, mm - 1, dd, 0, 0, 0, 0))
 
         await tx.staff.create({
           data: {

@@ -194,6 +194,75 @@ export async function updateFairnessScoresAfterAssignment(
 }
 
 /**
+ * Staff 테이블 형평성 편차 업데이트
+ *
+ * useAutoAssignment가 활성화된 부서별로 편차를 계산하여 Staff 테이블에 저장합니다.
+ */
+export async function updateStaffFairnessScores(
+  clinicId: string,
+  year: number,
+  month: number
+): Promise<void> {
+  console.log(`\n📊 Staff 테이블 형평성 편차 업데이트: ${year}년 ${month}월`)
+
+  const { calculateCategoryFairnessV2 } = await import('./fairness-calculator-v2')
+
+  // useAutoAssignment가 true인 부서들 조회
+  const departments = await prisma.department.findMany({
+    where: {
+      clinicId,
+      useAutoAssignment: true
+    },
+    select: {
+      name: true
+    }
+  })
+
+  console.log(`   → 자동배치 활성화된 부서: ${departments.map(d => d.name).join(', ')}`)
+
+  // 각 부서별로 편차 계산 및 저장
+  for (const dept of departments) {
+    console.log(`\n   [${dept.name}] 편차 계산 시작`)
+
+    const fairnessScores = await calculateCategoryFairnessV2({
+      clinicId,
+      year,
+      month,
+      departmentName: dept.name
+    })
+
+    console.log(`   → ${fairnessScores.length}명의 직원 편차 업데이트`)
+
+    // 트랜잭션으로 편차 업데이트
+    await prisma.$transaction(async (tx) => {
+      for (const score of fairnessScores) {
+        await tx.staff.update({
+          where: { id: score.staffId },
+          data: {
+            fairnessScoreTotalDays: score.dimensions.total.deviation,
+            fairnessScoreNight: score.dimensions.night.deviation,
+            fairnessScoreWeekend: score.dimensions.weekend.deviation,
+            fairnessScoreHoliday: score.dimensions.holiday.deviation,
+            fairnessScoreHolidayAdjacent: score.dimensions.holidayAdjacent.deviation
+          }
+        })
+
+        console.log(
+          `   ✅ ${score.staffName}: ` +
+            `총근무=${score.dimensions.total.deviation.toFixed(2)}, ` +
+            `야간=${score.dimensions.night.deviation.toFixed(2)}, ` +
+            `주말=${score.dimensions.weekend.deviation.toFixed(2)}, ` +
+            `공휴일=${score.dimensions.holiday.deviation.toFixed(2)}, ` +
+            `공휴일전후=${score.dimensions.holidayAdjacent.deviation.toFixed(2)}`
+        )
+      }
+    })
+  }
+
+  console.log(`\n✅ Staff 테이블 형평성 편차 업데이트 완료\n`)
+}
+
+/**
  * 월별 형평성 조정 적용
  *
  * 익월 배치 시 전월의 형평성 조정 사항을 반영합니다.

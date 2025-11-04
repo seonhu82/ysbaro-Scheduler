@@ -114,6 +114,7 @@ model Clinic {
   qrTokens              QRToken[]
   attendanceRecords     AttendanceRecord[]
   leavePeriods          LeavePeriod[]
+  kakaoSettings         KakaoSettings?
 }
 
 // ============================================
@@ -412,6 +413,9 @@ model Schedule {
   // 배포된 날짜 범위 (다음 달 초반까지 포함)
   deployedStartDate DateTime? @db.Date // 배포된 시작 날짜 (예: 2025-09-28)
   deployedEndDate   DateTime? @db.Date // 배포된 종료 날짜 (예: 2025-11-01)
+
+  // 전월 편차 저장 (원장 스케줄 세팅 시 Staff 테이블에서 복사)
+  previousMonthFairness Json? // { "staffId1": { "total": 0.5, "night": -0.3, "weekend": 0.2, "holiday": -0.1, "holidayAdjacent": 0 }, ... }
 
   // 관계
   doctors          ScheduleDoctor[]
@@ -1156,4 +1160,28 @@ model AttendanceRecord {
   @@index([clinicId, date], name: "attendance_clinic_date")
   @@index([staffId, date, checkType], name: "attendance_staff_date_type")
   @@index([date, isSuspicious], name: "attendance_date_suspicious")
+}
+
+// ============================================
+// 15. 카카오톡 설정
+// ============================================
+
+model KakaoSettings {
+  id String @id @default(cuid())
+  clinicId String @unique
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // JavaScript 키
+  javascriptKey String? // 카카오 JavaScript 키
+
+  // 연차/오프 신청 안내 메시지 템플릿
+  leaveApplicationTemplate String? @db.Text // 연차/오프 신청 링크 공유 시 메시지
+
+  // 기본 템플릿 사용 여부
+  useDefaultTemplate Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
 }

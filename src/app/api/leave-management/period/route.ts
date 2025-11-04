@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import crypto from 'crypto'
 
 /**
  * GET /api/leave-management/period
@@ -31,14 +32,66 @@ export async function GET(request: NextRequest) {
       where.month = parseInt(month)
     }
 
-    const periods = await prisma.leavePeriod.findMany({
-      where,
+    // Fetch ApplicationLink with related data
+    const applicationLinks = await prisma.applicationLink.findMany({
+      where: {
+        ...where,
+        staffId: null // Only get links for all staff (not individual staff links)
+      },
+      include: {
+        _count: {
+          select: {
+            applications: true
+          }
+        }
+      },
       orderBy: [
         { year: 'desc' },
         { month: 'desc' },
         { createdAt: 'desc' }
       ]
     })
+
+    // Fetch WeekInfo and DailySlot data to calculate actual slots
+    const periods = await Promise.all(
+      applicationLinks.map(async (link) => {
+        // Get WeekInfo for this month
+        const weekInfos = await prisma.weekInfo.findMany({
+          where: {
+            clinicId: session.user.clinicId,
+            year: link.year,
+            month: link.month
+          },
+          include: {
+            dailySlots: {
+              select: {
+                date: true,
+                availableSlots: true,
+                requiredStaff: true
+              }
+            }
+          }
+        })
+
+        // Calculate total slots from DailySlot data
+        let totalSlots = 0
+        weekInfos.forEach(weekInfo => {
+          weekInfo.dailySlots.forEach(dailySlot => {
+            totalSlots += dailySlot.availableSlots
+          })
+        })
+
+        return {
+          ...link,
+          slotLimits: [{
+            id: link.id,
+            date: `${link.year}-${String(link.month).padStart(2, '0')}`,
+            dayType: 'MONTH',
+            maxSlots: totalSlots
+          }]
+        }
+      })
+    )
 
     return NextResponse.json({ success: true, data: periods })
   } catch (error) {
@@ -104,8 +157,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 신청 기간 생성
-    const period = await prisma.leavePeriod.create({
+    // Generate unique token for the application link
+    const token = crypto.randomBytes(16).toString('hex')
+
+    // Create ApplicationLink (신청 링크)
+    const applicationLink = await prisma.applicationLink.create({
+      data: {
+        clinicId: session.user.clinicId,
+        staffId: null, // Null means link is for all staff
+        token,
+        year: parseInt(year),
+        month: parseInt(month),
+        expiresAt: new Date(endDate),
+        status: 'ACTIVE'
+      },
+      include: {
+        _count: {
+          select: {
+            applications: true
+          }
+        }
+      }
+    })
+
+    // Also create LeavePeriod for tracking
+    await prisma.leavePeriod.create({
       data: {
         clinicId: session.user.clinicId,
         year: parseInt(year),
@@ -118,7 +194,40 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ success: true, data: period }, { status: 201 })
+    // Calculate total slots from existing WeekInfo/DailySlot data
+    const weekInfos = await prisma.weekInfo.findMany({
+      where: {
+        clinicId: session.user.clinicId,
+        year: parseInt(year),
+        month: parseInt(month)
+      },
+      include: {
+        dailySlots: {
+          select: {
+            availableSlots: true
+          }
+        }
+      }
+    })
+
+    let totalSlots = 0
+    weekInfos.forEach(weekInfo => {
+      weekInfo.dailySlots.forEach(dailySlot => {
+        totalSlots += dailySlot.availableSlots
+      })
+    })
+
+    const responseData = {
+      ...applicationLink,
+      slotLimits: [{
+        id: applicationLink.id,
+        date: `${year}-${String(month).padStart(2, '0')}`,
+        dayType: 'MONTH',
+        maxSlots: totalSlots
+      }]
+    }
+
+    return NextResponse.json({ success: true, data: responseData }, { status: 201 })
   } catch (error) {
     console.error('POST /api/leave-management/period error:', error)
     return NextResponse.json(

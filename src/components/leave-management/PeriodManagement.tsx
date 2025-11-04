@@ -14,9 +14,12 @@ import {
   XCircle,
   Trash2,
   Check,
+  Edit,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { CreatePeriodDialog } from './CreatePeriodDialog'
+import { EditPeriodDialog } from './EditPeriodDialog'
+import { ApplicationsDialog } from './ApplicationsDialog'
 
 interface SlotLimit {
   id: string
@@ -43,6 +46,10 @@ export function PeriodManagement() {
   const [periods, setPeriods] = useState<ApplicationLink[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showApplicationsDialog, setShowApplicationsDialog] = useState(false)
+  const [editingPeriod, setEditingPeriod] = useState<ApplicationLink | null>(null)
+  const [viewingPeriod, setViewingPeriod] = useState<ApplicationLink | null>(null)
   const [leaveApplyToken, setLeaveApplyToken] = useState<string>('')
   const [copied, setCopied] = useState(false)
 
@@ -185,6 +192,46 @@ export function PeriodManagement() {
     }
   }
 
+  const handleEdit = (period: ApplicationLink) => {
+    setEditingPeriod(period)
+    setShowEditDialog(true)
+  }
+
+  const handleViewApplications = (period: ApplicationLink) => {
+    setViewingPeriod(period)
+    setShowApplicationsDialog(true)
+  }
+
+  const handleDelete = async (id: string, year: number, month: number) => {
+    if (!confirm(`${year}년 ${month}월 신청 기간을 삭제하시겠습니까?\n관련된 모든 신청 데이터가 함께 삭제됩니다.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/leave-management/period/${id}`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast({
+          title: '삭제 완료',
+          description: `${year}년 ${month}월 신청 기간이 삭제되었습니다.`,
+        })
+        fetchPeriods()
+      } else {
+        throw new Error(result.error || '삭제 실패')
+      }
+    } catch (error: any) {
+      toast({
+        title: '삭제 실패',
+        description: error.message || '다시 시도해주세요.',
+        variant: 'destructive',
+      })
+    }
+  }
+
   const STATUS_LABELS: Record<string, { label: string; color: string }> = {
     ACTIVE: { label: '진행중', color: 'bg-green-100 text-green-800' },
     CLOSED: { label: '마감', color: 'bg-gray-100 text-gray-800' },
@@ -257,6 +304,16 @@ export function PeriodManagement() {
                   size="sm"
                   variant="outline"
                   className="w-full"
+                  onClick={() => handleViewApplications(period)}
+                >
+                  <Users className="w-4 h-4 mr-2" />
+                  신청 내역 ({period._count?.applications || 0})
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
                   onClick={() => copyLinkToClipboard(period.token)}
                 >
                   <Copy className="w-4 h-4 mr-2" />
@@ -285,6 +342,27 @@ export function PeriodManagement() {
                     재오픈
                   </Button>
                 )}
+
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => handleEdit(period)}
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    수정
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={() => handleDelete(period.id, period.year, period.month)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    삭제
+                  </Button>
+                </div>
               </div>
             </Card>
           ))}
@@ -356,6 +434,27 @@ export function PeriodManagement() {
           if (created) {
             fetchPeriods()
           }
+        }}
+      />
+
+      <EditPeriodDialog
+        open={showEditDialog}
+        period={editingPeriod}
+        onClose={(updated) => {
+          setShowEditDialog(false)
+          setEditingPeriod(null)
+          if (updated) {
+            fetchPeriods()
+          }
+        }}
+      />
+
+      <ApplicationsDialog
+        open={showApplicationsDialog}
+        period={viewingPeriod}
+        onClose={() => {
+          setShowApplicationsDialog(false)
+          setViewingPeriod(null)
         }}
       />
     </div>

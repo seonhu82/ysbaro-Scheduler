@@ -203,16 +203,18 @@ export default function MyFairnessPage() {
           <CardContent className="p-8">
             <div className="text-center">
               <div className="text-sm uppercase tracking-wide mb-2 opacity-90">
-                종합 형평성 점수
+                종합 형평성 편차
               </div>
-              <div className="text-7xl font-bold mb-4">
-                {fairness.overallScore}
-                <span className="text-3xl ml-2">점</span>
+              <div className="text-7xl font-bold mb-2">
+                {fairness.overallScore.toFixed(2)}
+              </div>
+              <div className="text-sm opacity-80 mb-4">
+                양수일수록 적게 일했음 (연차/오프 신청 유리)
               </div>
               <div className="flex items-center justify-center gap-6 mt-4">
                 <div>
                   <div className="text-sm opacity-90">카테고리 평균</div>
-                  <div className="text-2xl font-bold">{fairness.categoryAverage}점</div>
+                  <div className="text-2xl font-bold">{fairness.categoryAverage.toFixed(2)}</div>
                 </div>
                 <div className="w-px h-12 bg-white/30"></div>
                 <div>
@@ -238,7 +240,7 @@ export default function MyFairnessPage() {
                   <div className="text-5xl mb-3">✅</div>
                   <div className="text-xl font-bold text-green-600 mb-2">신청 가능</div>
                   <div className="text-sm text-gray-600">
-                    형평성 점수 60점 이상 (현재 {fairness.overallScore}점)
+                    편차 60 이상 (현재 {fairness.overallScore.toFixed(2)})
                   </div>
                   <Progress value={Math.min((fairness.overallScore / 100) * 100, 100)} className="mt-4" />
                 </div>
@@ -247,7 +249,7 @@ export default function MyFairnessPage() {
                   <div className="text-5xl mb-3">❌</div>
                   <div className="text-xl font-bold text-red-600 mb-2">신청 불가</div>
                   <div className="text-sm text-gray-600">
-                    60점 필요 (현재 {fairness.overallScore}점, {60 - fairness.overallScore}점 부족)
+                    60 필요 (현재 {fairness.overallScore.toFixed(2)}, {(60 - fairness.overallScore).toFixed(2)} 부족)
                   </div>
                   <Progress value={Math.min((fairness.overallScore / 60) * 100, 100)} className="mt-4" />
                 </div>
@@ -265,7 +267,7 @@ export default function MyFairnessPage() {
                   <div className="text-5xl mb-3">✅</div>
                   <div className="text-xl font-bold text-green-600 mb-2">신청 가능</div>
                   <div className="text-sm text-gray-600">
-                    형평성 점수 75점 이상 (현재 {fairness.overallScore}점)
+                    편차 75 이상 (현재 {fairness.overallScore.toFixed(2)})
                   </div>
                   <Progress value={Math.min((fairness.overallScore / 100) * 100, 100)} className="mt-4" />
                 </div>
@@ -274,7 +276,7 @@ export default function MyFairnessPage() {
                   <div className="text-5xl mb-3">❌</div>
                   <div className="text-xl font-bold text-red-600 mb-2">신청 불가</div>
                   <div className="text-sm text-gray-600">
-                    75점 필요 (현재 {fairness.overallScore}점, {75 - fairness.overallScore}점 부족)
+                    75 필요 (현재 {fairness.overallScore.toFixed(2)}, {(75 - fairness.overallScore).toFixed(2)} 부족)
                   </div>
                   <Progress value={Math.min((fairness.overallScore / 75) * 100, 100)} className="mt-4" />
                 </div>
@@ -303,13 +305,13 @@ export default function MyFairnessPage() {
                       <div>
                         <div className="font-medium">{getDimensionLabel(key)}</div>
                         <div className="text-sm text-gray-500">
-                          실제 {dim.actual}회 / 기준 {dim.baseline.toFixed(1)}회
+                          실제 {dim.actual}회 / 기준 {dim.baseline.toFixed(2)}회
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       {getStatusBadge(dim.status)}
-                      <div className="text-2xl font-bold">{dim.score}점</div>
+                      <div className="text-2xl font-bold">{dim.score.toFixed(2)}</div>
                     </div>
                   </div>
 
@@ -328,8 +330,8 @@ export default function MyFairnessPage() {
                       />
                     </div>
                     <div className="text-sm text-gray-600 min-w-[80px] text-right">
-                      {dim.status === 'ahead' && `+${dim.deviation.toFixed(1)}회`}
-                      {dim.status === 'behind' && `${dim.deviation.toFixed(1)}회`}
+                      {dim.status === 'ahead' && `+${dim.deviation.toFixed(2)}회`}
+                      {dim.status === 'behind' && `${dim.deviation.toFixed(2)}회`}
                       {dim.status === 'balanced' && '균형'}
                     </div>
                   </div>
@@ -342,13 +344,16 @@ export default function MyFairnessPage() {
         {/* 안내 사항 */}
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="p-6">
-            <h3 className="font-bold text-blue-900 mb-3">📊 형평성 점수 안내</h3>
+            <h3 className="font-bold text-blue-900 mb-3">📊 형평성 편차 안내</h3>
             <div className="space-y-2 text-sm text-blue-800">
-              <p>• <strong>점수가 낮을수록</strong> 근무가 적어 연차/오프 신청이 어렵습니다</p>
-              <p>• <strong>연차</strong>: 60점 이상 필요 (관대한 기준)</p>
-              <p>• <strong>오프</strong>: 75점 이상 필요 (엄격한 기준)</p>
+              <p>• <strong>편차 = 전월 이월 편차 + 이번 달 기준 - 실제 근무</strong></p>
+              <p>• <strong>양수(+)</strong>: 기준보다 적게 일했음 → 연차/오프 신청 유리</p>
+              <p>• <strong>음수(-)</strong>: 기준보다 많이 일했음 → 연차/오프 신청 불리</p>
+              <p>• <strong>연차</strong>: 편차 60 이상 필요 (관대한 기준)</p>
+              <p>• <strong>오프</strong>: 편차 75 이상 필요 (엄격한 기준)</p>
               <p>• 각 차원(야간/주말/공휴일/공휴일인접)별로 기준치 대비 실제 근무 횟수를 계산합니다</p>
-              <p>• 스케줄이 확정되면 자동으로 업데이트됩니다</p>
+              <p>• 전월 편차가 이월되어 누적되므로 장기적인 형평성이 유지됩니다</p>
+              <p>• 스케줄이 확정(배포)되면 자동으로 업데이트됩니다</p>
             </div>
           </CardContent>
         </Card>

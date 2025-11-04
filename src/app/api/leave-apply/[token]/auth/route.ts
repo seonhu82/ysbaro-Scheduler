@@ -41,6 +41,8 @@ export async function POST(
       }
     })
 
+    console.log('👤 직원 조회:', staff ? `${staff.name} (ID: ${staff.id})` : '없음')
+
     if (!staff) {
       return NextResponse.json(
         { success: false, error: '직원 정보를 찾을 수 없습니다' },
@@ -65,17 +67,37 @@ export async function POST(
 
     const staffBirthDate = new Date(staff.birthDate)
 
-    // 날짜 비교 (연/월/일만)
+    // UTC 기준으로 날짜 가져오기 (타임존 문제 방지)
+    const dbYear = staffBirthDate.getUTCFullYear()
+    const dbMonth = staffBirthDate.getUTCMonth() + 1
+    const dbDay = staffBirthDate.getUTCDate()
+
+    console.log('🔐 생년월일 인증 시도:', {
+      staffName: staff.name,
+      inputBirthDate: birthDate,
+      inputYear: fullYear,
+      inputMonth,
+      inputDay,
+      dbBirthDate: staff.birthDate,
+      dbYear,
+      dbMonth,
+      dbDay,
+    })
+
+    // 날짜 비교 (연/월/일만, UTC 기준)
     if (
-      fullYear !== staffBirthDate.getFullYear() ||
-      inputMonth !== staffBirthDate.getMonth() + 1 ||
-      inputDay !== staffBirthDate.getDate()
+      fullYear !== dbYear ||
+      inputMonth !== dbMonth ||
+      inputDay !== dbDay
     ) {
+      console.log('❌ 생년월일 불일치')
       return NextResponse.json(
         { success: false, error: '생년월일이 올바르지 않습니다' },
         { status: 401 }
       )
     }
+
+    console.log('✅ 생년월일 인증 성공')
 
     return NextResponse.json({
       success: true,
@@ -83,7 +105,9 @@ export async function POST(
         staffId: staff.id,
         staffName: staff.name,
         categoryName: staff.categoryName,
-        clinicId: staff.clinicId
+        clinicId: staff.clinicId,
+        totalAnnualDays: staff.totalAnnualDays,
+        usedAnnualDays: staff.usedAnnualDays,
       }
     })
   } catch (error: any) {

@@ -26,6 +26,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { calculateStaffFairnessV2, FairnessCache, FairnessScoreV2 } from '@/lib/services/fairness-calculator-v2'
+import { updateStaffFairnessScores } from '@/lib/services/fairness-score-update-service'
 
 interface WeeklyPattern {
   weekNumber: number
@@ -1203,6 +1204,16 @@ export async function POST(request: NextRequest) {
     console.log(`\n✅ 최종 배정 완료:`)
     console.log(`   - 총 배정: ${totalAssignments}건`)
     console.log(`   - 평균 형평성: ${averageFairness}점`)
+
+    // 배치 완료 후 Staff 테이블에 형평성 편차 저장
+    console.log(`\n========== 형평성 편차 저장 시작 ==========`)
+    try {
+      await updateStaffFairnessScores(clinicId, year, month)
+      console.log(`✅ 형평성 편차 저장 완료`)
+    } catch (fairnessError) {
+      console.error('❌ 형평성 편차 저장 실패 (무시):', fairnessError)
+    }
+    console.log(`========== 형평성 편차 저장 완료 ==========\n`)
 
     // 미리보기 데이터 생성
     const preview = {

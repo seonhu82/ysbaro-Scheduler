@@ -9,48 +9,58 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { CheckCircle, AlertCircle, Info, Loader2 } from 'lucide-react'
+import { Info, Loader2, Calendar, Moon, Coffee, TrendingUp } from 'lucide-react'
 
 interface FairnessCheckProps {
+  token: string
   staffId: string
   startDate: Date
   endDate: Date
 }
 
-interface CheckResult {
-  canApply: boolean
-  currentOffDays: number
-  minRequired?: number
-  maxAllowed?: number
-  remaining: number
-  message: string
+interface FairnessScores {
+  totalDays: number
+  night: number
+  weekend: number
+  holiday: number
+  holidayAdjacent: number
+}
+
+interface MonthlyStats {
+  workingDays: number
+  appliedOffs: number
+  maxAllowedDays: number
+  remainingDays: number
+  avgFairnessScore: number
+  myFairnessScore: number
 }
 
 interface FairnessData {
-  canApply: boolean
-  monthlyCheck: CheckResult
-  yearlyCheck: CheckResult
-  overallMessage: string
+  staffName: string
+  targetMonth: string
+  fairnessScores: FairnessScores
+  monthlyStats: MonthlyStats
+  fairnessSettings: {
+    enableNightShift: boolean
+    enableWeekend: boolean
+    enableHoliday: boolean
+    enableHolidayAdjacent: boolean
+  } | null
 }
 
-export default function FairnessCheck({ staffId, startDate, endDate }: FairnessCheckProps) {
+export default function FairnessCheck({ token, staffId, startDate, endDate }: FairnessCheckProps) {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<FairnessData | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const checkEligibility = async () => {
+    const loadFairnessData = async () => {
       try {
         setLoading(true)
         setError(null)
 
-        const params = new URLSearchParams({
-          staffId,
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString()
-        })
-
-        const response = await fetch(`/api/fairness/check-eligibility?${params}`)
+        const params = new URLSearchParams({ staffId })
+        const response = await fetch(`/api/leave-apply/${token}/fairness?${params}`)
         const result = await response.json()
 
         if (result.success) {
@@ -65,10 +75,10 @@ export default function FairnessCheck({ staffId, startDate, endDate }: FairnessC
       }
     }
 
-    if (staffId && startDate && endDate) {
-      checkEligibility()
+    if (token && staffId) {
+      loadFairnessData()
     }
-  }, [staffId, startDate, endDate])
+  }, [token, staffId])
 
   if (loading) {
     return (
@@ -86,7 +96,7 @@ export default function FairnessCheck({ staffId, startDate, endDate }: FairnessC
   if (error) {
     return (
       <Alert variant="destructive">
-        <AlertCircle className="w-4 h-4" />
+        <Info className="w-4 h-4" />
         <AlertDescription>{error}</AlertDescription>
       </Alert>
     )
@@ -96,107 +106,129 @@ export default function FairnessCheck({ staffId, startDate, endDate }: FairnessC
     return null
   }
 
+  const canApply = data.monthlyStats.remainingDays > 0
+
   return (
-    <Card className={data.canApply ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
+    <Card className={canApply ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">형평성 확인</CardTitle>
-          <Badge variant={data.canApply ? 'default' : 'destructive'} className="gap-1">
-            {data.canApply ? (
+          <CardTitle className="text-lg">형평성 확인 ({data.targetMonth})</CardTitle>
+          <Badge variant={canApply ? 'default' : 'secondary'} className="gap-1">
+            {canApply ? (
               <>
-                <CheckCircle className="w-3 h-3" />
-                신청 가능
+                <TrendingUp className="w-3 h-3" />
+                신청 가능 {data.monthlyStats.remainingDays}일
               </>
             ) : (
               <>
-                <AlertCircle className="w-3 h-3" />
-                신청 제한
+                <Info className="w-3 h-3" />
+                신청 불가
               </>
             )}
           </Badge>
         </div>
-        <CardDescription className={data.canApply ? 'text-green-700' : 'text-red-700'}>
-          {data.overallMessage}
+        <CardDescription className={canApply ? 'text-green-700' : 'text-yellow-700'}>
+          {canApply
+            ? `11월 최대 ${data.monthlyStats.maxAllowedDays}일 신청 가능 (${data.monthlyStats.appliedOffs}일 신청 완료)`
+            : '11월 신청 가능한 일수를 모두 사용하셨습니다'
+          }
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 월별 형평성 */}
+        {/* 형평성 점수 현황 */}
         <div className="border rounded-lg p-4 bg-white">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-blue-600" />
-              <span className="font-medium text-sm">이번 달 오프 현황</span>
-            </div>
-            {data.monthlyCheck.canApply ? (
-              <Badge variant="outline" className="text-green-600 border-green-600">
-                기준 충족
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-red-600 border-red-600">
-                기준 미달
-              </Badge>
-            )}
+          <div className="flex items-center gap-2 mb-3">
+            <Info className="w-4 h-4 text-blue-600" />
+            <span className="font-medium text-sm">형평성 점수 현황</span>
           </div>
-          <p className="text-sm text-gray-700 mb-2">{data.monthlyCheck.message}</p>
-          <div className="flex gap-4 text-xs text-gray-600">
-            <div>
-              <span className="font-medium">현재:</span> {data.monthlyCheck.currentOffDays}일
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+              <Calendar className="w-4 h-4 text-gray-600" />
+              <div className="flex-1">
+                <div className="text-xs text-gray-500">총 근무일</div>
+                <div className="font-semibold text-sm">{data.fairnessScores.totalDays.toFixed(2)}</div>
+              </div>
             </div>
-            {data.monthlyCheck.minRequired !== undefined && (
-              <div>
-                <span className="font-medium">최소:</span> {data.monthlyCheck.minRequired}일
+            <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+              <Moon className="w-4 h-4 text-indigo-600" />
+              <div className="flex-1">
+                <div className="text-xs text-gray-500">야근</div>
+                <div className="font-semibold text-sm">{data.fairnessScores.night.toFixed(2)}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+              <Coffee className="w-4 h-4 text-orange-600" />
+              <div className="flex-1">
+                <div className="text-xs text-gray-500">주말 근무</div>
+                <div className="font-semibold text-sm">{data.fairnessScores.weekend.toFixed(2)}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+              <Calendar className="w-4 h-4 text-red-600" />
+              <div className="flex-1">
+                <div className="text-xs text-gray-500">공휴일</div>
+                <div className="font-semibold text-sm">{data.fairnessScores.holiday.toFixed(2)}</div>
+              </div>
+            </div>
+            {data.fairnessScores.holidayAdjacent > 0 && (
+              <div className="flex items-center gap-2 p-2 bg-gray-50 rounded col-span-2">
+                <Calendar className="w-4 h-4 text-purple-600" />
+                <div className="flex-1">
+                  <div className="text-xs text-gray-500">공휴 연장</div>
+                  <div className="font-semibold text-sm">{data.fairnessScores.holidayAdjacent.toFixed(2)}</div>
+                </div>
               </div>
             )}
-            <div>
-              <span className="font-medium">여유:</span> {data.monthlyCheck.remaining}일
-            </div>
           </div>
         </div>
 
-        {/* 연간 형평성 */}
+        {/* 이번 달 신청 가능 일수 */}
         <div className="border rounded-lg p-4 bg-white">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-purple-600" />
-              <span className="font-medium text-sm">올해 누적 오프 현황</span>
-            </div>
-            {data.yearlyCheck.canApply ? (
-              <Badge variant="outline" className="text-green-600 border-green-600">
-                기준 충족
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-red-600 border-red-600">
-                기준 초과
-              </Badge>
-            )}
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="w-4 h-4 text-green-600" />
+            <span className="font-medium text-sm">11월 신청 커트라인</span>
           </div>
-          <p className="text-sm text-gray-700 mb-2">{data.yearlyCheck.message}</p>
-          <div className="flex gap-4 text-xs text-gray-600">
-            <div>
-              <span className="font-medium">현재:</span> {data.yearlyCheck.currentOffDays}일
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">11월 총 근무일</span>
+              <span className="font-semibold">{data.monthlyStats.workingDays}일</span>
             </div>
-            {data.yearlyCheck.maxAllowed !== undefined && (
-              <div>
-                <span className="font-medium">최대:</span> {data.yearlyCheck.maxAllowed}일
-              </div>
-            )}
-            <div>
-              <span className="font-medium">남은 일수:</span> {data.yearlyCheck.remaining}일
+            <div className="flex justify-between items-center text-sm border-t pt-2">
+              <span className="text-gray-600">{data.targetMonth} 내 형평성 점수</span>
+              <span className="font-semibold text-purple-600">{data.monthlyStats.myFairnessScore}점</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">{data.targetMonth} 부서 평균 점수</span>
+              <span className="font-semibold text-blue-600">{data.monthlyStats.avgFairnessScore}점</span>
+            </div>
+            <div className="flex justify-between items-center text-sm border-t pt-2">
+              <span className="text-gray-600">11월 최대 신청 가능</span>
+              <span className="font-semibold text-blue-600">{data.monthlyStats.maxAllowedDays}일</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">11월 이미 신청함</span>
+              <span className="font-semibold text-orange-600">{data.monthlyStats.appliedOffs}일</span>
+            </div>
+            <div className="border-t pt-2 flex justify-between items-center">
+              <span className="font-medium text-gray-900">11월 남은 신청 가능</span>
+              <span className={`font-bold text-lg ${data.monthlyStats.remainingDays > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {data.monthlyStats.remainingDays}일
+              </span>
             </div>
           </div>
         </div>
 
         {/* 안내 메시지 */}
-        {!data.canApply && (
-          <Alert>
-            <Info className="w-4 h-4" />
-            <AlertDescription className="text-sm">
-              형평성 기준에 따라 현재 연차/오프 신청이 제한됩니다.
-              {!data.monthlyCheck.canApply && ' 이번 달 최소 오프 일수를 충족해야 합니다.'}
-              {!data.yearlyCheck.canApply && ' 올해 최대 오프 일수를 초과할 수 없습니다.'}
-            </AlertDescription>
-          </Alert>
-        )}
+        <Alert>
+          <Info className="w-4 h-4" />
+          <AlertDescription className="text-sm">
+            {canApply ? (
+              '형평성 점수가 높을수록 더 많은 연차/오프를 신청할 수 있습니다.'
+            ) : (
+              '형평성 기준에 따라 이번 달 신청 가능한 일수를 모두 사용하셨습니다.'
+            )}
+          </AlertDescription>
+        </Alert>
       </CardContent>
     </Card>
   )

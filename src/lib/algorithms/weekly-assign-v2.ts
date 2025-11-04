@@ -10,7 +10,7 @@
 import { prisma } from '@/lib/prisma'
 import { classifyDayType } from '@/lib/utils/day-type-classifier'
 import { calculateCategoryRequirements } from '@/lib/services/category-slot-service'
-import { updateFairnessScoresAfterAssignment } from '@/lib/services/fairness-score-update-service'
+import { updateFairnessScoresAfterAssignment, updateStaffFairnessScores } from '@/lib/services/fairness-score-update-service'
 import { createWeeklyAssignmentBackup } from '@/lib/services/assignment-backup-service'
 import { validateWeeklyAssignment } from '@/lib/services/assignment-validation-service'
 import { processOnHoldAutoApproval } from '@/lib/services/on-hold-auto-approval-service'
@@ -104,7 +104,7 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
       throw new Error('주차 정보를 찾을 수 없습니다')
     }
 
-    const { clinicId, year, weekNumber } = weekInfo
+    const { clinicId, year, month, weekNumber } = weekInfo
 
     // 🆕 활동 로그: 배치 시작
     await logWeeklyAssignmentStarted(clinicId, weekInfoId)
@@ -1167,6 +1167,8 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
     // 형평성 점수 업데이트 (배치 성공 시에만)
     if (!hasCriticalIssues) {
       try {
+        // FairnessScore 테이블만 업데이트 (월별 기록)
+        // Staff 테이블은 배포(deploy) 시점에 업데이트 (재배치 시 잘못된 기준 참조 방지)
         await updateFairnessScoresAfterAssignment(weekInfoId)
       } catch (error) {
         console.error('형평성 점수 업데이트 오류:', error)
@@ -1216,6 +1218,16 @@ export async function autoAssignWeeklySchedule(weekInfoId: string): Promise<{
         console.error('ON_HOLD 자동 승인 실패 (무시):', onHoldError)
       }
     }
+
+    // 배치 완료 후 Staff 테이블에 형평성 편차 저장
+    console.log(`========== 형평성 편차 저장 시작 ==========`)
+    try {
+      await updateStaffFairnessScores(clinicId, year, month)
+      console.log(`✅ 형평성 편차 저장 완료`)
+    } catch (fairnessError) {
+      console.error('❌ 형평성 편차 저장 실패 (무시):', fairnessError)
+    }
+    console.log(`========== 형평성 편차 저장 완료 ==========\n`)
 
     return {
       success: !hasCriticalIssues,

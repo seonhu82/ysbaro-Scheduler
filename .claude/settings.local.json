@@ -99,7 +99,19 @@
       "Bash(git restore:*)",
       "SlashCommand(/cleanup)",
       "Bash(node fix-circular-error.js:*)",
-      "Bash(node check-week-calculation.js:*)"
+      "Bash(node check-week-calculation.js:*)",
+      "Bash(node test-period-api.js:*)",
+      "Bash(grep:*)",
+      "Bash(node check-birth.js:*)",
+      "Bash(node fix-birth-dates.js:*)",
+      "Bash(node update-october-fairness.js:*)",
+      "Bash(node get-staff-id.js:*)",
+      "Bash(node update-october-fairness-v2.js:*)",
+      "Bash(node test-november-apis.js:*)",
+      "Bash(node test-fairness-calc.js:*)",
+      "Bash(iconv:*)",
+      "Bash(node:*)",
+      "SlashCommand(/server)"
     ],
     "deny": [],
     "ask": []

@@ -555,6 +555,30 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                 ) : (
                   <p className="text-sm text-gray-500">통계 데이터를 불러오는 중...</p>
                 )}
+
+                {/* 편차 설명 */}
+                {staffStats.length > 0 && (
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs text-blue-900">
+                      <strong>💡 괄호 안 숫자는 형평성 편차입니다.</strong>
+                      <span className="ml-2">각 항목 옆 괄호 안의 숫자는 평균 대비 편차를 나타냅니다.</span>
+                    </p>
+                    <ul className="text-xs text-blue-800 mt-2 ml-4 space-y-1">
+                      <li><span className="text-red-600 font-medium">-값</span>: 평균보다 많이 배정됨 (다음 배치 시 우선순위 낮아짐)</li>
+                      <li><span className="text-green-600 font-medium">+값</span>: 평균보다 적게 배정됨 (다음 배치 시 우선순위 높아짐)</li>
+                      <li><span className="text-gray-400 font-medium">0.0</span>: 평균과 동일하게 배정됨</li>
+                    </ul>
+                    <div className="mt-3 pt-3 border-t border-blue-200">
+                      <p className="text-xs text-blue-900">
+                        <strong>📌 같은 근무일수인데 편차가 다른 이유</strong>
+                      </p>
+                      <ul className="text-xs text-blue-800 mt-1 ml-4 space-y-1">
+                        <li><strong>지난달 누적 반영:</strong> 편차는 이전 달부터 누적된 형평성 점수를 반영하므로, 이번 달 근무일이 같아도 지난 달까지의 배치 이력에 따라 다릅니다.</li>
+                        <li><strong>주 단위 배치:</strong> 시스템은 주 단위로 인력을 꽉 채워 배치하기 때문에, 월말/월초에 일부 배치가 이월되거나 앞당겨질 수 있습니다.</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -41,6 +41,8 @@ interface AuthData {
   staffName: string
   categoryName: string
   clinicId: string
+  totalAnnualDays: number
+  usedAnnualDays: number
 }
 
 interface StaffOption {
@@ -271,11 +273,12 @@ export default function LeaveApplyPage({
         {/* 왼쪽: 신청 폼 */}
         <div className="lg:col-span-2 space-y-6">
           {/* 형평성 체크 */}
-          {authData && selectedDate && (
+          {authData && (
             <FairnessCheck
+              token={params.token}
               staffId={authData.staffId}
-              startDate={selectedDate}
-              endDate={selectedDate}
+              startDate={selectedDate || new Date()}
+              endDate={selectedDate || new Date()}
             />
           )}
 
@@ -289,6 +292,11 @@ export default function LeaveApplyPage({
             selectedType={selectedType}
             onSelect={setSelectedType}
             weeklyOffCount={weeklyOffCount}
+            remainingAnnualDays={
+              authData
+                ? authData.totalAnnualDays - authData.usedAnnualDays
+                : undefined
+            }
           />
 
           <Button

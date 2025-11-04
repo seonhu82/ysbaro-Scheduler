@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
+import { updateStaffFairnessScores } from '@/lib/services/fairness-score-update-service'
 
 export async function POST(request: NextRequest) {
   try {
@@ -104,7 +105,15 @@ export async function POST(request: NextRequest) {
 
     console.log(`   ✅ 스케줄 배포 완료`)
 
-    // 3. 배포된 스케줄 조회 (상세 정보 포함)
+    // 4. Staff 테이블 형평성 점수 업데이트
+    try {
+      await updateStaffFairnessScores(clinicId, year, month)
+    } catch (error) {
+      console.error('⚠️ 형평성 점수 업데이트 실패:', error)
+      // 형평성 점수 업데이트 실패해도 배포는 성공으로 처리
+    }
+
+    // 5. 배포된 스케줄 조회 (상세 정보 포함)
     const deployedSchedule = await prisma.schedule.findUnique({
       where: { id: scheduleId },
       include: {
@@ -134,13 +143,13 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // 4. 통계 계산
+    // 6. 통계 계산
     const totalAssignments = deployedSchedule?.staffAssignments?.length || 0
 
     console.log(`   📊 총 배정: ${totalAssignments}건`)
     console.log(`   📅 배포 시간: ${deployedSchedule?.deployedAt}\n`)
 
-    // TODO: 5. 직원들에게 배포 알림 발송
+    // TODO: 7. 직원들에게 배포 알림 발송
     // - 이메일 또는 앱 푸시 알림
     // - QR 디스플레이 자동 업데이트
 

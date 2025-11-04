@@ -21,14 +21,11 @@ export async function PATCH(
 
     const { id } = params
     const body = await request.json()
-    const { startDate, endDate, maxSlots, categorySlots, isActive } = body
+    const { expiresAt } = body
 
-    // 기존 기간 확인
-    const existing = await prisma.leavePeriod.findFirst({
-      where: {
-        id,
-        clinicId: session.user.clinicId
-      }
+    // ApplicationLink 조회
+    const existing = await prisma.applicationLink.findUnique({
+      where: { id }
     })
 
     if (!existing) {
@@ -38,38 +35,22 @@ export async function PATCH(
       )
     }
 
-    // 업데이트 데이터 준비
-    const updateData: any = {}
-
-    if (startDate !== undefined) {
-      updateData.startDate = new Date(startDate)
-    }
-    if (endDate !== undefined) {
-      updateData.endDate = new Date(endDate)
-    }
-    if (maxSlots !== undefined) {
-      updateData.maxSlots = parseInt(maxSlots)
-    }
-    if (categorySlots !== undefined) {
-      updateData.categorySlots = categorySlots
-    }
-    if (isActive !== undefined) {
-      updateData.isActive = isActive
-    }
-
-    // 날짜 유효성 검증
-    const finalStartDate = updateData.startDate || existing.startDate
-    const finalEndDate = updateData.endDate || existing.endDate
-
-    if (finalStartDate > finalEndDate) {
+    if (existing.clinicId !== session.user.clinicId) {
       return NextResponse.json(
-        { success: false, error: 'Start date must be before end date' },
-        { status: 400 }
+        { success: false, error: 'Unauthorized' },
+        { status: 403 }
       )
     }
 
-    // 기간 업데이트
-    const updated = await prisma.leavePeriod.update({
+    // 업데이트 데이터 준비
+    const updateData: any = {}
+
+    if (expiresAt !== undefined) {
+      updateData.expiresAt = new Date(expiresAt)
+    }
+
+    // ApplicationLink 업데이트
+    const updated = await prisma.applicationLink.update({
       where: { id },
       data: updateData
     })
@@ -103,24 +84,44 @@ export async function DELETE(
 
     const { id } = params
 
-    // 기존 기간 확인
-    const existing = await prisma.leavePeriod.findFirst({
-      where: {
-        id,
-        clinicId: session.user.clinicId
+    // ApplicationLink 조회 (권한 확인용)
+    const applicationLink = await prisma.applicationLink.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            applications: true
+          }
+        }
       }
     })
 
-    if (!existing) {
+    if (!applicationLink) {
       return NextResponse.json(
         { success: false, error: 'Period not found' },
         { status: 404 }
       )
     }
 
-    // 기간 삭제
-    await prisma.leavePeriod.delete({
+    if (applicationLink.clinicId !== session.user.clinicId) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 403 }
+      )
+    }
+
+    // ApplicationLink 삭제 (관련 applications도 CASCADE로 삭제됨)
+    await prisma.applicationLink.delete({
       where: { id }
+    })
+
+    // 관련 LeavePeriod도 삭제
+    await prisma.leavePeriod.deleteMany({
+      where: {
+        clinicId: session.user.clinicId,
+        year: applicationLink.year,
+        month: applicationLink.month
+      }
     })
 
     return NextResponse.json({ success: true, message: 'Period deleted successfully' })

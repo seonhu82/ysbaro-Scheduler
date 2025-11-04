@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
       holidayAdjacent: fairnessSettings?.enableHolidayAdjacentFairness ?? false
     }
 
-    // 모든 진료실 활성 직원 조회
+    // 모든 진료실 활성 직원 조회 (편차 포함)
     const allTreatmentStaff = await prisma.staff.findMany({
       where: {
         clinicId,
@@ -120,7 +120,12 @@ export async function GET(request: NextRequest) {
         id: true,
         name: true,
         categoryName: true,
-        departmentName: true
+        departmentName: true,
+        fairnessScoreTotalDays: true,
+        fairnessScoreNight: true,
+        fairnessScoreWeekend: true,
+        fairnessScoreHoliday: true,
+        fairnessScoreHolidayAdjacent: true
       }
     })
 
@@ -242,30 +247,52 @@ export async function GET(request: NextRequest) {
       total: s.totalDays
     })))
 
-    // 형평성 점수 계산 (V2 사용)
-    const statsWithFairness = await Promise.all(
-      stats.map(async (stat) => {
-        const fairness = await calculateStaffFairnessV2(
-          stat.staffId,
-          clinicId,
-          year,
-          month,
-          '진료실'
-        )
+    // Staff 테이블에서 편차 불러오기 및 overallScore 계산
+    const statsWithFairness = stats.map((stat) => {
+      const staff = allTreatmentStaff.find(s => s.id === stat.staffId)
 
-        return {
-          ...stat,
-          fairness: {
-            total: fairness.dimensions.total,
-            night: fairness.dimensions.night,
-            weekend: fairness.dimensions.weekend,
-            holiday: fairness.dimensions.holiday,
-            holidayAdjacent: fairness.dimensions.holidayAdjacent,
-            overallScore: fairness.overallScore // Step 3과 동일한 점수 사용
-          }
+      const deviations = {
+        total: staff?.fairnessScoreTotalDays ?? 0,
+        night: staff?.fairnessScoreNight ?? 0,
+        weekend: staff?.fairnessScoreWeekend ?? 0,
+        holiday: staff?.fairnessScoreHoliday ?? 0,
+        holidayAdjacent: staff?.fairnessScoreHolidayAdjacent ?? 0
+      }
+
+      // overallScore 계산 (가중 평균) - calculateStaffFairnessV2와 동일한 방식
+      const weights = { total: 2, night: 3, weekend: 2, holiday: 4, holidayAdjacent: 1 }
+      const totalWeight = Object.values(weights).reduce((sum, w) => sum + w, 0)
+      const weightedSum =
+        deviations.total * weights.total +
+        deviations.night * weights.night +
+        deviations.weekend * weights.weekend +
+        deviations.holiday * weights.holiday +
+        deviations.holidayAdjacent * weights.holidayAdjacent
+      const weightedDeviation = totalWeight > 0 ? weightedSum / totalWeight : 0
+      const overallScore = Math.max(0, Math.min(100, 100 - Math.abs(weightedDeviation) * 10))
+
+      return {
+        ...stat,
+        fairness: {
+          total: {
+            deviation: deviations.total
+          },
+          night: {
+            deviation: deviations.night
+          },
+          weekend: {
+            deviation: deviations.weekend
+          },
+          holiday: {
+            deviation: deviations.holiday
+          },
+          holidayAdjacent: {
+            deviation: deviations.holidayAdjacent
+          },
+          overallScore: Math.round(overallScore)
         }
-      })
-    )
+      }
+    })
 
     return successResponse({
       stats: statsWithFairness,

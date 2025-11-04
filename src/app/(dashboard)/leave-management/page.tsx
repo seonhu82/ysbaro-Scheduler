@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Calendar, List, Users, Link as LinkIcon } from 'lucide-react'
+import { Calendar, List, Users, Link as LinkIcon, MessageCircle } from 'lucide-react'
 import { PeriodManagement } from '@/components/leave-management/PeriodManagement'
 import { CalendarView } from '@/components/leave-management/CalendarView'
 import { ListView } from '@/components/leave-management/ListView'
 import { StaffView } from '@/components/leave-management/StaffView'
+import { KakaoSettings } from '@/components/leave-management/KakaoSettings'
 
 export default function LeaveManagementPage() {
   const [activeTab, setActiveTab] = useState('period')
@@ -21,7 +22,7 @@ export default function LeaveManagementPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
           <TabsTrigger value="period" className="flex items-center gap-2">
             <LinkIcon className="w-4 h-4" />
             <span className="hidden sm:inline">신청 기간</span>
@@ -37,6 +38,10 @@ export default function LeaveManagementPage() {
           <TabsTrigger value="staff" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             <span className="hidden sm:inline">직원별뷰</span>
+          </TabsTrigger>
+          <TabsTrigger value="kakao" className="flex items-center gap-2">
+            <MessageCircle className="w-4 h-4" />
+            <span className="hidden sm:inline">카카오톡</span>
           </TabsTrigger>
         </TabsList>
 
@@ -54,6 +59,10 @@ export default function LeaveManagementPage() {
 
         <TabsContent value="staff" className="space-y-4">
           <StaffView />
+        </TabsContent>
+
+        <TabsContent value="kakao" className="space-y-4">
+          <KakaoSettings />
         </TabsContent>
       </Tabs>
     </div>

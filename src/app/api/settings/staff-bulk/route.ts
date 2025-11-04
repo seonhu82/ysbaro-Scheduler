@@ -42,10 +42,15 @@ export async function POST(request: NextRequest) {
     // 직원 데이터 생성
     for (const s of staff) {
       // 생년월일 변환 (YYMMDD -> Date)
-      const birthYear = parseInt('20' + s.birthDate.slice(0, 2))
-      const birthMonth = parseInt(s.birthDate.slice(2, 4))
-      const birthDay = parseInt(s.birthDate.slice(4, 6))
-      const birthDate = new Date(birthYear, birthMonth - 1, birthDay)
+      const yy = parseInt(s.birthDate.slice(0, 2))
+      const mm = parseInt(s.birthDate.slice(2, 4))
+      const dd = parseInt(s.birthDate.slice(4, 6))
+
+      // 2000년대/1900년대 판단 (00-49는 2000년대, 50-99는 1900년대)
+      const yyyy = yy >= 50 ? 1900 + yy : 2000 + yy
+
+      // UTC 기준으로 Date 생성 (타임존 문제 방지)
+      const birthDate = new Date(Date.UTC(yyyy, mm - 1, dd, 0, 0, 0, 0))
 
       // PIN 생성 (생년월일)
       const pin = s.birthDate

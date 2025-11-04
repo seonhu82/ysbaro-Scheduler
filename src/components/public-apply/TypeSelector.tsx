@@ -10,12 +10,14 @@ interface TypeSelectorProps {
   selectedType: LeaveType
   onSelect: (type: LeaveType) => void
   weeklyOffCount?: number
+  remainingAnnualDays?: number
 }
 
 export function TypeSelector({
   selectedType,
   onSelect,
   weeklyOffCount = 0,
+  remainingAnnualDays,
 }: TypeSelectorProps) {
   const isOffLimitReached = weeklyOffCount >= 2
 
@@ -56,6 +58,12 @@ export function TypeSelector({
             <p className="text-sm text-gray-600">
               정규 연차를 사용합니다. 연차 일수에서 차감됩니다.
             </p>
+            {remainingAnnualDays !== undefined && (
+              <div className="mt-2 text-sm">
+                <span className="text-gray-600">남은 연차: </span>
+                <span className="font-semibold text-blue-600">{remainingAnnualDays}일</span>
+              </div>
+            )}
           </div>
         </label>
 

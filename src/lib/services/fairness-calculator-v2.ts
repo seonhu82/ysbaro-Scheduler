@@ -49,6 +49,7 @@ export interface MonthlyFairnessParams {
   year: number
   month: number
   categoryName?: string // 특정 카테고리만 계산
+  departmentName?: string // 특정 부서만 계산
 }
 
 export interface FairnessCache {
@@ -73,7 +74,7 @@ async function getActualDateRange(
       clinicId,
       year,
       month,
-      status: { in: ['DRAFT', 'DEPLOYED'] }
+      status: { in: ['DRAFT', 'CONFIRMED', 'DEPLOYED'] }
     }
   })
 
@@ -127,7 +128,7 @@ async function calculateTotalDimension(
       clinicId,
       year,
       month,
-      status: { in: ['DRAFT', 'DEPLOYED'] }
+      status: { in: ['DRAFT', 'CONFIRMED', 'DEPLOYED'] }
     },
     include: {
       doctors: {
@@ -293,7 +294,7 @@ async function calculateSpecialDimension(
       clinicId,
       year,
       month,
-      status: { in: ['DRAFT', 'DEPLOYED'] }
+      status: { in: ['DRAFT', 'CONFIRMED', 'DEPLOYED'] }
     },
     include: {
       doctors: {
@@ -657,14 +658,15 @@ export async function calculateStaffFairnessV2(
 export async function calculateCategoryFairnessV2(
   params: MonthlyFairnessParams
 ): Promise<FairnessScoreV2[]> {
-  const { clinicId, year, month, categoryName } = params
+  const { clinicId, year, month, categoryName, departmentName } = params
 
   // 직원 목록 조회
   const staffList = await prisma.staff.findMany({
     where: {
       clinicId,
       isActive: true,
-      ...(categoryName && { categoryName })
+      ...(categoryName && { categoryName }),
+      ...(departmentName && { departmentName })
     },
     select: {
       id: true
