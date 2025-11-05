@@ -157,15 +157,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate unique token for the application link
-    const token = crypto.randomBytes(16).toString('hex')
+    // 병원별 공용 토큰 생성 또는 조회
+    // 이미 존재하는 공용 토큰이 있으면 재사용, 없으면 새로 생성
+    let sharedToken = await prisma.applicationLink.findFirst({
+      where: {
+        clinicId: session.user.clinicId,
+        staffId: null, // 전체 직원용
+        token: {
+          not: null
+        }
+      },
+      select: {
+        token: true
+      },
+      orderBy: {
+        createdAt: 'asc' // 가장 처음 생성된 토큰 사용
+      }
+    })
+
+    // 공용 토큰이 없으면 새로 생성 (병원당 1회만)
+    const token = sharedToken?.token ?? crypto.randomBytes(16).toString('hex')
 
     // Create ApplicationLink (신청 링크)
     const applicationLink = await prisma.applicationLink.create({
       data: {
         clinicId: session.user.clinicId,
         staffId: null, // Null means link is for all staff
-        token,
+        token, // 병원별 공용 토큰 사용
         year: parseInt(year),
         month: parseInt(month),
         expiresAt: new Date(endDate),
