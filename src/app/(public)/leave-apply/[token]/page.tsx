@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { formatDateWithDay } from '@/lib/date-utils'
-import { Calendar, Send, CheckCircle2 } from 'lucide-react'
+import { Calendar, Send, CheckCircle2, Key, LogOut } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -43,6 +43,7 @@ interface AuthData {
   clinicId: string
   totalAnnualDays: number
   usedAnnualDays: number
+  hasPinCode: boolean
 }
 
 interface StaffOption {
@@ -74,6 +75,12 @@ export default function LeaveApplyPage({
   // 확인 모달
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  // PIN 설정 모달
+  const [showPinDialog, setShowPinDialog] = useState(false)
+  const [newPinCode, setNewPinCode] = useState('')
+  const [confirmPinCode, setConfirmPinCode] = useState('')
+  const [settingPin, setSettingPin] = useState(false)
 
   // 직원 목록 로드
   useEffect(() => {
@@ -200,6 +207,84 @@ export default function LeaveApplyPage({
     }
   }
 
+  // PIN 설정 처리
+  const handleSetPin = async () => {
+    if (!newPinCode || !confirmPinCode) {
+      toast({
+        title: 'PIN 입력 필요',
+        description: 'PIN 번호와 확인 번호를 모두 입력해주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (!/^\d{4}$/.test(newPinCode)) {
+      toast({
+        title: '형식 오류',
+        description: 'PIN 번호는 4자리 숫자여야 합니다.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (newPinCode !== confirmPinCode) {
+      toast({
+        title: 'PIN 불일치',
+        description: 'PIN 번호가 일치하지 않습니다.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setSettingPin(true)
+
+    try {
+      const response = await fetch(`/api/leave-apply/${params.token}/set-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          staffId: authData?.staffId,
+          pinCode: newPinCode,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast({
+          title: 'PIN 설정 완료',
+          description: '다음부터 PIN 번호로 빠르게 로그인할 수 있습니다.',
+        })
+        setShowPinDialog(false)
+        setNewPinCode('')
+        setConfirmPinCode('')
+        // authData 업데이트
+        if (authData) {
+          setAuthData({ ...authData, hasPinCode: true })
+        }
+      } else {
+        throw new Error(result.error || 'PIN 설정 실패')
+      }
+    } catch (error: any) {
+      toast({
+        title: 'PIN 설정 실패',
+        description: error.message || '다시 시도해주세요.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSettingPin(false)
+    }
+  }
+
+  // 로그아웃
+  const handleLogout = () => {
+    setIsAuth(false)
+    setAuthData(null)
+    setSelectedStaffId('')
+    setBirthDate('')
+    setSelectedDate(undefined)
+  }
+
   if (!isAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
@@ -240,14 +325,14 @@ export default function LeaveApplyPage({
               <Input
                 id="birthDate"
                 type="text"
-                placeholder="예: 900101"
+                placeholder="PIN(4자리) 또는 생년월일(6자리)"
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
                 maxLength={6}
                 required
               />
               <p className="text-xs text-gray-500 mt-1">
-                6자리 숫자 (YYMMDD)
+                PIN 4자리 또는 생년월일 6자리 (YYMMDD)
               </p>
             </div>
 
@@ -262,11 +347,31 @@ export default function LeaveApplyPage({
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">연차/오프 신청</h1>
-        <p className="text-gray-600">
-          {authData && `${authData.staffName}님, `}원하는 날짜와 유형을 선택해서 신청하세요
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">연차/오프 신청</h1>
+          <p className="text-gray-600">
+            {authData && `${authData.staffName}님, `}원하는 날짜와 유형을 선택해서 신청하세요
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowPinDialog(true)}
+          >
+            <Key className="w-4 h-4 mr-2" />
+            {authData?.hasPinCode ? 'PIN 변경' : 'PIN 설정'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLogout}
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            로그아웃
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -362,6 +467,68 @@ export default function LeaveApplyPage({
             </Button>
             <Button onClick={confirmSubmit} disabled={submitting}>
               {submitting ? '신청 중...' : '확인'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* PIN 설정 모달 */}
+      <Dialog open={showPinDialog} onOpenChange={setShowPinDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-blue-600" />
+              PIN 번호 {authData?.hasPinCode ? '변경' : '설정'}
+            </DialogTitle>
+            <DialogDescription>
+              {authData?.hasPinCode
+                ? '새로운 PIN 번호를 설정하세요. 4자리 숫자를 입력해주세요.'
+                : 'PIN 번호를 설정하면 다음부터 빠르게 로그인할 수 있습니다. 4자리 숫자를 입력해주세요.'
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="newPin">PIN 번호</Label>
+              <Input
+                id="newPin"
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="4자리 숫자"
+                value={newPinCode}
+                onChange={(e) => setNewPinCode(e.target.value.replace(/\D/g, ''))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="confirmPin">PIN 번호 확인</Label>
+              <Input
+                id="confirmPin"
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="4자리 숫자"
+                value={confirmPinCode}
+                onChange={(e) => setConfirmPinCode(e.target.value.replace(/\D/g, ''))}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPinDialog(false)
+                setNewPinCode('')
+                setConfirmPinCode('')
+              }}
+              disabled={settingPin}
+            >
+              취소
+            </Button>
+            <Button onClick={handleSetPin} disabled={settingPin}>
+              {settingPin ? '설정 중...' : '설정'}
             </Button>
           </div>
         </DialogContent>
