@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Calendar, AlertCircle, ArrowRight, CheckCircle2, Users, RefreshCw } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { isInPreviousMonth, isInNextMonth } from '@/lib/date-utils'
 
 interface Props {
   wizardState: any
@@ -268,11 +269,18 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                         const day = dateObj.getDate()
                         const isLowSlots = slot.availableSlots < 3
 
+                        // 이전/다음 달 여부 확인
+                        const isPrevMonth = isInPreviousMonth(dateObj, wizardState.year, wizardState.month)
+                        const isNextMonth = isInNextMonth(dateObj, wizardState.year, wizardState.month)
+                        const isOtherMonth = isPrevMonth || isNextMonth
+
                         return (
                           <div
                             key={slot.date}
                             className={`border rounded-lg p-3 transition-all hover:shadow-md ${
-                              isLowSlots
+                              isOtherMonth
+                                ? 'bg-blue-50 border-blue-300 opacity-75'
+                                : isLowSlots
                                 ? 'bg-amber-50 border-amber-200'
                                 : 'bg-gray-50 border-gray-200'
                             }`}
@@ -281,11 +289,20 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                             <div className="flex items-center justify-between mb-2">
                               <Badge
                                 variant="outline"
-                                className="text-xs"
+                                className={`text-xs ${isOtherMonth ? 'bg-blue-100 text-blue-700 border-blue-300' : ''}`}
                               >
                                 {slot.dayOfWeek}
                               </Badge>
-                              <span className="font-bold text-lg">{day}</span>
+                              <div className="flex flex-col items-end">
+                                <span className={`font-bold text-lg ${isOtherMonth ? 'text-blue-700' : ''}`}>
+                                  {day}
+                                </span>
+                                {isOtherMonth && (
+                                  <span className="text-xs text-blue-600">
+                                    {isPrevMonth ? '이전달' : '다음달'}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             {/* 원장 정보 */}
@@ -311,7 +328,7 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                                 필요 {slot.requiredStaff}
                               </div>
                               <div className={`text-xs font-semibold ${
-                                isLowSlots ? 'text-amber-700' : 'text-green-600'
+                                isOtherMonth ? 'text-blue-600' : isLowSlots ? 'text-amber-700' : 'text-green-600'
                               }`}>
                                 슬롯 {slot.availableSlots}
                               </div>

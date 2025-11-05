@@ -12,6 +12,7 @@ import { CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Calendar } from 'lucid
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
+import { isInPreviousMonth, isInNextMonth } from '@/lib/date-utils'
 
 interface Props {
   wizardState: any
@@ -165,37 +166,51 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
                 </p>
               </div>
 
-              {applications.map((app) => (
-                <div
-                  key={app.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium">{app.staffName}</span>
-                      <Badge variant={app.leaveType === 'ANNUAL' ? 'default' : 'secondary'}>
-                        {app.leaveType === 'ANNUAL' ? '연차' : '오프'}
-                      </Badge>
-                      {getStatusBadge(app.status)}
-                    </div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {format(new Date(app.date), 'yyyy년 M월 d일 (E)', { locale: ko })}
-                    </div>
-                  </div>
-                  {app.fairnessScore !== undefined && (
-                    <div className="text-right">
-                      <div className="text-sm text-gray-500">형평성 점수</div>
-                      <div className={`text-lg font-bold ${
-                        app.fairnessScore >= 75 ? 'text-green-600' :
-                        app.fairnessScore >= 60 ? 'text-yellow-600' :
-                        'text-red-600'
-                      }`}>
-                        {app.fairnessScore}점
+              {applications.map((app) => {
+                const appDate = new Date(app.date)
+                const isPrevMonth = isInPreviousMonth(appDate, wizardState.year, wizardState.month)
+                const isNextMonth = isInNextMonth(appDate, wizardState.year, wizardState.month)
+                const isOtherMonth = isPrevMonth || isNextMonth
+
+                return (
+                  <div
+                    key={app.id}
+                    className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 ${
+                      isOtherMonth ? 'bg-blue-50 border-blue-300' : ''
+                    }`}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium">{app.staffName}</span>
+                        <Badge variant={app.leaveType === 'ANNUAL' ? 'default' : 'secondary'}>
+                          {app.leaveType === 'ANNUAL' ? '연차' : '오프'}
+                        </Badge>
+                        {getStatusBadge(app.status)}
+                        {isOtherMonth && (
+                          <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
+                            {isPrevMonth ? '이전달' : '다음달'}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        {format(new Date(app.date), 'yyyy년 M월 d일 (E)', { locale: ko })}
                       </div>
                     </div>
-                  )}
-                </div>
-              ))}
+                    {app.fairnessScore !== undefined && (
+                      <div className="text-right">
+                        <div className="text-sm text-gray-500">형평성 점수</div>
+                        <div className={`text-lg font-bold ${
+                          app.fairnessScore >= 75 ? 'text-green-600' :
+                          app.fairnessScore >= 60 ? 'text-yellow-600' :
+                          'text-red-600'
+                        }`}>
+                          {app.fairnessScore}점
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </CardContent>

@@ -224,3 +224,36 @@ export function getCalendarGridDates(year: number, month: number): Date[] {
 
   return dates
 }
+
+/**
+ * Check if date is in previous month compared to target month
+ */
+export function isInPreviousMonth(date: Date, targetYear: number, targetMonth: number): boolean {
+  const dateYear = date.getFullYear()
+  const dateMonth = date.getMonth() + 1
+
+  if (dateYear < targetYear) return true
+  if (dateYear === targetYear && dateMonth < targetMonth) return true
+  return false
+}
+
+/**
+ * Check if date is in next month compared to target month
+ */
+export function isInNextMonth(date: Date, targetYear: number, targetMonth: number): boolean {
+  const dateYear = date.getFullYear()
+  const dateMonth = date.getMonth() + 1
+
+  if (dateYear > targetYear) return true
+  if (dateYear === targetYear && dateMonth > targetMonth) return true
+  return false
+}
+
+/**
+ * Get extended date range for schedule display (target month ±7 days)
+ */
+export function getExtendedDateRange(year: number, month: number): { start: Date; end: Date } {
+  const start = addDays(getStartOfMonth(year, month), -7)
+  const end = addDays(getEndOfMonth(year, month), 7)
+  return { start, end }
+}
