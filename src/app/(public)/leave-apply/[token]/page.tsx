@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { DateSelector } from '@/components/public-apply/DateSelector'
-import { TypeSelector } from '@/components/public-apply/TypeSelector'
+import { DateSelector, type LeaveType } from '@/components/public-apply/DateSelector'
 import { RealTimeStatus } from '@/components/public-apply/RealTimeStatus'
 import FairnessCheck from '@/components/leave-apply/FairnessCheck'
 import { Button } from '@/components/ui/button'
@@ -26,8 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-
-type LeaveType = 'ANNUAL' | 'OFF'
 
 interface SlotStatus {
   date: string
@@ -66,9 +63,8 @@ export default function LeaveApplyPage({
   const [loading, setLoading] = useState(false)
   const [loadingStaff, setLoadingStaff] = useState(true)
 
-  // 신청 폼 상태
-  const [selectedDate, setSelectedDate] = useState<Date>()
-  const [selectedType, setSelectedType] = useState<LeaveType>('ANNUAL')
+  // 신청 폼 상태 - 다중 선택 지원
+  const [selections, setSelections] = useState<Map<string, LeaveType>>(new Map())
   const [slotStatus, setSlotStatus] = useState<SlotStatus[]>([])
   const [weeklyOffCount, setWeeklyOffCount] = useState(0)
 
@@ -220,12 +216,49 @@ export default function LeaveApplyPage({
     }
   }
 
-  // 신청 제출
+  // 선택 추가/제거 함수
+  const handleDateSelection = (date: Date, type: LeaveType) => {
+    const dateStr = date.toISOString().split('T')[0]
+    const newSelections = new Map(selections)
+    newSelections.set(dateStr, type)
+    setSelections(newSelections)
+
+    toast({
+      title: '선택 추가',
+      description: `${dateStr} - ${type === 'ANNUAL' ? '연차' : '오프'}`,
+    })
+  }
+
+  const handleRemoveSelection = (dateStr: string) => {
+    const newSelections = new Map(selections)
+    newSelections.delete(dateStr)
+    setSelections(newSelections)
+
+    toast({
+      title: '선택 제거',
+      description: `${dateStr} 선택이 제거되었습니다.`,
+    })
+  }
+
+  // 일괄 신청 제출
   const handleSubmit = async () => {
-    if (!selectedDate) {
+    if (selections.size === 0) {
       toast({
         title: '날짜 선택 필요',
         description: '신청할 날짜를 선택해주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    // 연차 잔여 일수 체크
+    const annualCount = Array.from(selections.values()).filter(t => t === 'ANNUAL').length
+    const remainingAnnual = (authData?.totalAnnualDays || 0) - (authData?.usedAnnualDays || 0)
+
+    if (annualCount > remainingAnnual) {
+      toast({
+        title: '연차 부족',
+        description: `연차 잔여 일수가 부족합니다. (잔여: ${remainingAnnual}일, 신청: ${annualCount}일)`,
         variant: 'destructive',
       })
       return
@@ -238,28 +271,61 @@ export default function LeaveApplyPage({
     setSubmitting(true)
 
     try {
-      const response = await fetch(`/api/leave-apply/${params.token}/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: selectedDate?.toISOString().split('T')[0],
-          type: selectedType,
-        }),
-      })
+      const applications = Array.from(selections.entries()).map(([date, type]) => ({
+        date,
+        type,
+      }))
 
-      const result = await response.json()
+      let successCount = 0
+      let failCount = 0
+      const errors: string[] = []
 
-      if (result.success) {
+      // 각 신청을 순차적으로 처리
+      for (const app of applications) {
+        try {
+          const response = await fetch(`/api/leave-apply/${params.token}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(app),
+          })
+
+          const result = await response.json()
+
+          if (result.success) {
+            successCount++
+          } else {
+            failCount++
+            errors.push(`${app.date}: ${result.error || '실패'}`)
+          }
+        } catch (error: any) {
+          failCount++
+          errors.push(`${app.date}: ${error.message || '오류'}`)
+        }
+      }
+
+      // 결과 토스트
+      if (successCount > 0 && failCount === 0) {
         toast({
           title: '신청 완료',
-          description: '연차/오프 신청이 완료되었습니다.',
+          description: `${successCount}건의 연차/오프 신청이 완료되었습니다.`,
         })
-        setShowConfirm(false)
-        // 폼 초기화
-        setSelectedDate(undefined)
+        setSelections(new Map())
+        loadSlotStatus() // 슬롯 상태 새로고침
+      } else if (successCount > 0 && failCount > 0) {
+        toast({
+          title: '일부 신청 실패',
+          description: `성공: ${successCount}건, 실패: ${failCount}건\n${errors.join('\n')}`,
+          variant: 'destructive',
+        })
       } else {
-        throw new Error(result.error || '신청 실패')
+        toast({
+          title: '신청 실패',
+          description: `모든 신청이 실패했습니다.\n${errors.join('\n')}`,
+          variant: 'destructive',
+        })
       }
+
+      setShowConfirm(false)
     } catch (error: any) {
       toast({
         title: '신청 실패',
@@ -716,83 +782,146 @@ export default function LeaveApplyPage({
         {/* 왼쪽: 신청 폼 */}
         <div className="lg:col-span-2 space-y-6">
           {/* 형평성 체크 */}
-          {authData && (
+          {authData && selections.size > 0 && (
             <FairnessCheck
               token={params.token}
               staffId={authData.staffId}
-              startDate={selectedDate || new Date()}
-              endDate={selectedDate || new Date()}
+              startDate={new Date(Array.from(selections.keys()).sort()[0])}
+              endDate={new Date(Array.from(selections.keys()).sort()[selections.size - 1])}
             />
           )}
 
           <DateSelector
-            selectedDate={selectedDate}
-            onSelect={setSelectedDate}
+            selections={selections}
+            onDateSelection={handleDateSelection}
             slotStatus={slotStatus}
+            categoryName={authData?.categoryName}
           />
 
-          <TypeSelector
-            selectedType={selectedType}
-            onSelect={setSelectedType}
-            weeklyOffCount={weeklyOffCount}
-            remainingAnnualDays={
-              authData
-                ? authData.totalAnnualDays - authData.usedAnnualDays
-                : undefined
-            }
-          />
+          {/* 선택 항목 리스트 */}
+          {selections.size > 0 && (
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">선택된 항목 ({selections.size}개)</h3>
+              <div className="space-y-2 mb-4">
+                {Array.from(selections.entries())
+                  .sort((a, b) => a[0].localeCompare(b[0]))
+                  .map(([dateStr, type]) => (
+                    <div key={dateStr} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Calendar className="w-4 h-4 text-gray-500" />
+                        <div>
+                          <span className="font-medium">{formatDateWithDay(new Date(dateStr))}</span>
+                          <span className="ml-2 text-sm px-2 py-1 rounded bg-blue-100 text-blue-700">
+                            {type === 'ANNUAL' ? '연차' : '오프'}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveSelection(dateStr)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        제거
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-4 p-3 bg-blue-50 rounded-lg">
+                <div>
+                  <div className="text-xs text-gray-600 mb-1">연차 신청</div>
+                  <div className="text-lg font-semibold text-blue-700">
+                    {Array.from(selections.values()).filter(t => t === 'ANNUAL').length}일
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-600 mb-1">오프 신청</div>
+                  <div className="text-lg font-semibold text-green-700">
+                    {Array.from(selections.values()).filter(t => t === 'OFF').length}일
+                  </div>
+                </div>
+              </div>
+
+              {authData && (
+                <div className="text-sm text-gray-600 p-3 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between">
+                    <span>연차 잔여</span>
+                    <span className="font-medium">
+                      {authData.totalAnnualDays - authData.usedAnnualDays -
+                        Array.from(selections.values()).filter(t => t === 'ANNUAL').length}
+                      일 / {authData.totalAnnualDays}일
+                    </span>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
 
           <Button
             size="lg"
             className="w-full"
             onClick={handleSubmit}
-            disabled={!selectedDate}
+            disabled={selections.size === 0}
           >
             <Send className="w-5 h-5 mr-2" />
-            신청하기
+            일괄 신청하기 ({selections.size}개)
           </Button>
         </div>
 
         {/* 오른쪽: 실시간 현황 */}
         <div className="lg:col-span-1">
-          <RealTimeStatus token={params.token} selectedDate={selectedDate} />
+          <RealTimeStatus
+            token={params.token}
+            selectedDate={selections.size > 0 ? new Date(Array.from(selections.keys())[0]) : undefined}
+          />
         </div>
       </div>
 
       {/* 확인 모달 */}
       <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-blue-600" />
-              신청 확인
+              일괄 신청 확인
             </DialogTitle>
             <DialogDescription>
-              아래 내용으로 신청하시겠습니까?
+              총 {selections.size}개 항목을 신청하시겠습니까?
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-gray-50 rounded-lg space-y-2">
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">날짜</span>
-                <span className="font-medium">
-                  {selectedDate && formatDateWithDay(selectedDate)}
-                </span>
+          <div className="space-y-4 py-4 max-h-96 overflow-y-auto">
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <div className="text-xs text-gray-600 mb-1">연차</div>
+                <div className="text-xl font-bold text-blue-700">
+                  {Array.from(selections.values()).filter(t => t === 'ANNUAL').length}일
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">유형</span>
-                <span className="font-medium">
-                  {selectedType === 'ANNUAL' ? '연차' : '오프'}
-                </span>
+              <div className="p-3 bg-green-50 rounded-lg">
+                <div className="text-xs text-gray-600 mb-1">오프</div>
+                <div className="text-xl font-bold text-green-700">
+                  {Array.from(selections.values()).filter(t => t === 'OFF').length}일
+                </div>
               </div>
             </div>
 
-            {selectedType === 'OFF' && weeklyOffCount > 0 && (
-              <div className="text-sm text-gray-600">
-                이번 주 오프 신청: {weeklyOffCount + 1}/2일
-              </div>
-            )}
+            <div className="space-y-2">
+              <h4 className="font-semibold text-sm text-gray-700 mb-2">신청 목록</h4>
+              {Array.from(selections.entries())
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([dateStr, type]) => (
+                  <div key={dateStr} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <span className="text-sm">{formatDateWithDay(new Date(dateStr))}</span>
+                    <span className={`text-sm font-medium px-2 py-1 rounded ${
+                      type === 'ANNUAL' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                    }`}>
+                      {type === 'ANNUAL' ? '연차' : '오프'}
+                    </span>
+                  </div>
+                ))}
+            </div>
           </div>
 
           <div className="flex justify-end gap-2">
