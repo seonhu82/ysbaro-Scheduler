@@ -344,7 +344,6 @@ model Staff {
   hireDate     DateTime? // 입사일 - 연차 계산용
   workDays     Int       @default(4) // 주당 근무일수 (기존 호환)
   workType     WorkType? // 근무 형태 (신규)
-  pin          String? // 6자리 PIN (초기: YYMMDD)
 
   // 연차 정보
   totalAnnualDays Int @default(15) // 총 연차 일수
@@ -352,6 +351,9 @@ model Staff {
 
   // 보안 정보
   registeredDevices Json? // 등록된 기기 목록
+  pinCode           String? // 6자리 PIN 번호 (로그인용)
+  securityQuestion  String? // 보안 질문 (PIN 재설정용)
+  securityAnswer    String? // 보안 답변 (PIN 재설정용)
 
   // 형평성 누적 점수 (전월 이월)
   fairnessScoreTotalDays       Float @default(0) // 총근무 형평성
@@ -375,7 +377,7 @@ model Staff {
   fairnessAdjustments   FairnessAdjustment[]
 
   @@index([clinicId])
-  @@index([pin])
+  @@index([pinCode])
 }
 
 model StaffRankSettings {

@@ -11,11 +11,11 @@ export async function POST(
   { params }: { params: { token: string } }
 ) {
   try {
-    const { staffId, birthDate } = await request.json()
+    const { staffId, pinCode } = await request.json()
 
-    if (!staffId || !birthDate) {
+    if (!staffId || !pinCode) {
       return NextResponse.json(
-        { success: false, error: '직원과 생년월일을 입력해주세요' },
+        { success: false, error: '직원과 PIN 번호를 입력해주세요' },
         { status: 400 }
       )
     }
@@ -50,31 +50,36 @@ export async function POST(
       )
     }
 
-    // 입력값 길이 확인 (4자리 PIN 또는 6자리 생년월일)
-    if (birthDate.length !== 4 && birthDate.length !== 6) {
-      return NextResponse.json(
-        { success: false, error: 'PIN(4자리) 또는 생년월일(6자리)을 입력해주세요' },
-        { status: 400 }
-      )
-    }
+    // PIN 설정 여부에 따라 인증 방식 결정
+    if (staff.pinCode) {
+      // PIN이 설정되어 있으면 PIN으로만 인증
+      if (pinCode.length !== 6) {
+        return NextResponse.json(
+          { success: false, error: 'PIN 번호는 6자리입니다' },
+          { status: 400 }
+        )
+      }
 
-    // PIN 번호로 인증 시도 (4자리)
-    if (birthDate.length === 4) {
-      if (staff.pinCode && staff.pinCode === birthDate) {
+      if (staff.pinCode === pinCode) {
         console.log('✅ PIN 인증 성공')
       } else {
-        console.log('❌ PIN 불일치 또는 미설정')
+        console.log('❌ PIN 불일치')
         return NextResponse.json(
-          { success: false, error: 'PIN 번호가 올바르지 않거나 설정되지 않았습니다' },
+          { success: false, error: 'PIN 번호가 올바르지 않습니다' },
           { status: 401 }
         )
       }
-    }
-    // 생년월일로 인증 (6자리)
-    else {
-      const inputYear = parseInt(birthDate.substring(0, 2))
-      const inputMonth = parseInt(birthDate.substring(2, 4))
-      const inputDay = parseInt(birthDate.substring(4, 6))
+    } else {
+      // PIN이 없으면 생년월일로 인증
+      if (pinCode.length !== 6) {
+        return NextResponse.json(
+          { success: false, error: '생년월일은 6자리입니다 (YYMMDD)' },
+          { status: 400 }
+        )
+      }
+      const inputYear = parseInt(pinCode.substring(0, 2))
+      const inputMonth = parseInt(pinCode.substring(2, 4))
+      const inputDay = parseInt(pinCode.substring(4, 6))
 
       // 2000년대/1900년대 판단 (00-49는 2000년대, 50-99는 1900년대)
       const fullYear = inputYear >= 50 ? 1900 + inputYear : 2000 + inputYear
@@ -88,7 +93,7 @@ export async function POST(
 
       console.log('🔐 생년월일 인증 시도:', {
         staffName: staff.name,
-        inputBirthDate: birthDate,
+        inputBirthDate: pinCode,
         inputYear: fullYear,
         inputMonth,
         inputDay,

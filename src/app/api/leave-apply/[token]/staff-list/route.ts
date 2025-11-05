@@ -54,6 +54,7 @@ export async function GET(
         id: true,
         name: true,
         departmentName: true,
+        pinCode: true, // PIN 설정 여부 확인용
       },
       orderBy: [
         { departmentName: 'asc' },

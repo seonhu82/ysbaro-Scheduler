@@ -11,7 +11,7 @@ export async function POST(
   { params }: { params: { token: string } }
 ) {
   try {
-    const { staffId, pinCode } = await request.json()
+    const { staffId, pinCode, securityQuestion, securityAnswer } = await request.json()
 
     if (!staffId || !pinCode) {
       return NextResponse.json(
@@ -20,10 +20,25 @@ export async function POST(
       )
     }
 
-    // PIN 번호 유효성 검사 (4자리 숫자)
-    if (!/^\d{4}$/.test(pinCode)) {
+    // PIN 번호 유효성 검사 (6자리 숫자)
+    if (!/^\d{6}$/.test(pinCode)) {
       return NextResponse.json(
-        { success: false, error: 'PIN 번호는 4자리 숫자여야 합니다' },
+        { success: false, error: 'PIN 번호는 6자리 숫자여야 합니다' },
+        { status: 400 }
+      )
+    }
+
+    // 보안 질문/답변 유효성 검사 (선택사항)
+    if (securityQuestion && !securityAnswer) {
+      return NextResponse.json(
+        { success: false, error: '보안 질문을 선택하면 답변도 입력해야 합니다' },
+        { status: 400 }
+      )
+    }
+
+    if (!securityQuestion && securityAnswer) {
+      return NextResponse.json(
+        { success: false, error: '보안 답변을 입력하면 질문도 선택해야 합니다' },
         { status: 400 }
       )
     }
@@ -56,17 +71,27 @@ export async function POST(
       )
     }
 
-    // PIN 번호 업데이트
+    // PIN 번호 및 보안 질문/답변 업데이트
+    const updateData: any = { pinCode }
+
+    if (securityQuestion && securityAnswer) {
+      updateData.securityQuestion = securityQuestion
+      updateData.securityAnswer = securityAnswer
+      console.log(`✅ PIN 및 보안 질문 설정: ${staff.name} (${staffId})`)
+    } else {
+      console.log(`✅ PIN 설정 (보안 질문 없음): ${staff.name} (${staffId})`)
+    }
+
     await prisma.staff.update({
       where: { id: staffId },
-      data: { pinCode }
+      data: updateData
     })
-
-    console.log(`✅ PIN 설정 완료: ${staff.name} (${staffId})`)
 
     return NextResponse.json({
       success: true,
-      message: 'PIN 번호가 설정되었습니다'
+      message: securityQuestion
+        ? 'PIN 번호와 보안 질문이 설정되었습니다'
+        : 'PIN 번호가 설정되었습니다'
     })
   } catch (error: any) {
     console.error('PIN 설정 오류:', error)
