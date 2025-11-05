@@ -79,11 +79,39 @@ export async function calculateCategorySlots(
     where: { clinicId }
   })
 
-  if (!ratioSettings) {
-    throw new Error('구분별 비율 설정이 없습니다')
-  }
+  let ratios: CategoryRatios
 
-  const ratios = ratioSettings.ratios as CategoryRatios
+  if (!ratioSettings) {
+    // 설정이 없으면 직원 수 기준으로 자동 계산
+    console.log('⚙️ CategoryRatioSettings가 없어서 직원 수 비율로 자동 계산합니다')
+
+    const staffCounts = await prisma.staff.groupBy({
+      by: ['categoryName'],
+      where: {
+        clinicId,
+        isActive: true,
+        categoryName: { not: null }
+      },
+      _count: true
+    })
+
+    const totalStaff = staffCounts.reduce((sum, c) => sum + c._count, 0)
+
+    if (totalStaff === 0) {
+      throw new Error('활성 직원이 없습니다')
+    }
+
+    ratios = {}
+    staffCounts.forEach(c => {
+      if (c.categoryName) {
+        ratios[c.categoryName] = (c._count / totalStaff) * 100
+      }
+    })
+
+    console.log('📊 자동 계산된 구분별 비율:', ratios)
+  } else {
+    ratios = ratioSettings.ratios as CategoryRatios
+  }
 
   // 2. 구분별 필요 인원 계산
   const requirements = calculateCategoryRequirements(totalRequired, ratios)

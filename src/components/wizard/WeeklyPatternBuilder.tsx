@@ -171,10 +171,17 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
 
       console.log('[WeeklyPatternBuilder] Doctor summary response:', data)
 
-      // 3. 주차 정보 생성
+      // 3. ClosedDaySettings 조회
+      const closedDaysResponse = await fetch('/api/settings/closed-days')
+      const closedDaysData = await closedDaysResponse.json()
+      const closedDays = closedDaysData.success ? closedDaysData.data : null
+
+      console.log('[WeeklyPatternBuilder] Closed days settings:', closedDays)
+
+      // 4. 주차 정보 생성 (휴무일 정보 포함)
       const monthStart = new Date(year, month - 1, 1)
       const monthEnd = new Date(year, month, 0)
-      const weeks = getWeeksInMonth(monthStart, monthEnd)
+      const weeks = getWeeksInMonthFiltered(monthStart, monthEnd, closedDays)
 
       // 4. 이전 달 배포 범위 확인 및 현재 월의 실제 배포 데이터 확인
       let deployedDateRange: { start: Date; end: Date } | null = null
@@ -679,4 +686,83 @@ function getWeeksInMonth(monthStart: Date, monthEnd: Date) {
   }
 
   return weeks
+}
+
+/**
+ * 휴무일을 고려하여 주차 필터링
+ * 마지막 주/첫 주에 해당 월의 근무일이 없으면 제외
+ */
+function getWeeksInMonthFiltered(
+  monthStart: Date,
+  monthEnd: Date,
+  closedDays: any
+) {
+  const allWeeks = getWeeksInMonth(monthStart, monthEnd)
+
+  if (!closedDays) {
+    return allWeeks
+  }
+
+  // 날짜가 휴무일인지 확인
+  const isClosedDay = (date: Date): boolean => {
+    const dayOfWeek = date.getDay()
+
+    // regularDays 확인 (일요일 등)
+    if (closedDays.regularDays && Array.isArray(closedDays.regularDays)) {
+      const hasRegularClosed = closedDays.regularDays.some((rule: any) => {
+        if (rule.dayOfWeek === 'SUNDAY' && dayOfWeek === 0) return true
+        if (rule.dayOfWeek === 'MONDAY' && dayOfWeek === 1) return true
+        if (rule.dayOfWeek === 'TUESDAY' && dayOfWeek === 2) return true
+        if (rule.dayOfWeek === 'WEDNESDAY' && dayOfWeek === 3) return true
+        if (rule.dayOfWeek === 'THURSDAY' && dayOfWeek === 4) return true
+        if (rule.dayOfWeek === 'FRIDAY' && dayOfWeek === 5) return true
+        if (rule.dayOfWeek === 'SATURDAY' && dayOfWeek === 6) return true
+        return false
+      })
+      if (hasRegularClosed) return true
+    }
+
+    // specificDates 확인
+    if (closedDays.specificDates && Array.isArray(closedDays.specificDates)) {
+      const dateStr = date.toISOString().split('T')[0]
+      if (closedDays.specificDates.includes(dateStr)) return true
+    }
+
+    return false
+  }
+
+  // 주차 필터링
+  return allWeeks.filter((week, index) => {
+    const isFirstWeek = index === 0
+    const isLastWeek = index === allWeeks.length - 1
+
+    // 중간 주는 항상 포함
+    if (!isFirstWeek && !isLastWeek) {
+      return true
+    }
+
+    // 첫 주 또는 마지막 주: 해당 월의 날짜 중 근무일이 있는지 확인
+    const targetMonth = monthStart.getMonth()
+    let current = new Date(week.start)
+    let hasWorkday = false
+
+    while (current <= week.end) {
+      // 해당 월에 속한 날짜만 확인
+      if (current.getMonth() === targetMonth) {
+        if (!isClosedDay(current)) {
+          hasWorkday = true
+          break
+        }
+      }
+      current.setDate(current.getDate() + 1)
+    }
+
+    if (hasWorkday) {
+      console.log(`[WeeklyPatternBuilder] Week ${index + 1} included: has workday in target month`)
+    } else {
+      console.log(`[WeeklyPatternBuilder] Week ${index + 1} excluded: no workday in target month`)
+    }
+
+    return hasWorkday
+  })
 }

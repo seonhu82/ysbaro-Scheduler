@@ -73,33 +73,36 @@ export async function GET(
       },
     })
 
+    // 시작일 계산: StaffAssignment 최종일 + 1일
     let actualStartDate = leavePeriod.startDate
-
-    // 직원 배치와 원장 스케줄 중 더 최근 날짜를 기준으로
-    const lastScheduledDate = [
-      lastStaffAssignment?.date,
-      lastDoctorSchedule?.date,
-    ]
-      .filter((d): d is Date => d !== null && d !== undefined)
-      .sort((a, b) => b.getTime() - a.getTime())[0]
-
-    if (lastScheduledDate) {
-      const nextDay = new Date(lastScheduledDate)
+    if (lastStaffAssignment?.date) {
+      const nextDay = new Date(lastStaffAssignment.date)
       nextDay.setDate(nextDay.getDate() + 1)
 
-      // 마지막 스케줄 다음날과 LeavePeriod 시작일 중 더 늦은 날짜 선택
+      // StaffAssignment 다음날과 LeavePeriod 시작일 중 더 늦은 날짜 선택
       if (nextDay > new Date(leavePeriod.startDate)) {
         actualStartDate = nextDay
       }
     }
 
+    // 종료일 계산: min(ScheduleDoctor 최종일, LeavePeriod 종료일)
+    let actualEndDate = leavePeriod.endDate
+    if (lastDoctorSchedule?.date) {
+      const doctorEndDate = new Date(lastDoctorSchedule.date)
+      const leavePeriodEndDate = new Date(leavePeriod.endDate)
+
+      if (doctorEndDate < leavePeriodEndDate) {
+        actualEndDate = doctorEndDate
+      }
+    }
+
     console.log('📅 신청 가능 기간 계산:', {
       leavePeriodStart: leavePeriod.startDate,
+      leavePeriodEnd: leavePeriod.endDate,
       lastStaffAssignmentDate: lastStaffAssignment?.date,
       lastDoctorScheduleDate: lastDoctorSchedule?.date,
-      lastScheduledDate,
-      actualStartDate,
-      endDate: leavePeriod.endDate,
+      calculatedStartDate: actualStartDate,
+      calculatedEndDate: actualEndDate,
     })
 
     return NextResponse.json({
@@ -108,7 +111,7 @@ export async function GET(
         year: leavePeriod.year,
         month: leavePeriod.month,
         startDate: actualStartDate,
-        endDate: leavePeriod.endDate,
+        endDate: actualEndDate,
         maxSlots: leavePeriod.maxSlots,
         categorySlots: leavePeriod.categorySlots,
         lastStaffAssignmentDate: lastStaffAssignment?.date || null,

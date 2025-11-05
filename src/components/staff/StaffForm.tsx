@@ -46,16 +46,50 @@ const WORK_TYPE_OPTIONS: { value: WorkType; label: string; description: string }
 export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
   const { toast } = useToast()
   const [submitting, setSubmitting] = useState(false)
+  const [departments, setDepartments] = useState<string[]>([])
+  const [categories, setCategories] = useState<string[]>([])
 
   const [formData, setFormData] = useState({
     name: '',
     rank: 'HYGIENIST' as StaffRank,
     workType: 'WEEK_5' as WorkType,
+    departmentName: '',
+    categoryName: '',
+    totalAnnualDays: 15,
+    flexibleForCategories: [] as string[],
+    flexibilityPriority: 0,
     pin: '',
     phoneNumber: '',
     email: '',
     isActive: true,
   })
+
+  // 부서 및 구분 목록 로드
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        // 부서 목록 로드
+        const deptResponse = await fetch('/api/settings/departments')
+        const deptResult = await deptResponse.json()
+        if (deptResult.success && deptResult.departments) {
+          setDepartments(deptResult.departments)
+        }
+
+        // 구분 목록 로드
+        const catResponse = await fetch('/api/settings/staff-categories')
+        const catResult = await catResponse.json()
+        if (catResult.success && catResult.categories) {
+          setCategories(catResult.categories.map((c: any) => c.name))
+        }
+      } catch (error) {
+        console.error('부서/구분 로드 실패:', error)
+      }
+    }
+
+    if (isOpen) {
+      loadSettings()
+    }
+  }, [isOpen])
 
   useEffect(() => {
     if (staff) {
@@ -63,6 +97,11 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
         name: staff.name,
         rank: staff.rank,
         workType: staff.workType || 'WEEK_5',
+        departmentName: (staff as any).departmentName || '',
+        categoryName: (staff as any).categoryName || '',
+        totalAnnualDays: (staff as any).totalAnnualDays || 15,
+        flexibleForCategories: (staff as any).flexibleForCategories || [],
+        flexibilityPriority: (staff as any).flexibilityPriority || 0,
         pin: '', // PIN은 수정 시 비워둠 (보안)
         phoneNumber: staff.phoneNumber || '',
         email: staff.email || '',
@@ -73,6 +112,11 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
         name: '',
         rank: 'HYGIENIST',
         workType: 'WEEK_5',
+        departmentName: '',
+        categoryName: '',
+        totalAnnualDays: 15,
+        flexibleForCategories: [],
+        flexibilityPriority: 0,
         pin: '',
         phoneNumber: '',
         email: '',
@@ -106,6 +150,11 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
         name: formData.name,
         rank: formData.rank,
         workType: formData.workType,
+        departmentName: formData.departmentName || null,
+        categoryName: formData.categoryName || null,
+        totalAnnualDays: formData.totalAnnualDays,
+        flexibleForCategories: formData.flexibleForCategories,
+        flexibilityPriority: formData.flexibilityPriority,
         phoneNumber: formData.phoneNumber || null,
         email: formData.email || null,
         isActive: formData.isActive,
@@ -230,6 +279,130 @@ export function StaffForm({ staff, isOpen, onClose }: StaffFormProps) {
                 스케줄 자동 배치 시 주당 근무일수가 반영됩니다
               </p>
             </div>
+
+            {/* 부서 */}
+            <div>
+              <Label htmlFor="departmentName">부서</Label>
+              <Select
+                value={formData.departmentName}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, departmentName: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="부서 선택 (선택사항)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept} value={dept}>
+                      {dept}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                부서를 선택하면 자동 배치 시 해당 부서만 배치됩니다
+              </p>
+            </div>
+
+            {/* 구분 */}
+            <div>
+              <Label htmlFor="categoryName">구분</Label>
+              <Select
+                value={formData.categoryName}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, categoryName: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="구분 선택 (선택사항)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                스케줄 배치 시 사용되는 직원 구분입니다
+              </p>
+            </div>
+
+            {/* 연차 일수 */}
+            <div>
+              <Label htmlFor="totalAnnualDays">연차 총 일수</Label>
+              <Input
+                id="totalAnnualDays"
+                type="number"
+                min="0"
+                max="30"
+                value={formData.totalAnnualDays}
+                onChange={(e) =>
+                  setFormData({ ...formData, totalAnnualDays: parseInt(e.target.value) || 0 })
+                }
+                placeholder="15"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                연차 신청 가능한 총 일수 (기본값: 15일)
+              </p>
+            </div>
+
+            {/* 유연배치 - 다른 구분 */}
+            <div>
+              <Label>유연 배치 가능 구분 (선택사항)</Label>
+              <div className="space-y-2 mt-2">
+                {categories.map((cat) => (
+                  <div key={cat} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`flex-${cat}`}
+                      checked={formData.flexibleForCategories.includes(cat)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFormData({
+                            ...formData,
+                            flexibleForCategories: [...formData.flexibleForCategories, cat]
+                          })
+                        } else {
+                          setFormData({
+                            ...formData,
+                            flexibleForCategories: formData.flexibleForCategories.filter(c => c !== cat)
+                          })
+                        }
+                      }}
+                    />
+                    <Label htmlFor={`flex-${cat}`} className="cursor-pointer font-normal">
+                      {cat}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                이 직원이 다른 구분으로도 배치 가능한 경우 선택하세요
+              </p>
+            </div>
+
+            {/* 유연배치 우선순위 */}
+            {formData.flexibleForCategories.length > 0 && (
+              <div>
+                <Label htmlFor="flexibilityPriority">유연 배치 우선순위</Label>
+                <Input
+                  id="flexibilityPriority"
+                  type="number"
+                  min="0"
+                  max="10"
+                  value={formData.flexibilityPriority}
+                  onChange={(e) =>
+                    setFormData({ ...formData, flexibilityPriority: parseInt(e.target.value) || 0 })
+                  }
+                  placeholder="0"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  숫자가 높을수록 우선적으로 유연 배치됩니다 (0-10)
+                </p>
+              </div>
+            )}
 
             {/* PIN */}
             <div>

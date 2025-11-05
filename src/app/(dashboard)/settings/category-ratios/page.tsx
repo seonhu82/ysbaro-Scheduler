@@ -76,10 +76,17 @@ export default function CategoryRatiosSettings() {
       <div className="bg-white p-6 rounded-lg shadow space-y-6">
         <div>
           <h2 className="text-xl font-semibold mb-2">배치 목표 비율</h2>
-          <p className="text-sm text-gray-600">
-            각 구분별 배치 목표 비율을 설정합니다. 자동 배치 시 이 비율을 최대한
-            유지하도록 배치됩니다. 합계는 100%가 되어야 합니다.
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-600">
+              각 구분별 배치 목표 비율을 설정합니다. 자동 배치 시 이 비율을 최대한
+              유지하도록 배치됩니다. 합계는 100%가 되어야 합니다.
+            </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mt-3">
+              <p className="text-sm text-blue-800">
+                💡 <strong>자동 계산:</strong> 구분별 비율을 설정하지 않으면 각 구분의 직원 수 비율로 자동 계산됩니다.
+              </p>
+            </div>
+          </div>
         </div>
 
         {categories.length === 0 ? (
