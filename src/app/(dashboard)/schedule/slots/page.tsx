@@ -7,6 +7,7 @@ import { Calendar, Users, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { isInPreviousMonth, isInNextMonth } from '@/lib/date-utils'
 
 interface CategorySlot {
   required: number
@@ -129,21 +130,37 @@ export default function SlotsStatusPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {slotData.map((day) => (
-            <Card key={day.date}>
-              <CardHeader className="pb-3">
-                <div className="flex justify-between">
-                  <div className="flex gap-3">
-                    <Calendar className="w-5 h-5 text-gray-500" />
-                    <div className="flex flex-col gap-2">
-                      <div className="font-semibold">
-                        {new Date(day.date).toLocaleDateString('ko-KR')} ({getDayName(day.dayOfWeek)})
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        필요 인원: {day.requiredStaff}명
+          {slotData.map((day) => {
+            const dayDate = new Date(day.date)
+            // startDate에서 기준 년/월 추출
+            const baseDate = new Date(startDate)
+            const baseYear = baseDate.getFullYear()
+            const baseMonth = baseDate.getMonth() + 1
+
+            const isPrevMonth = isInPreviousMonth(dayDate, baseYear, baseMonth)
+            const isNextMonth = isInNextMonth(dayDate, baseYear, baseMonth)
+            const isOtherMonth = isPrevMonth || isNextMonth
+
+            return (
+              <Card key={day.date} className={isOtherMonth ? 'bg-blue-50 border-blue-300' : ''}>
+                <CardHeader className="pb-3">
+                  <div className="flex justify-between">
+                    <div className="flex gap-3">
+                      <Calendar className={`w-5 h-5 ${isOtherMonth ? 'text-blue-600' : 'text-gray-500'}`} />
+                      <div className="flex flex-col gap-2">
+                        <div className={`font-semibold flex items-center gap-2 ${isOtherMonth ? 'text-blue-700' : ''}`}>
+                          <span>{new Date(day.date).toLocaleDateString('ko-KR')} ({getDayName(day.dayOfWeek)})</span>
+                          {isOtherMonth && (
+                            <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300 text-xs">
+                              {isPrevMonth ? '이전달' : '다음달'}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          필요 인원: {day.requiredStaff}명
+                        </div>
                       </div>
                     </div>
-                  </div>
 
                   <div className="flex flex-col items-end gap-2">
                     {day.hasNightShift ? (
@@ -211,7 +228,8 @@ export default function SlotsStatusPage() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
