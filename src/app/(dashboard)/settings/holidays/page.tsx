@@ -44,7 +44,7 @@ export default function HolidaysSettingsPage() {
       const data = await response.json()
 
       if (data.success) {
-        setHolidays(data.data || [])
+        setHolidays(data.data?.holidays || [])
       } else {
         toast({
           variant: 'destructive',

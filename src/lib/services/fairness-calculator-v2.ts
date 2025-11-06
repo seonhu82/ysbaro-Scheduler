@@ -59,6 +59,13 @@ export interface FairnessCache {
   closedDays?: any
   fairnessSettings?: any
   actualDateRange?: { min: Date, max: Date }
+  previousMonthFairness?: Record<string, {
+    total: number
+    night: number
+    weekend: number
+    holiday: number
+    holidayAdjacent: number
+  }> // 스냅샷: Schedule.previousMonthFairness
 }
 
 /**
@@ -511,7 +518,127 @@ async function calculateSpecialDimension(
 }
 
 /**
- * 직원의 월간 형평성 점수 계산
+ * Schedule.previousMonthFairness 스냅샷에서 편차를 가져오는 함수
+ * (자동배정 시 사용 - 배정 시작 시점의 편차 값)
+ */
+export async function getStaffFairnessFromSnapshot(
+  staffId: string,
+  year: number,
+  month: number,
+  cache?: FairnessCache
+): Promise<FairnessScoreV2> {
+  const staff = await prisma.staff.findUnique({
+    where: { id: staffId },
+    select: {
+      id: true,
+      name: true
+    }
+  })
+
+  if (!staff) {
+    throw new Error(`Staff not found: ${staffId}`)
+  }
+
+  // 캐시에서 스냅샷 가져오기
+  const snapshot = cache?.previousMonthFairness?.[staffId]
+
+  if (!snapshot) {
+    // 스냅샷이 없으면 모두 0으로 초기화
+    const zeroDimension = (dim: 'total' | 'night' | 'weekend' | 'holiday' | 'holidayAdjacent'): DimensionScore => ({
+      dimension: dim,
+      baseline: 0,
+      actual: 0,
+      deviation: 0,
+      score: 100,
+      status: 'onTrack',
+      percentage: 0
+    })
+
+    return {
+      staffId: staff.id,
+      staffName: staff.name || '직원',
+      year,
+      month,
+      dimensions: {
+        total: zeroDimension('total'),
+        night: zeroDimension('night'),
+        weekend: zeroDimension('weekend'),
+        holiday: zeroDimension('holiday'),
+        holidayAdjacent: zeroDimension('holidayAdjacent')
+      },
+      overallScore: 100,
+      canApplyLeave: true,
+      sortKeys: {
+        total: 0,
+        night: 0,
+        weekend: 0,
+        holiday: 0,
+        holidayAdjacent: 0
+      }
+    }
+  }
+
+  // 스냅샷 편차로 DimensionScore 생성
+  const createDimensionScore = (
+    dimension: 'total' | 'night' | 'weekend' | 'holiday' | 'holidayAdjacent',
+    deviation: number
+  ): DimensionScore => {
+    const status: 'ahead' | 'behind' | 'onTrack' =
+      deviation < -0.5 ? 'behind' : deviation > 0.5 ? 'ahead' : 'onTrack'
+
+    return {
+      dimension,
+      baseline: 0, // 스냅샷에서는 baseline 정보 없음
+      actual: 0, // 스냅샷에서는 actual 정보 없음
+      deviation: Math.round(deviation * 10) / 10,
+      score: Math.max(0, Math.min(100, 100 - Math.abs(deviation) * 10)),
+      status,
+      percentage: 0 // 스냅샷에서는 percentage 정보 없음
+    }
+  }
+
+  const dimensions = {
+    total: createDimensionScore('total', snapshot.total),
+    night: createDimensionScore('night', snapshot.night),
+    weekend: createDimensionScore('weekend', snapshot.weekend),
+    holiday: createDimensionScore('holiday', snapshot.holiday),
+    holidayAdjacent: createDimensionScore('holidayAdjacent', snapshot.holidayAdjacent)
+  }
+
+  // 종합 점수 계산 (가중 평균)
+  const weights = { total: 2, night: 3, weekend: 2, holiday: 4, holidayAdjacent: 1 }
+  const totalWeight = Object.values(weights).reduce((sum, w) => sum + w, 0)
+  const weightedSum =
+    dimensions.total.deviation * weights.total +
+    dimensions.night.deviation * weights.night +
+    dimensions.weekend.deviation * weights.weekend +
+    dimensions.holiday.deviation * weights.holiday +
+    dimensions.holidayAdjacent.deviation * weights.holidayAdjacent
+  const weightedDeviation = totalWeight > 0 ? weightedSum / totalWeight : 0
+  const overallScore = Math.max(0, Math.min(100, 100 - Math.abs(weightedDeviation) * 10))
+
+  return {
+    staffId: staff.id,
+    staffName: staff.name || '직원',
+    year,
+    month,
+    dimensions,
+    overallScore: Math.round(overallScore),
+    canApplyLeave: overallScore >= 60,
+    sortKeys: {
+      total: dimensions.total.deviation,
+      night: dimensions.night.deviation,
+      weekend: dimensions.weekend.deviation,
+      holiday: dimensions.holiday.deviation,
+      holidayAdjacent: dimensions.holidayAdjacent.deviation
+    }
+  }
+}
+
+/**
+ * 직원의 월간 형평성 점수 계산 (실시간 계산)
+ * ⚠️ 자동배정 중에는 getStaffFairnessFromSnapshot 사용!
+ * ⚠️ 이 함수는 배정 완료 후 Staff 테이블 업데이트 시에만 사용!
  */
 export async function calculateStaffFairnessV2(
   staffId: string,

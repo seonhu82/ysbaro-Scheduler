@@ -34,6 +34,17 @@ interface SlotSummary {
   availableSlots: number
 }
 
+interface WeeklyPattern {
+  id: string
+  name: string
+}
+
+interface WeekPatternInfo {
+  weekNumber: number
+  patternId: string
+  patternName: string
+}
+
 export default function Step1DoctorScheduleReview({ wizardState, updateWizardState, onNext }: Props) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
@@ -41,6 +52,8 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
   const [slots, setSlots] = useState<SlotSummary[]>([])
   const [hasSchedule, setHasSchedule] = useState(false)
   const [regularClosedDays, setRegularClosedDays] = useState<number[]>([]) // 정기 휴무일
+  const [weekPatterns, setWeekPatterns] = useState<WeekPatternInfo[]>([]) // 주차별 패턴 정보
+  const [allPatterns, setAllPatterns] = useState<WeeklyPattern[]>([]) // 전체 패턴 목록
 
   useEffect(() => {
     loadDoctorSchedule()
@@ -71,6 +84,13 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
         setRegularClosedDays(Array.isArray(regularDays) ? regularDays : [])
       }
 
+      // 전체 패턴 목록 조회
+      const patternsResponse = await fetch('/api/settings/weekly-patterns', { cache: 'no-store' })
+      const patternsData = await patternsResponse.json()
+      if (patternsData.success && patternsData.data) {
+        setAllPatterns(patternsData.data)
+      }
+
       // 원장 스케줄 조회
       const response = await fetch(
         `/api/schedule/doctor-summary?year=${wizardState.year}&month=${wizardState.month}`,
@@ -88,10 +108,32 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
         setSlots(data.slots || [])
         setHasSchedule(data.hasSchedule || false)
 
-        // 기존 스케줄의 weekPatterns를 wizard 상태에 저장
+        // 기존 스케줄의 weekPatterns를 wizard 상태에 저장 및 표시용 데이터 생성
         if (data.weekPatterns) {
           console.log('Loading weekPatterns from schedule:', data.weekPatterns)
           updateWizardState({ weeklyPatterns: data.weekPatterns })
+
+          // 전체 패턴 목록에서 패턴명 찾기
+          const patterns = patternsData.success && patternsData.data ? patternsData.data : []
+          console.log('Available patterns for mapping:', patterns)
+
+          // weekPatterns 객체를 배열로 변환하고 패턴명 추가
+          const weekPatternArray: WeekPatternInfo[] = Object.entries(data.weekPatterns as Record<string, string>)
+            .map(([weekNum, patternId]) => {
+              const pattern = patterns.find((p: WeeklyPattern) => p.id === patternId)
+              console.log(`Week ${weekNum}: patternId=${patternId}, found=${pattern ? pattern.name : 'NOT FOUND'}`)
+              return {
+                weekNumber: parseInt(weekNum),
+                patternId: patternId as string,
+                patternName: pattern?.name || '알 수 없음'
+              }
+            })
+            .sort((a, b) => a.weekNumber - b.weekNumber)
+
+          console.log('Final weekPatternArray:', weekPatternArray)
+          setWeekPatterns(weekPatternArray)
+        } else {
+          setWeekPatterns([])
         }
       } else {
         console.error('API returned success: false', data)
@@ -250,6 +292,27 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                     ))}
                   </div>
                 </div>
+
+                {/* 주차별 패턴 정보 */}
+                {weekPatterns.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3">주차별 패턴</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                      {weekPatterns.map((wp) => (
+                        <div key={wp.weekNumber} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-blue-700">
+                              {wp.weekNumber}주차
+                            </span>
+                          </div>
+                          <div className="text-sm font-semibold text-blue-900">
+                            {wp.patternName}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* 슬롯 현황 - 달력 형태 */}
                 <div>

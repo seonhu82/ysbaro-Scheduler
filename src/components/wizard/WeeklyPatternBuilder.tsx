@@ -257,7 +257,7 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
           patternId: patternId,
           patternName: pattern?.name || null,
           isDeployed,
-          deployedFrom: isDeployed ? `${prevYear}년 ${prevMonth}월` : undefined
+          deployedFrom: deployedWeeksFromPrevMonth.includes(weekNumber) ? `${prevYear}년 ${prevMonth}월` : undefined
         }
       })
 

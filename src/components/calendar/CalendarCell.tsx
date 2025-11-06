@@ -56,11 +56,17 @@ export function CalendarCell({
         </span>
       </div>
 
-      {isCurrentMonth && schedule && (
-        <div className="space-y-1.5">
+      {schedule && (
+        <div className={cn(
+          "space-y-1.5",
+          !isCurrentMonth && "opacity-60"
+        )}>
           {/* 조합명 + 야간 이모지 */}
           <div className="flex items-center gap-1">
-            <span className="inline-block px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+            <span className={cn(
+              "inline-block px-2 py-0.5 text-xs font-medium rounded",
+              isCurrentMonth ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600"
+            )}>
               {schedule.combinationName}
             </span>
             {schedule.hasNightShift && (
@@ -72,7 +78,9 @@ export function CalendarCell({
           <div className="text-xs">
             <span className={cn(
               'font-medium',
-              schedule.assignedStaff >= schedule.requiredStaff ? 'text-green-600' : 'text-amber-600'
+              isCurrentMonth
+                ? (schedule.assignedStaff >= schedule.requiredStaff ? 'text-green-600' : 'text-amber-600')
+                : 'text-gray-500'
             )}>
               {schedule.assignedStaff}
             </span>
@@ -82,12 +90,18 @@ export function CalendarCell({
           {/* 연차/오프 */}
           <div className="flex gap-2 text-xs">
             {(schedule.annualLeaveCount ?? 0) > 0 && (
-              <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">
+              <span className={cn(
+                "px-1.5 py-0.5 rounded font-medium",
+                isCurrentMonth ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"
+              )}>
                 연차 {schedule.annualLeaveCount}
               </span>
             )}
             {(schedule.offCount ?? 0) > 0 && (
-              <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">
+              <span className={cn(
+                "px-1.5 py-0.5 rounded font-medium",
+                isCurrentMonth ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-600"
+              )}>
                 오프 {schedule.offCount}
               </span>
             )}

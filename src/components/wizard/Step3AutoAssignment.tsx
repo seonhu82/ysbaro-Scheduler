@@ -113,12 +113,43 @@ export default function Step3AutoAssignment({ wizardState, updateWizardState, on
                 <div className="flex gap-3">
                   <Zap className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-purple-700">
-                    <p className="font-medium mb-1">자동 배정 알고리즘</p>
-                    <ul className="list-disc list-inside space-y-1 mt-2">
-                      <li>형평성 우선: 야간/주말/공휴일 근무를 고르게 분배</li>
-                      <li>카테고리별 필수 인원 충족</li>
-                      <li>직원 선호도 및 패턴 고려</li>
-                      <li>연차/오프 자동 반영</li>
+                    <p className="font-semibold mb-2">자동 배정 알고리즘</p>
+                    <ul className="space-y-1.5 ml-1">
+                      <li className="flex gap-2">
+                        <span className="text-purple-600">•</span>
+                        <div>
+                          <span className="font-medium">5가지 형평성 점수 기반 배정</span>
+                          <div className="text-xs text-purple-600 ml-0.5">총근무일, 야간, 주말, 공휴일, 공휴일인접 균등 분배</div>
+                        </div>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="text-purple-600">•</span>
+                        <div>
+                          <span className="font-medium">카테고리별 필수 인원 충족</span>
+                          <div className="text-xs text-purple-600 ml-0.5">카테고리 직원 우선 배정 + 유연 직원 자동 보충</div>
+                        </div>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="text-purple-600">•</span>
+                        <div>
+                          <span className="font-medium">주 4일 근무 자동 계산</span>
+                          <div className="text-xs text-purple-600 ml-0.5">최대 4일 제한 + 부족분 자동 조정</div>
+                        </div>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="text-purple-600">•</span>
+                        <div>
+                          <span className="font-medium">연차/오프 자동 반영</span>
+                          <div className="text-xs text-purple-600 ml-0.5">연차는 근무로 카운트, OFF는 2차 조정</div>
+                        </div>
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="text-purple-600">•</span>
+                        <div>
+                          <span className="font-medium">실시간 형평성 업데이트</span>
+                          <div className="text-xs text-purple-600 ml-0.5">각 배정마다 즉시 DB 반영하여 공정성 유지</div>
+                        </div>
+                      </li>
                     </ul>
                   </div>
                 </div>

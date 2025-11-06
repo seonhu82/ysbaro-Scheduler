@@ -94,7 +94,10 @@ export async function GET() {
       console.log('First pattern dailyPatterns:', JSON.stringify(formattedPatterns[0].dailyPatterns, null, 2))
     }
 
-    return NextResponse.json(formattedPatterns)
+    return NextResponse.json({
+      success: true,
+      data: formattedPatterns
+    })
   } catch (error) {
     console.error('Weekly patterns list error:', error)
     return NextResponse.json(

@@ -111,7 +111,11 @@
       "Bash(node test-fairness-calc.js:*)",
       "Bash(iconv:*)",
       "Bash(node:*)",
-      "SlashCommand(/server)"
+      "SlashCommand(/server)",
+      "Bash(npx ts-node:*)",
+      "Bash(/tmp/old_route.ts)",
+      "Bash(/tmp/phase2_diff.txt)",
+      "Bash(PGPASSWORD=postgres \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -U postgres -d dental_scheduler -c:*)"
     ],
     "deny": [],
     "ask": []

@@ -61,7 +61,19 @@ export async function POST(request: NextRequest) {
         return unauthorizedResponse()
       }
     } else {
-      // 이전 달 Staff 테이블의 편차를 previousMonthFairness로 설정 (자동 배치 부서만)
+      // 새 스케줄 생성
+      schedule = await prisma.schedule.create({
+        data: {
+          clinicId: session.user.clinicId,
+          year,
+          month,
+          status: 'DRAFT'
+        }
+      })
+    }
+
+    // previousMonthFairness가 없으면 최초 저장
+    if (!schedule.previousMonthFairness) {
       const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(session.user.clinicId)
       const staffList = await prisma.staff.findMany({
         where: {
@@ -90,18 +102,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      console.log(`📊 이전 달 편차를 previousMonthFairness에 저장: ${staffList.length}명`)
+      console.log(`📊 previousMonthFairness 최초 저장: ${staffList.length}명`)
 
-      // 새 스케줄 생성
-      schedule = await prisma.schedule.create({
-        data: {
-          clinicId: session.user.clinicId,
-          year,
-          month,
-          status: 'DRAFT',
-          previousMonthFairness
-        }
+      // 스냅샷 업데이트
+      schedule = await prisma.schedule.update({
+        where: { id: schedule.id },
+        data: { previousMonthFairness }
       })
+    } else {
+      console.log(`📊 previousMonthFairness 보존: ${Object.keys(schedule.previousMonthFairness as any).length}명`)
     }
 
     // 3. 해당 월의 모든 날짜 생성

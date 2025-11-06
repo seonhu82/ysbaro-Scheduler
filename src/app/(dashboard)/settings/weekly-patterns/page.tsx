@@ -57,8 +57,8 @@ export default function WeeklyPatternsSettings() {
       const patternsData = await patternsRes.json()
       const combinationsData = await combinationsRes.json()
 
-      // patternsData는 배열, combinationsData는 { success: true, data: [...] } 형식
-      setPatterns(Array.isArray(patternsData) ? patternsData : [])
+      // patternsData와 combinationsData 모두 { success: true, data: [...] } 형식
+      setPatterns(patternsData.success ? patternsData.data : [])
       setCombinations(combinationsData.success ? combinationsData.data : [])
     } catch (error) {
       console.error('Failed to fetch data:', error)

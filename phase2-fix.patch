@@ -1,0 +1,115 @@
+--- Phase 2 OFF→근무 변경 로직 수정 ---
+
+문제: 원장 스케줄 없는 날(토/일)의 OFF를 근무로 변경하려고 시도하다가 실패
+
+해결: 원장 스케줄 체크를 앞으로 이동하여 원장 근무 있는 날만 대상으로 선정
+
+변경 위치: src/app/api/schedule/auto-assign/route.ts 1209줄부터
+
+변경 전:
+```typescript
+            for (const assignment of offAssignments) {
+              const dateKey = assignment.date.toISOString().split('T')[0]
+              const offCountOnDate = await prisma.staffAssignment.count({
+                where: {
+                  scheduleId: schedule.id,
+                  date: assignment.date,
+                  shiftType: 'OFF'
+                }
+              })
+
+              if (offCountOnDate > maxOffCount ||
+                  (offCountOnDate === maxOffCount && (!bestCandidate || Math.random() < 0.5))) {
+                maxOffCount = offCountOnDate
+                bestCandidate = { staff, assignment }
+                bestDate = assignment.date
+              }
+            }
+          }
+
+          if (!bestCandidate) {
+            console.log(`      ⚠️ 변경 가능한 OFF 없음`)
+            break
+          }
+
+          // 원장 스케줄 확인
+          const doctorSchedule = await prisma.scheduleDoctor.findFirst({
+            where: { scheduleId: schedule.id, date: bestDate! }
+          })
+
+          if (!doctorSchedule) {
+            console.log(`      ⚠️ ${bestDate!.toISOString().split('T')[0]} 원장 스케줄 없음`)
+            continue
+          }
+
+          // B-3. OFF → 근무 변경
+          await prisma.staffAssignment.update({
+            where: {
+              scheduleId_staffId_date: {
+                scheduleId: schedule.id,
+                staffId: bestCandidate.staff.id,
+                date: bestDate!
+              }
+            },
+            data: {
+              shiftType: doctorSchedule.hasNightShift ? 'NIGHT' : 'DAY'
+            }
+          })
+```
+
+변경 후:
+```typescript
+            for (const assignment of offAssignments) {
+              // 먼저 원장 스케줄 확인 (원장 근무 없는 날은 스킵)
+              const doctorSchedule = await prisma.scheduleDoctor.findFirst({
+                where: { scheduleId: schedule.id, date: assignment.date }
+              })
+
+              if (!doctorSchedule) {
+                continue // 원장 근무 없는 날은 건너뛰기
+              }
+
+              const dateKey = assignment.date.toISOString().split('T')[0]
+              const offCountOnDate = await prisma.staffAssignment.count({
+                where: {
+                  scheduleId: schedule.id,
+                  date: assignment.date,
+                  shiftType: 'OFF'
+                }
+              })
+
+              if (offCountOnDate > maxOffCount ||
+                  (offCountOnDate === maxOffCount && (!bestCandidate || Math.random() < 0.5))) {
+                maxOffCount = offCountOnDate
+                bestCandidate = { staff, assignment, doctorSchedule }
+                bestDate = assignment.date
+              }
+            }
+          }
+
+          if (!bestCandidate) {
+            console.log(`      ⚠️ 변경 가능한 OFF 없음 (원장 근무 있는 날 중)`)
+            break
+          }
+
+          // B-3. OFF → 근무 변경
+          await prisma.staffAssignment.update({
+            where: {
+              scheduleId_staffId_date: {
+                scheduleId: schedule.id,
+                staffId: bestCandidate.staff.id,
+                date: bestDate!
+              }
+            },
+            data: {
+              shiftType: bestCandidate.doctorSchedule.hasNightShift ? 'NIGHT' : 'DAY'
+            }
+          })
+```
+
+핵심 변경사항:
+1. 1211줄: 원장 스케줄 확인을 루프 안으로 이동
+2. 1215줄: 원장 근무 없으면 continue로 건너뛰기
+3. 1228줄: bestCandidate에 doctorSchedule도 함께 저장
+4. 1239줄: 이미 원장 스케줄 확인했으므로 doctorSchedule 관련 코드 제거
+5. 1251줄: bestCandidate.doctorSchedule 사용

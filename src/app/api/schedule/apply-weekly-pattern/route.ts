@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     const clinicId = session.user.clinicId
 
-    // 이전 달에 배포된 스케줄 조회 (다음 달 초반까지 포함)
+    // 이전 달에 배포된 스케줄 조회
     const prevMonth = month === 1 ? 12 : month - 1
     const prevYear = month === 1 ? year - 1 : year
 
@@ -39,22 +39,26 @@ export async function POST(request: NextRequest) {
         status: 'DEPLOYED'
       },
       select: {
-        deployedStartDate: true,
-        deployedEndDate: true
+        id: true
       }
     })
 
-    // 배포된 날짜 범위 (현재 월에 걸친 부분)
-    let deployedDateRange: { start: Date; end: Date } | null = null
-    if (previousDeployedSchedule?.deployedEndDate) {
-      const deployedEnd = new Date(previousDeployedSchedule.deployedEndDate)
-      // 배포 종료일이 현재 월에 속하는지 확인
-      if (deployedEnd.getFullYear() === year && deployedEnd.getMonth() === month - 1) {
-        deployedDateRange = {
-          start: new Date(year, month - 1, 1), // 현재 월 1일
-          end: deployedEnd
-        }
-        console.log(`⚠️  이전 달 배포 범위 감지: ${deployedDateRange.start.toISOString().split('T')[0]} ~ ${deployedDateRange.end.toISOString().split('T')[0]}`)
+    // 이전 달 배포 스케줄의 실제 데이터를 스냅샷으로 저장
+    let existingDates = new Set<string>()
+    if (previousDeployedSchedule) {
+      const previousScheduleDoctors = await prisma.scheduleDoctor.findMany({
+        where: { scheduleId: previousDeployedSchedule.id },
+        select: { date: true }
+      })
+
+      existingDates = new Set(
+        previousScheduleDoctors.map(d => d.date.toISOString().split('T')[0])
+      )
+
+      console.log(`📸 이전 달 배포 데이터 스냅샷: ${existingDates.size}개 날짜`)
+      if (existingDates.size > 0) {
+        const dates = Array.from(existingDates).sort()
+        console.log(`   범위: ${dates[0]} ~ ${dates[dates.length - 1]}`)
       }
     }
 
@@ -139,15 +143,9 @@ export async function POST(request: NextRequest) {
         const dayOfWeekNumber = date.getDay() // 0=일요일, 1=월요일, ..., 6=토요일
         const dateStr = date.toISOString().split('T')[0]
 
-        // 해당 월에 속하지 않는 날짜는 건너뛰기 (이전/다음 달)
-        if (date.getMonth() !== month - 1) {
-          console.log(`⏭️  Skipped ${dateStr} (${dayOfWeek}): 해당 월이 아님`)
-          continue
-        }
-
-        // 이미 배포된 날짜 범위 체크
-        if (deployedDateRange && date >= deployedDateRange.start && date <= deployedDateRange.end) {
-          console.log(`🔒 Skipped ${dateStr} (${dayOfWeek}): 이미 배포된 날짜 (이전 달 스케줄)`)
+        // 이전 달 배포 데이터 스냅샷에 있는 날짜는 건너뛰기
+        if (existingDates.has(dateStr)) {
+          console.log(`🔒 Skipped ${dateStr} (${dayOfWeek}): 이전 달 배포 데이터 존재`)
           continue
         }
 

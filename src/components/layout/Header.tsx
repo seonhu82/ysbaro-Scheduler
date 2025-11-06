@@ -8,7 +8,7 @@ export function Header() {
   const { data: session } = useSession()
 
   return (
-    <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
       <div className="px-4 md:px-6 py-4">
         <div className="flex items-center justify-between">
           {/* 🆕 모바일 메뉴 + 로고 */}
