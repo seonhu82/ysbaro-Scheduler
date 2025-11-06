@@ -38,6 +38,8 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
   })
   const [totalAssignments, setTotalAssignments] = useState(0)
   const [averageFairness, setAverageFairness] = useState(0)
+  const [statsView, setStatsView] = useState<'monthly' | 'cumulative'>('monthly')
+  const [cumulativeStats, setCumulativeStats] = useState<any[]>([])
 
   // 스케줄 데이터 조회
   useEffect(() => {
@@ -433,10 +435,34 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
 
               {/* 직원별 근무일수 통계 */}
               <div className="mt-6 bg-gray-50 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  직원별 근무일수 통계 (총 {staffStats.length}명)
-                </h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    직원별 근무일수 통계 (총 {staffStats.length}명)
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setStatsView('monthly')}
+                      className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                        statsView === 'monthly'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      해당월
+                    </button>
+                    <button
+                      onClick={() => setStatsView('cumulative')}
+                      className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                        statsView === 'cumulative'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      누적
+                    </button>
+                  </div>
+                </div>
                 {staffStats.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {staffStats.map((stat: any) => (
@@ -454,7 +480,12 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                           <div className="flex justify-between items-center">
                             <span className="text-gray-600">총 근무:</span>
                             <div className="flex items-center gap-1">
-                              <span className="font-semibold text-blue-600">{stat.totalDays}일</span>
+                              <span className="font-semibold text-blue-600">
+                                {statsView === 'monthly'
+                                  ? `${stat.totalDays}일`
+                                  : `${stat.fairness?.total?.actual || 0}일`
+                                }
+                              </span>
                               {stat.fairness?.total && (
                                 <span className={`text-xs ${
                                   stat.fairness.total.deviation > 0 ? 'text-green-600' :
@@ -485,7 +516,12 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                             <div className="flex justify-between items-center">
                               <span className="text-gray-600">야간:</span>
                               <div className="flex items-center gap-1">
-                                <span className="font-semibold text-purple-600">{stat.nightShiftDays}일</span>
+                                <span className="font-semibold text-purple-600">
+                                  {statsView === 'monthly'
+                                    ? `${stat.nightShiftDays}일`
+                                    : `${stat.fairness?.night?.actual || 0}일`
+                                  }
+                                </span>
                                 {stat.fairness?.night && (
                                   <span className={`text-xs ${
                                     stat.fairness.night.deviation > 0 ? 'text-green-600' :
@@ -502,7 +538,12 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                             <div className="flex justify-between items-center">
                               <span className="text-gray-600">주말:</span>
                               <div className="flex items-center gap-1">
-                                <span className="font-semibold text-pink-600">{stat.weekendDays || 0}일</span>
+                                <span className="font-semibold text-pink-600">
+                                  {statsView === 'monthly'
+                                    ? `${stat.weekendDays || 0}일`
+                                    : `${stat.fairness?.weekend?.actual || 0}일`
+                                  }
+                                </span>
                                 {stat.fairness?.weekend && (
                                   <span className={`text-xs ${
                                     stat.fairness.weekend.deviation > 0 ? 'text-green-600' :
@@ -519,7 +560,12 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                             <div className="flex justify-between items-center">
                               <span className="text-gray-600">공휴일:</span>
                               <div className="flex items-center gap-1">
-                                <span className="font-semibold text-red-600">{stat.holidayDays || 0}일</span>
+                                <span className="font-semibold text-red-600">
+                                  {statsView === 'monthly'
+                                    ? `${stat.holidayDays || 0}일`
+                                    : `${stat.fairness?.holiday?.actual || 0}일`
+                                  }
+                                </span>
                                 {stat.fairness?.holiday && (
                                   <span className={`text-xs ${
                                     stat.fairness.holiday.deviation > 0 ? 'text-green-600' :
@@ -536,7 +582,12 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                             <div className="flex justify-between items-center">
                               <span className="text-gray-600">휴일연장:</span>
                               <div className="flex items-center gap-1">
-                                <span className="font-semibold text-amber-600">{stat.holidayAdjacentDays || 0}일</span>
+                                <span className="font-semibold text-amber-600">
+                                  {statsView === 'monthly'
+                                    ? `${stat.holidayAdjacentDays || 0}일`
+                                    : `${stat.fairness?.holidayAdjacent?.actual || 0}일`
+                                  }
+                                </span>
                                 {stat.fairness?.holidayAdjacent && (
                                   <span className={`text-xs ${
                                     stat.fairness.holidayAdjacent.deviation > 0 ? 'text-green-600' :
