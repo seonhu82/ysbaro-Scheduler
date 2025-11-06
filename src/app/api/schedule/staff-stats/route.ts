@@ -360,24 +360,24 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // calculateStaffFairnessV2를 호출하여 편차 값 가져오기 (현재 월 기준)
-      const fairnessData = await calculateStaffFairnessV2(
-        stat.staffId,
-        clinicId,
-        year,
-        month,
-        stat.departmentName
-      )
+      // Staff 테이블에서 누적 편차 가져오기 (자동 배정시 업데이트되는 값)
+      const deviations = {
+        total: staff?.fairnessScoreTotalDays ?? 0,
+        night: staff?.fairnessScoreNight ?? 0,
+        weekend: staff?.fairnessScoreWeekend ?? 0,
+        holiday: staff?.fairnessScoreHoliday ?? 0,
+        holidayAdjacent: staff?.fairnessScoreHolidayAdjacent ?? 0
+      }
 
-      // overallScore 계산 (가중 평균) - calculateStaffFairnessV2와 동일한 방식
+      // overallScore 계산 (가중 평균)
       const weights = { total: 2, night: 3, weekend: 2, holiday: 4, holidayAdjacent: 1 }
       const totalWeight = Object.values(weights).reduce((sum, w) => sum + w, 0)
       const weightedSum =
-        fairnessData.dimensions.total.deviation * weights.total +
-        fairnessData.dimensions.night.deviation * weights.night +
-        fairnessData.dimensions.weekend.deviation * weights.weekend +
-        fairnessData.dimensions.holiday.deviation * weights.holiday +
-        fairnessData.dimensions.holidayAdjacent.deviation * weights.holidayAdjacent
+        deviations.total * weights.total +
+        deviations.night * weights.night +
+        deviations.weekend * weights.weekend +
+        deviations.holiday * weights.holiday +
+        deviations.holidayAdjacent * weights.holidayAdjacent
       const weightedDeviation = totalWeight > 0 ? weightedSum / totalWeight : 0
       const overallScore = Math.max(0, Math.min(100, 100 - Math.abs(weightedDeviation) * 10))
 
@@ -386,23 +386,23 @@ export async function GET(request: NextRequest) {
         fairness: {
           total: {
             actual: cumulativeActual.total,
-            deviation: fairnessData.dimensions.total.deviation
+            deviation: deviations.total
           },
           night: {
             actual: cumulativeActual.night,
-            deviation: fairnessData.dimensions.night.deviation
+            deviation: deviations.night
           },
           weekend: {
             actual: cumulativeActual.weekend,
-            deviation: fairnessData.dimensions.weekend.deviation
+            deviation: deviations.weekend
           },
           holiday: {
             actual: cumulativeActual.holiday,
-            deviation: fairnessData.dimensions.holiday.deviation
+            deviation: deviations.holiday
           },
           holidayAdjacent: {
             actual: cumulativeActual.holidayAdjacent,
-            deviation: fairnessData.dimensions.holidayAdjacent.deviation
+            deviation: deviations.holidayAdjacent
           },
           overallScore: Math.round(overallScore)
         }
