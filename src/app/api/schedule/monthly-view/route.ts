@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
-import { eachDayOfInterval, startOfMonth, endOfMonth } from 'date-fns'
+import { eachDayOfInterval, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns'
 import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
 
 export async function GET(request: NextRequest) {
@@ -73,13 +73,18 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 공휴일 조회
+    // 공휴일 조회 (캘린더 그리드가 표시하는 전체 범위: 이전 달 끝 ~ 다음 달 시작)
+    const monthStart = startOfMonth(new Date(year, month - 1, 1))
+    const monthEnd = endOfMonth(new Date(year, month - 1, 1))
+    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 }) // 일요일 시작
+    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
+
     const holidays = await prisma.holiday.findMany({
       where: {
         clinicId,
         date: {
-          gte: new Date(year, month - 1, 1),
-          lte: new Date(year, month, 0)
+          gte: calendarStart,
+          lte: calendarEnd
         }
       },
       select: {

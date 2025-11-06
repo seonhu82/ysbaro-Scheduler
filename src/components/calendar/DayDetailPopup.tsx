@@ -1188,7 +1188,7 @@ export function DayDetailPopup({
                     <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                       <Users className="w-4 h-4" />
                       {schedule?.holidayName ? (
-                        <>공휴일: {schedule.holidayName} ({schedule?.offDays?.length || 0}명)</>
+                        <>{schedule.holidayName}</>
                       ) : (
                         <>오프 ({schedule?.offDays?.length || 0}명)</>
                       )}

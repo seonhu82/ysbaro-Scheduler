@@ -103,7 +103,7 @@ export function CalendarCell({
                 "px-1.5 py-0.5 rounded font-medium",
                 isCurrentMonth ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-600"
               )}>
-                {schedule.holidayName ? `공휴일: ${schedule.holidayName}` : `오프 ${schedule.offCount}`}
+                {schedule.holidayName ? schedule.holidayName : `오프 ${schedule.offCount}`}
               </span>
             )}
           </div>
