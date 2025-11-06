@@ -1142,16 +1142,35 @@ export function DayDetailPopup({
                       근무 직원 ({schedule?.staff?.length || 0}명)
                     </h3>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {schedule?.staff && schedule.staff.length > 0 ? (
-                      schedule.staff.map((staff) => (
-                        <DraggableStaffCard
-                          key={staff.id}
-                          staff={staff}
-                          status="working"
-                          isEditing={false}
-                        />
-                      ))
+                      (() => {
+                        // 부서별로 그룹화
+                        const groupedByDept = schedule.staff.reduce((acc, staff) => {
+                          const dept = staff.departmentName || '미지정'
+                          if (!acc[dept]) acc[dept] = []
+                          acc[dept].push(staff)
+                          return acc
+                        }, {} as Record<string, typeof schedule.staff>)
+
+                        return Object.entries(groupedByDept).map(([dept, staffList]) => (
+                          <div key={dept}>
+                            <div className="text-xs font-semibold text-gray-600 mb-1.5 px-1">
+                              {dept} ({staffList.length}명)
+                            </div>
+                            <div className="space-y-2">
+                              {staffList.map((staff) => (
+                                <DraggableStaffCard
+                                  key={staff.id}
+                                  staff={staff}
+                                  status="working"
+                                  isEditing={false}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      })()
                     ) : (
                       <p className="text-sm text-gray-500">배치된 직원이 없습니다</p>
                     )}
