@@ -62,51 +62,66 @@ export function CalendarCell({
           "space-y-1.5",
           !isCurrentMonth && "opacity-60"
         )}>
-          {/* 조합명 + 야간 이모지 */}
-          <div className="flex items-center gap-1">
-            <span className={cn(
-              "inline-block px-2 py-0.5 text-xs font-medium rounded",
-              isCurrentMonth ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600"
-            )}>
-              {schedule.combinationName}
-            </span>
-            {schedule.hasNightShift && (
-              <span className="text-sm" title="야간">🌙</span>
-            )}
-          </div>
-
-          {/* 배치인력 / 필요인력 */}
-          <div className="text-xs">
-            <span className={cn(
-              'font-medium',
-              isCurrentMonth
-                ? (schedule.assignedStaff >= schedule.requiredStaff ? 'text-green-600' : 'text-amber-600')
-                : 'text-gray-500'
-            )}>
-              {schedule.assignedStaff}
-            </span>
-            <span className="text-gray-500"> / {schedule.requiredStaff}</span>
-          </div>
-
-          {/* 연차/오프 */}
-          <div className="flex gap-2 text-xs">
-            {(schedule.annualLeaveCount ?? 0) > 0 && (
+          {schedule.holidayName ? (
+            // 공휴일일 때는 공휴일명만 표시
+            <div className="flex items-center gap-1">
               <span className={cn(
-                "px-1.5 py-0.5 rounded font-medium",
-                isCurrentMonth ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"
-              )}>
-                연차 {schedule.annualLeaveCount}
-              </span>
-            )}
-            {(schedule.offCount ?? 0) > 0 && (
-              <span className={cn(
-                "px-1.5 py-0.5 rounded font-medium",
+                "inline-block px-2 py-0.5 text-xs font-medium rounded",
                 isCurrentMonth ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-600"
               )}>
-                {schedule.holidayName ? schedule.holidayName : `오프 ${schedule.offCount}`}
+                {schedule.holidayName}
               </span>
-            )}
-          </div>
+            </div>
+          ) : (
+            // 일반 날짜일 때는 모든 정보 표시
+            <>
+              {/* 조합명 + 야간 이모지 */}
+              <div className="flex items-center gap-1">
+                <span className={cn(
+                  "inline-block px-2 py-0.5 text-xs font-medium rounded",
+                  isCurrentMonth ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600"
+                )}>
+                  {schedule.combinationName}
+                </span>
+                {schedule.hasNightShift && (
+                  <span className="text-sm" title="야간">🌙</span>
+                )}
+              </div>
+
+              {/* 배치인력 / 필요인력 */}
+              <div className="text-xs">
+                <span className={cn(
+                  'font-medium',
+                  isCurrentMonth
+                    ? (schedule.assignedStaff >= schedule.requiredStaff ? 'text-green-600' : 'text-amber-600')
+                    : 'text-gray-500'
+                )}>
+                  {schedule.assignedStaff}
+                </span>
+                <span className="text-gray-500"> / {schedule.requiredStaff}</span>
+              </div>
+
+              {/* 연차/오프 */}
+              <div className="flex gap-2 text-xs">
+                {(schedule.annualLeaveCount ?? 0) > 0 && (
+                  <span className={cn(
+                    "px-1.5 py-0.5 rounded font-medium",
+                    isCurrentMonth ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"
+                  )}>
+                    연차 {schedule.annualLeaveCount}
+                  </span>
+                )}
+                {(schedule.offCount ?? 0) > 0 && (
+                  <span className={cn(
+                    "px-1.5 py-0.5 rounded font-medium",
+                    isCurrentMonth ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-600"
+                  )}>
+                    오프 {schedule.offCount}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
