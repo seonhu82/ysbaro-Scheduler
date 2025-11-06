@@ -228,6 +228,22 @@ export async function GET(request: NextRequest) {
         }))
     }
 
+    // 카테고리 order map 가져오기
+    const categoryOrderMap = await getCategoryOrderMap(clinicId)
+
+    // 부서 order map (진료실: 1, 원장: 2)
+    const departmentOrderMap: Record<string, number> = {
+      '진료실': 1,
+      '원장': 2
+    }
+
+    // order 정보를 추가하는 헬퍼 함수
+    const addOrderInfo = (staff: any) => ({
+      ...staff,
+      departmentOrder: departmentOrderMap[staff.departmentName || ''] ?? 999,
+      categoryOrder: categoryOrderMap[staff.categoryName || ''] ?? 999
+    })
+
     // 응답 데이터 구성
     const responseData = {
       date: dateParam,
@@ -237,15 +253,15 @@ export async function GET(request: NextRequest) {
       })),
       staff: staffAssignments
         .filter(sa => sa.shiftType !== 'OFF') // OFF 제외
-        .map(sa => ({
+        .map(sa => addOrderInfo({
           id: sa.staff.id,
           name: sa.staff.name,
           rank: sa.staff.rank,
           categoryName: sa.staff.categoryName,
           departmentName: sa.staff.departmentName
         })),
-      annualLeave,
-      offDays: allOffDays, // 수동 오프 + 자동 오프
+      annualLeave: annualLeave.map(addOrderInfo),
+      offDays: allOffDays.map(addOrderInfo), // 수동 오프 + 자동 오프
       isNightShift: doctorSchedules.some(ds => ds.hasNightShift),
       isEmpty: false,
       holidayName: holiday?.name || null
