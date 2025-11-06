@@ -168,8 +168,17 @@ export async function GET(request: NextRequest) {
       departmentName: oa.staff.departmentName
     }))
 
-    // 5. 만약 StaffAssignment에 OFF가 없으면 자동 계산
-    let allOffDays = [...manualOffDays, ...offDays]
+    // 5. OFF 통합: manualOffDays와 offDays 중복 제거
+    // LeaveApplication의 OFF와 StaffAssignment의 OFF가 겹칠 수 있으므로 중복 제거
+    const offIdsFromLeave = new Set(manualOffDays.map(m => m.id))
+    const offIdsFromAssignment = new Set(offDays.map(o => o.id))
+
+    // StaffAssignment에 있으면 StaffAssignment 것 사용 (더 최신 데이터)
+    // 없으면 LeaveApplication 것 사용
+    let allOffDays = [
+      ...offDays, // StaffAssignment의 OFF (우선)
+      ...manualOffDays.filter(m => !offIdsFromAssignment.has(m.id)) // LeaveApplication의 OFF (StaffAssignment에 없는 것만)
+    ]
 
     // OFF가 0명인 경우 자동 계산 (배정되지 않은 직원들)
     if (allOffDays.length === 0 && staffAssignments.length > 0) {
