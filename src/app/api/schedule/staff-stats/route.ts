@@ -251,7 +251,96 @@ export async function GET(request: NextRequest) {
     const statsWithFairness = await Promise.all(stats.map(async (stat) => {
       const staff = allTreatmentStaff.find(s => s.id === stat.staffId)
 
-      // calculateStaffFairnessV2를 호출하여 누적 actual 값 포함
+      // 1월부터 현재 월까지 누적 근무일수 계산
+      const cumulativeActual = {
+        total: 0,
+        night: 0,
+        weekend: 0,
+        holiday: 0,
+        holidayAdjacent: 0
+      }
+
+      // 1월부터 현재 월까지 모든 배치 조회
+      const allSchedules = await prisma.schedule.findMany({
+        where: {
+          clinicId,
+          year,
+          month: { gte: 1, lte: month },
+          status: { in: ['CONFIRMED', 'DEPLOYED'] }
+        }
+      })
+
+      for (const sched of allSchedules) {
+        const schedStartDate = new Date(sched.year, sched.month - 1, 1)
+        const schedEndDate = new Date(sched.year, sched.month, 0)
+
+        // 총 근무일
+        const workDays = await prisma.staffAssignment.count({
+          where: {
+            staffId: stat.staffId,
+            scheduleId: sched.id,
+            date: { gte: schedStartDate, lte: schedEndDate },
+            shiftType: { not: 'OFF' }
+          }
+        })
+        cumulativeActual.total += workDays
+
+        // 야간 근무
+        const nightDays = await prisma.staffAssignment.count({
+          where: {
+            staffId: stat.staffId,
+            scheduleId: sched.id,
+            date: { gte: schedStartDate, lte: schedEndDate },
+            shiftType: 'NIGHT'
+          }
+        })
+        cumulativeActual.night += nightDays
+
+        // 주말 근무
+        const assignments = await prisma.staffAssignment.findMany({
+          where: {
+            staffId: stat.staffId,
+            scheduleId: sched.id,
+            date: { gte: schedStartDate, lte: schedEndDate },
+            shiftType: { not: 'OFF' }
+          },
+          select: { date: true }
+        })
+
+        for (const assignment of assignments) {
+          const day = assignment.date.getDay()
+          if (day === 0 || day === 6) cumulativeActual.weekend++
+        }
+
+        // 공휴일 근무
+        const schedHolidays = await prisma.holiday.findMany({
+          where: {
+            clinicId,
+            date: { gte: schedStartDate, lte: schedEndDate }
+          }
+        })
+        const holidayDates = new Set(schedHolidays.map(h => h.date.toISOString().split('T')[0]))
+
+        for (const assignment of assignments) {
+          const dateStr = assignment.date.toISOString().split('T')[0]
+          if (holidayDates.has(dateStr)) cumulativeActual.holiday++
+
+          // 공휴일 인접일 (공휴일 전후일)
+          const prevDay = new Date(assignment.date)
+          prevDay.setDate(prevDay.getDate() - 1)
+          const nextDay = new Date(assignment.date)
+          nextDay.setDate(nextDay.getDate() + 1)
+
+          const prevDayStr = prevDay.toISOString().split('T')[0]
+          const nextDayStr = nextDay.toISOString().split('T')[0]
+
+          if (holidayDates.has(prevDayStr) || holidayDates.has(nextDayStr)) {
+            cumulativeActual.holidayAdjacent++
+          }
+        }
+      }
+
+      // calculateStaffFairnessV2를 호출하여 편차 값 가져오기 (현재 월 기준)
       const fairnessData = await calculateStaffFairnessV2(
         stat.staffId,
         clinicId,
@@ -276,23 +365,23 @@ export async function GET(request: NextRequest) {
         ...stat,
         fairness: {
           total: {
-            actual: fairnessData.dimensions.total.actual,
+            actual: cumulativeActual.total,
             deviation: fairnessData.dimensions.total.deviation
           },
           night: {
-            actual: fairnessData.dimensions.night.actual,
+            actual: cumulativeActual.night,
             deviation: fairnessData.dimensions.night.deviation
           },
           weekend: {
-            actual: fairnessData.dimensions.weekend.actual,
+            actual: cumulativeActual.weekend,
             deviation: fairnessData.dimensions.weekend.deviation
           },
           holiday: {
-            actual: fairnessData.dimensions.holiday.actual,
+            actual: cumulativeActual.holiday,
             deviation: fairnessData.dimensions.holiday.deviation
           },
           holidayAdjacent: {
-            actual: fairnessData.dimensions.holidayAdjacent.actual,
+            actual: cumulativeActual.holidayAdjacent,
             deviation: fairnessData.dimensions.holidayAdjacent.deviation
           },
           overallScore: Math.round(overallScore)
