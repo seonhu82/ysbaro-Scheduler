@@ -261,16 +261,36 @@ export async function GET(request: NextRequest) {
       }
 
       // 1월부터 현재 월까지 모든 배치 조회
+      // 현재 월이 DRAFT면 현재 월도 포함, 아니면 CONFIRMED/DEPLOYED만
       const allSchedules = await prisma.schedule.findMany({
         where: {
           clinicId,
           year,
           month: { gte: 1, lte: month },
-          status: { in: ['CONFIRMED', 'DEPLOYED'] }
+          status: { in: ['DRAFT', 'CONFIRMED', 'DEPLOYED'] }
         }
       })
 
+      // 각 월별로 최신 상태의 스케줄만 사용 (DEPLOYED > CONFIRMED > DRAFT)
+      const schedulesByMonth = new Map<number, typeof allSchedules[0]>()
       for (const sched of allSchedules) {
+        const existing = schedulesByMonth.get(sched.month)
+        if (!existing) {
+          schedulesByMonth.set(sched.month, sched)
+        } else {
+          // 우선순위: DEPLOYED > CONFIRMED > DRAFT
+          const priority = { DEPLOYED: 3, CONFIRMED: 2, DRAFT: 1 }
+          const existingPriority = priority[existing.status as keyof typeof priority] || 0
+          const newPriority = priority[sched.status as keyof typeof priority] || 0
+          if (newPriority > existingPriority) {
+            schedulesByMonth.set(sched.month, sched)
+          }
+        }
+      }
+
+      const schedulesToProcess = Array.from(schedulesByMonth.values())
+
+      for (const sched of schedulesToProcess) {
         const schedStartDate = new Date(sched.year, sched.month - 1, 1)
         const schedEndDate = new Date(sched.year, sched.month, 0)
 
