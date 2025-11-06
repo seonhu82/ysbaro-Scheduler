@@ -419,6 +419,9 @@ model Schedule {
   // 전월 편차 저장 (원장 스케줄 세팅 시 Staff 테이블에서 복사)
   previousMonthFairness Json? // { "staffId1": { "total": 0.5, "night": -0.3, "weekend": 0.2, "holiday": -0.1, "holidayAdjacent": 0 }, ... }
 
+  // 해당 월 배정 완료 후 스냅샷 (실제 근무일 + 편차)
+  monthlyFairness Json? // { "staffId1": { "actual": { "total": 16, "night": 2, ... }, "deviation": { "total": -0.5, ... } }, ... }
+
   // 관계
   doctors          ScheduleDoctor[]
   staffAssignments StaffAssignment[]

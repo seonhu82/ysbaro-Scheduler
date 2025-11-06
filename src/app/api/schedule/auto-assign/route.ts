@@ -28,6 +28,7 @@ import { auth } from '@/lib/auth'
 import { calculateStaffFairnessV2, FairnessCache, FairnessScoreV2 } from '@/lib/services/fairness-calculator-v2'
 import { updateStaffFairnessScores } from '@/lib/services/fairness-score-update-service'
 import { getAutoAssignDepartmentNamesWithFallback } from '@/lib/utils/department-utils'
+import { recalculateFinalFairness, loadCumulativeFairness } from '@/lib/services/fairness-snapshot'
 
 interface WeeklyPattern {
   weekNumber: number
@@ -529,6 +530,9 @@ export async function POST(request: NextRequest) {
 
     console.log(`   ✅ 최종 배치 범위: ${actualDateRange.min.toISOString().split('T')[0]} ~ ${actualDateRange.max.toISOString().split('T')[0]}`)
 
+    // 이전 달들의 누적 근무일 로드
+    const cumulativeActual = month > 1 ? await loadCumulativeFairness(clinicId, year, month) : {}
+
     // 캐시 객체 생성
     const fairnessCache: FairnessCache = {
       schedule,
@@ -536,7 +540,8 @@ export async function POST(request: NextRequest) {
       holidays,
       closedDays,
       fairnessSettings,
-      actualDateRange
+      actualDateRange,
+      cumulativeActual
     }
 
     // 기존 직원 배치 삭제
@@ -1504,15 +1509,12 @@ export async function POST(request: NextRequest) {
 
   } // 메인 try 블록 종료
 
-    // 배치 완료 후 Staff 테이블에 형평성 편차 저장
-    console.log(`\n========== 형평성 편차 저장 시작 ==========`)
+    // 배치 완료 후 최종 형평성 재계산 & 스냅샷 저장
     try {
-      await updateStaffFairnessScores(clinicId, year, month)
-      console.log(`✅ 형평성 편차 저장 완료`)
+      await recalculateFinalFairness(schedule.id, clinicId, year, month)
     } catch (fairnessError) {
-      console.error('❌ 형평성 편차 저장 실패 (무시):', fairnessError)
+      console.error('❌ 형평성 스냅샷 생성 실패 (무시):', fairnessError)
     }
-    console.log(`========== 형평성 편차 저장 완료 ==========\n`)
 
     // 미리보기 데이터 생성
     const preview = {

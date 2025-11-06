@@ -270,14 +270,17 @@ export async function GET(request: NextRequest) {
         holidayAdjacent: 0
       }
 
-      // 1월부터 현재 월까지 모든 배치 조회
-      // 현재 월이 DRAFT면 현재 월도 포함, 아니면 CONFIRMED/DEPLOYED만
+      // 1월부터 현재 월까지 모든 스케줄의 monthlyFairness에서 데이터 로드
       const allSchedules = await prisma.schedule.findMany({
         where: {
           clinicId,
           year,
           month: { gte: 1, lte: month },
           status: { in: ['DRAFT', 'CONFIRMED', 'DEPLOYED'] }
+        },
+        select: {
+          month: true,
+          monthlyFairness: true
         }
       })
 
@@ -288,85 +291,24 @@ export async function GET(request: NextRequest) {
         if (!existing) {
           schedulesByMonth.set(sched.month, sched)
         } else {
-          // 우선순위: DEPLOYED > CONFIRMED > DRAFT
-          const priority = { DEPLOYED: 3, CONFIRMED: 2, DRAFT: 1 }
-          const existingPriority = priority[existing.status as keyof typeof priority] || 0
-          const newPriority = priority[sched.status as keyof typeof priority] || 0
-          if (newPriority > existingPriority) {
-            schedulesByMonth.set(sched.month, sched)
-          }
+          // 우선순위는 이미 status 필터로 처리됨
+          schedulesByMonth.set(sched.month, sched)
         }
       }
 
-      const schedulesToProcess = Array.from(schedulesByMonth.values())
+      // monthlyFairness에서 이 직원의 데이터 추출
+      for (const sched of schedulesByMonth.values()) {
+        if (!sched.monthlyFairness) continue
 
-      for (const sched of schedulesToProcess) {
-        const schedStartDate = new Date(sched.year, sched.month - 1, 1)
-        const schedEndDate = new Date(sched.year, sched.month, 0)
+        const fairness = sched.monthlyFairness as any
+        const staffData = fairness[stat.staffId]
 
-        // 총 근무일
-        const workDays = await prisma.staffAssignment.count({
-          where: {
-            staffId: stat.staffId,
-            scheduleId: sched.id,
-            date: { gte: schedStartDate, lte: schedEndDate },
-            shiftType: { not: 'OFF' }
-          }
-        })
-        cumulativeActual.total += workDays
-
-        // 야간 근무
-        const nightDays = await prisma.staffAssignment.count({
-          where: {
-            staffId: stat.staffId,
-            scheduleId: sched.id,
-            date: { gte: schedStartDate, lte: schedEndDate },
-            shiftType: 'NIGHT'
-          }
-        })
-        cumulativeActual.night += nightDays
-
-        // 주말 근무
-        const assignments = await prisma.staffAssignment.findMany({
-          where: {
-            staffId: stat.staffId,
-            scheduleId: sched.id,
-            date: { gte: schedStartDate, lte: schedEndDate },
-            shiftType: { not: 'OFF' }
-          },
-          select: { date: true }
-        })
-
-        for (const assignment of assignments) {
-          const day = assignment.date.getDay()
-          if (day === 0 || day === 6) cumulativeActual.weekend++
-        }
-
-        // 공휴일 근무
-        const schedHolidays = await prisma.holiday.findMany({
-          where: {
-            clinicId,
-            date: { gte: schedStartDate, lte: schedEndDate }
-          }
-        })
-        const holidayDates = new Set(schedHolidays.map(h => h.date.toISOString().split('T')[0]))
-
-        for (const assignment of assignments) {
-          const dateStr = assignment.date.toISOString().split('T')[0]
-          if (holidayDates.has(dateStr)) cumulativeActual.holiday++
-
-          // 공휴일 인접일 (공휴일 전후일)
-          const prevDay = new Date(assignment.date)
-          prevDay.setDate(prevDay.getDate() - 1)
-          const nextDay = new Date(assignment.date)
-          nextDay.setDate(nextDay.getDate() + 1)
-
-          const prevDayStr = prevDay.toISOString().split('T')[0]
-          const nextDayStr = nextDay.toISOString().split('T')[0]
-
-          if (holidayDates.has(prevDayStr) || holidayDates.has(nextDayStr)) {
-            cumulativeActual.holidayAdjacent++
-          }
+        if (staffData && staffData.actual) {
+          cumulativeActual.total += staffData.actual.total || 0
+          cumulativeActual.night += staffData.actual.night || 0
+          cumulativeActual.weekend += staffData.actual.weekend || 0
+          cumulativeActual.holiday += staffData.actual.holiday || 0
+          cumulativeActual.holidayAdjacent += staffData.actual.holidayAdjacent || 0
         }
       }
 

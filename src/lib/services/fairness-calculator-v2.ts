@@ -66,6 +66,13 @@ export interface FairnessCache {
     holiday: number
     holidayAdjacent: number
   }> // 스냅샷: Schedule.previousMonthFairness
+  cumulativeActual?: Record<string, {
+    total: number
+    night: number
+    weekend: number
+    holiday: number
+    holidayAdjacent: number
+  }> // 1월~이전달 누적 실제 근무일 (fairness-snapshot에서 로드)
 }
 
 /**
@@ -206,7 +213,7 @@ async function calculateTotalDimension(
     }
   })
 
-  // 6. 실제 배치된 총 근무 슬롯 수 계산 (연차 포함)
+  // 6. 이번 달 실제 배치된 총 근무 슬롯 수 계산
   const totalActualAssignments = await prisma.staffAssignment.count({
     where: {
       scheduleId: schedule.id,
@@ -227,7 +234,7 @@ async function calculateTotalDimension(
   const totalActualSlots = totalActualAssignments + totalLeaveCount
 
   // 7. 기준 = 실제 배치된 총 슬롯 수 / 전체 인원
-  // (이렇게 하면 실제로 일한 평균이 기준이 되어 deviation이 0에 가까워짐)
+  // 실시간 배정 중에는 baseline이 변하지만 상대적 우선순위만 필요하므로 OK
   const baseline = totalStaffInDepartment > 0 ? totalActualSlots / totalStaffInDepartment : 0
 
   // 8. 이 직원의 실제 근무일 = 실제 배치 + 연차
