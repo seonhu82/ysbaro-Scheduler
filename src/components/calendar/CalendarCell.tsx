@@ -12,6 +12,7 @@ interface DaySchedule {
   annualLeaveCount?: number // 연차 인원
   offCount?: number // 오프 인원
   leaveCount?: number // 하위 호환용 (연차+오프 합계)
+  holidayName?: string | null // 공휴일명
 }
 
 interface CalendarCellProps {
@@ -102,7 +103,7 @@ export function CalendarCell({
                 "px-1.5 py-0.5 rounded font-medium",
                 isCurrentMonth ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-600"
               )}>
-                오프 {schedule.offCount}
+                {schedule.holidayName ? `공휴일: ${schedule.holidayName}` : `오프 ${schedule.offCount}`}
               </span>
             )}
           </div>

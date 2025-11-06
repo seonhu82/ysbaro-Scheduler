@@ -61,6 +61,7 @@ interface DaySchedule {
   annualLeave?: StaffMember[]
   offDays?: StaffMember[]
   isNightShift: boolean
+  holidayName?: string | null
 }
 
 interface DayDetailPopupProps {
@@ -1186,7 +1187,11 @@ export function DayDetailPopup({
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                       <Users className="w-4 h-4" />
-                      오프 ({schedule?.offDays?.length || 0}명)
+                      {schedule?.holidayName ? (
+                        <>공휴일: {schedule.holidayName} ({schedule?.offDays?.length || 0}명)</>
+                      ) : (
+                        <>오프 ({schedule?.offDays?.length || 0}명)</>
+                      )}
                     </h3>
                   </div>
                   <div className="space-y-2">

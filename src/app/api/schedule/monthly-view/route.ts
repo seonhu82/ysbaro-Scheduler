@@ -73,6 +73,28 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // 공휴일 조회
+    const holidays = await prisma.holiday.findMany({
+      where: {
+        clinicId,
+        date: {
+          gte: new Date(year, month - 1, 1),
+          lte: new Date(year, month, 0)
+        }
+      },
+      select: {
+        date: true,
+        name: true
+      }
+    })
+
+    // 공휴일 맵 생성 (날짜 -> 공휴일명)
+    const holidayMap = new Map<string, string>()
+    holidays.forEach(holiday => {
+      const dateKey = new Date(holiday.date).toISOString().split('T')[0]
+      holidayMap.set(dateKey, holiday.name)
+    })
+
     // 의사 조합 정보 조회
     const combinations = await prisma.doctorCombination.findMany({
       where: { clinicId }
@@ -150,7 +172,8 @@ export async function GET(request: NextRequest) {
         assignedStaff,
         doctorShortNames,
         annualLeaveCount, // 연차 인원
-        offCount // 오프 인원
+        offCount, // 오프 인원
+        holidayName: holidayMap.get(dateKey) || null // 공휴일명
       }
     })
 

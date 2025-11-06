@@ -106,6 +106,17 @@ export async function GET(request: NextRequest) {
     })
     console.log('Found leave applications:', leaveApplications.length)
 
+    // 공휴일 정보 조회
+    const holiday = await prisma.holiday.findFirst({
+      where: {
+        clinicId,
+        date: dateOnly
+      },
+      select: {
+        name: true
+      }
+    })
+
     // 데이터가 없으면 빈 스케줄 반환
     if (doctorSchedules.length === 0 && staffAssignments.length === 0 && leaveApplications.length === 0) {
       return successResponse({
@@ -115,7 +126,8 @@ export async function GET(request: NextRequest) {
         annualLeave: [],
         offDays: [],
         isNightShift: false,
-        isEmpty: true
+        isEmpty: true,
+        holidayName: holiday?.name || null
       })
     }
 
@@ -235,7 +247,8 @@ export async function GET(request: NextRequest) {
       annualLeave,
       offDays: allOffDays, // 수동 오프 + 자동 오프
       isNightShift: doctorSchedules.some(ds => ds.hasNightShift),
-      isEmpty: false
+      isEmpty: false,
+      holidayName: holiday?.name || null
     }
 
     return successResponse(responseData)
