@@ -247,6 +247,16 @@ export async function GET(request: NextRequest) {
       total: s.totalDays
     })))
 
+    // 부서별 누적 근무일수 합계 계산 (baseline 계산용)
+    const departmentCumulatives = new Map<string, {
+      total: number,
+      night: number,
+      weekend: number,
+      holiday: number,
+      holidayAdjacent: number,
+      staffCount: number
+    }>()
+
     // Staff 테이블에서 편차 불러오기 및 overallScore 계산
     const statsWithFairness = await Promise.all(stats.map(async (stat) => {
       const staff = allTreatmentStaff.find(s => s.id === stat.staffId)
@@ -360,13 +370,53 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Staff 테이블에서 누적 편차 가져오기 (자동 배정시 업데이트되는 값)
+      // 부서별 누적 합계에 추가
+      const deptKey = stat.departmentName
+      if (!departmentCumulatives.has(deptKey)) {
+        departmentCumulatives.set(deptKey, {
+          total: 0,
+          night: 0,
+          weekend: 0,
+          holiday: 0,
+          holidayAdjacent: 0,
+          staffCount: 0
+        })
+      }
+      const deptCum = departmentCumulatives.get(deptKey)!
+      deptCum.total += cumulativeActual.total
+      deptCum.night += cumulativeActual.night
+      deptCum.weekend += cumulativeActual.weekend
+      deptCum.holiday += cumulativeActual.holiday
+      deptCum.holidayAdjacent += cumulativeActual.holidayAdjacent
+      deptCum.staffCount += 1
+
+      return {
+        stat,
+        cumulativeActual
+      }
+    }))
+
+    // 부서별 baseline (평균) 계산 후 편차 계산
+    const finalStats = statsWithFairness.map(({ stat, cumulativeActual }) => {
+      const deptKey = stat.departmentName
+      const deptCum = departmentCumulatives.get(deptKey)!
+
+      // baseline = 부서 전체 평균
+      const baseline = {
+        total: deptCum.staffCount > 0 ? deptCum.total / deptCum.staffCount : 0,
+        night: deptCum.staffCount > 0 ? deptCum.night / deptCum.staffCount : 0,
+        weekend: deptCum.staffCount > 0 ? deptCum.weekend / deptCum.staffCount : 0,
+        holiday: deptCum.staffCount > 0 ? deptCum.holiday / deptCum.staffCount : 0,
+        holidayAdjacent: deptCum.staffCount > 0 ? deptCum.holidayAdjacent / deptCum.staffCount : 0
+      }
+
+      // 편차 = baseline - actual
       const deviations = {
-        total: staff?.fairnessScoreTotalDays ?? 0,
-        night: staff?.fairnessScoreNight ?? 0,
-        weekend: staff?.fairnessScoreWeekend ?? 0,
-        holiday: staff?.fairnessScoreHoliday ?? 0,
-        holidayAdjacent: staff?.fairnessScoreHolidayAdjacent ?? 0
+        total: baseline.total - cumulativeActual.total,
+        night: baseline.night - cumulativeActual.night,
+        weekend: baseline.weekend - cumulativeActual.weekend,
+        holiday: baseline.holiday - cumulativeActual.holiday,
+        holidayAdjacent: baseline.holidayAdjacent - cumulativeActual.holidayAdjacent
       }
 
       // overallScore 계산 (가중 평균)
@@ -386,31 +436,31 @@ export async function GET(request: NextRequest) {
         fairness: {
           total: {
             actual: cumulativeActual.total,
-            deviation: deviations.total
+            deviation: Math.round(deviations.total * 10) / 10
           },
           night: {
             actual: cumulativeActual.night,
-            deviation: deviations.night
+            deviation: Math.round(deviations.night * 10) / 10
           },
           weekend: {
             actual: cumulativeActual.weekend,
-            deviation: deviations.weekend
+            deviation: Math.round(deviations.weekend * 10) / 10
           },
           holiday: {
             actual: cumulativeActual.holiday,
-            deviation: deviations.holiday
+            deviation: Math.round(deviations.holiday * 10) / 10
           },
           holidayAdjacent: {
             actual: cumulativeActual.holidayAdjacent,
-            deviation: deviations.holidayAdjacent
+            deviation: Math.round(deviations.holidayAdjacent * 10) / 10
           },
           overallScore: Math.round(overallScore)
         }
       }
-    }))
+    })
 
     return successResponse({
-      stats: statsWithFairness,
+      stats: finalStats,
       enabledDimensions // 활성화된 형평성 차원
     })
 
