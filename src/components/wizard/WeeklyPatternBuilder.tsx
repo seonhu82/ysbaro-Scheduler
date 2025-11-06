@@ -172,9 +172,9 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
       console.log('[WeeklyPatternBuilder] Doctor summary response:', data)
 
       // 3. ClosedDaySettings 조회
-      const closedDaysResponse = await fetch('/api/settings/closed-days')
+      const closedDaysResponse = await fetch('/api/settings/holidays')
       const closedDaysData = await closedDaysResponse.json()
-      const closedDays = closedDaysData.success ? closedDaysData.data : null
+      const closedDays = closedDaysData.success ? closedDaysData.data?.settings : null
 
       console.log('[WeeklyPatternBuilder] Closed days settings:', closedDays)
 
@@ -189,34 +189,45 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
         ? prevDeployedData.weekPatterns
         : {}
 
-      // 현재 월의 실제 배포 데이터가 있는 주차 (StaffAssignment 기준)
-      const currentWeeksWithData: number[] = data.weeksWithData || []
+      // 현재 스케줄의 배포 상태 확인
+      const isCurrentMonthDeployed = data.schedule?.status === 'DEPLOYED'
+
+      // 이전 달에서 현재 달로 걸쳐진 배포 주차 계산
+      let deployedWeeksFromPrevMonth: number[] = []
 
       if (prevDeployedData.success && prevDeployedData.schedule?.deployedEndDate) {
         const deployedEnd = new Date(prevDeployedData.schedule.deployedEndDate)
         const currentMonthStart = new Date(year, month - 1, 1)
         const currentMonthEnd = new Date(year, month, 0)
 
-        console.log(`[WeeklyPatternBuilder] 배포 종료일 체크:`, {
+        console.log(`[WeeklyPatternBuilder] 이전 달 배포 종료일 체크:`, {
           deployedEnd: deployedEnd.toISOString().split('T')[0],
           currentMonth: `${year}-${month}`,
           currentMonthStart: currentMonthStart.toISOString().split('T')[0],
           currentMonthEnd: currentMonthEnd.toISOString().split('T')[0],
-          currentWeeksWithData
+          isCurrentMonthDeployed
         })
 
-        // 배포 종료일이 현재 월에 걸쳐있는지 확인
-        // 예: 10월 스케줄인데 배포가 11/1까지 완료 → 10월 전체가 배포됨
+        // 이전 달 배포가 현재 월로 걸쳐있는 경우에만 영향
         if (deployedEnd >= currentMonthStart) {
           // 배포 종료일이 현재 월 시작일 이후면 현재 월이 영향받음
           deployedDateRange = {
             start: currentMonthStart,
-            end: deployedEnd > currentMonthEnd ? currentMonthEnd : deployedEnd // 현재 월 내에서만
+            end: deployedEnd > currentMonthEnd ? currentMonthEnd : deployedEnd
           }
-          console.log(`[WeeklyPatternBuilder] ✅ Deployed date range detected: ${deployedDateRange.start.toISOString().split('T')[0]} ~ ${deployedDateRange.end.toISOString().split('T')[0]}`)
+
+          // 영향받는 주차 계산
+          weeks.forEach((week, index) => {
+            if (week.start <= deployedEnd) {
+              deployedWeeksFromPrevMonth.push(index + 1)
+            }
+          })
+
+          console.log(`[WeeklyPatternBuilder] ✅ 이전 달 배포가 현재 달로 걸쳐짐: ${deployedDateRange.start.toISOString().split('T')[0]} ~ ${deployedDateRange.end.toISOString().split('T')[0]}`)
+          console.log(`[WeeklyPatternBuilder] 영향받는 주차:`, deployedWeeksFromPrevMonth)
           console.log(`[WeeklyPatternBuilder] Previous month weekPatterns:`, prevWeekPatterns)
         } else {
-          console.log(`[WeeklyPatternBuilder] ⏭️ 배포 종료일이 현재 월 이전임 (영향 없음)`)
+          console.log(`[WeeklyPatternBuilder] ⏭️ 이전 달 배포 종료일이 현재 월 이전임 (영향 없음)`)
         }
       }
 
@@ -228,11 +239,13 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
       const weekAssignmentsWithPattern = weeks.map((week, index) => {
         const weekNumber = index + 1
 
-        // 이 주차에 실제 StaffAssignment 데이터가 있는지 확인
-        const isDeployed = currentWeeksWithData.includes(weekNumber)
+        // 이 주차가 배포되어 수정 불가능한지 확인:
+        // 1. 현재 달이 배포된 상태이거나
+        // 2. 이전 달 배포가 이 주차까지 걸쳐있는 경우
+        const isDeployed = isCurrentMonthDeployed || deployedWeeksFromPrevMonth.includes(weekNumber)
 
         // 배포된 주차라면 이전 달의 패턴 사용, 아니면 현재 달의 패턴 사용
-        const patternId = isDeployed
+        const patternId = deployedWeeksFromPrevMonth.includes(weekNumber)
           ? (prevWeekPatterns[weekNumber] || null)
           : (savedWeekPatterns[weekNumber] || null)
 
@@ -255,8 +268,8 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
 
       if (deployedWeeks > 0) {
         toast({
-          title: '배포된 주차 감지',
-          description: `${deployedWeeks}개 주차가 이미 배포되어 수정할 수 없습니다`,
+          title: '배포된 스케줄 안내',
+          description: `${deployedWeeks}개 주차가 이미 배포되었습니다. 수정 시 재배포가 필요합니다.`,
           variant: 'default'
         })
       } else if (assignedWeeks > 0) {
@@ -292,14 +305,13 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
       const weekNumber = parseInt(over.id.toString().replace('week-', ''))
       const targetWeek = weekAssignments.find(w => w.weekNumber === weekNumber)
 
-      // 이미 배포된 주차인지 확인
+      // 배포된 주차에 대한 경고
       if (targetWeek?.isDeployed) {
         toast({
-          variant: 'destructive',
-          title: '배포된 주차입니다',
-          description: `${weekNumber}주차는 이미 ${targetWeek.deployedFrom} 스케줄에서 배포되어 수정할 수 없습니다`
+          variant: 'default',
+          title: '배포된 주차 수정',
+          description: `${weekNumber}주차는 이미 배포되었습니다. 수정 후 재배포가 필요합니다.`
         })
-        return
       }
 
       const patternId = active.id.toString()
@@ -354,14 +366,13 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
   const clearWeek = (weekNumber: number) => {
     const targetWeek = weekAssignments.find(w => w.weekNumber === weekNumber)
 
-    // 이미 배포된 주차인지 확인
+    // 배포된 주차에 대한 경고
     if (targetWeek?.isDeployed) {
       toast({
-        variant: 'destructive',
-        title: '배포된 주차입니다',
-        description: `${weekNumber}주차는 이미 ${targetWeek.deployedFrom} 스케줄에서 배포되어 수정할 수 없습니다`
+        variant: 'default',
+        title: '배포된 주차 수정',
+        description: `${weekNumber}주차는 이미 배포되었습니다. 수정 후 재배포가 필요합니다.`
       })
-      return
     }
 
     setWeekAssignments(prev =>
@@ -707,19 +718,11 @@ function getWeeksInMonthFiltered(
   const isClosedDay = (date: Date): boolean => {
     const dayOfWeek = date.getDay()
 
-    // regularDays 확인 (일요일 등)
+    // regularDays 확인 (숫자 배열: [0, 6] = 일요일, 토요일)
     if (closedDays.regularDays && Array.isArray(closedDays.regularDays)) {
-      const hasRegularClosed = closedDays.regularDays.some((rule: any) => {
-        if (rule.dayOfWeek === 'SUNDAY' && dayOfWeek === 0) return true
-        if (rule.dayOfWeek === 'MONDAY' && dayOfWeek === 1) return true
-        if (rule.dayOfWeek === 'TUESDAY' && dayOfWeek === 2) return true
-        if (rule.dayOfWeek === 'WEDNESDAY' && dayOfWeek === 3) return true
-        if (rule.dayOfWeek === 'THURSDAY' && dayOfWeek === 4) return true
-        if (rule.dayOfWeek === 'FRIDAY' && dayOfWeek === 5) return true
-        if (rule.dayOfWeek === 'SATURDAY' && dayOfWeek === 6) return true
-        return false
-      })
-      if (hasRegularClosed) return true
+      if (closedDays.regularDays.includes(dayOfWeek)) {
+        return true
+      }
     }
 
     // specificDates 확인
