@@ -111,11 +111,11 @@ export default function WeeklyPatternBuilder({ year, month, onPatternsAssigned }
   const loadPatterns = async () => {
     try {
       const response = await fetch('/api/settings/weekly-patterns')
-      const data = await response.json()
+      const result = await response.json()
 
-      if (Array.isArray(data) && data.length > 0) {
+      if (result.success && Array.isArray(result.data) && result.data.length > 0) {
         // 활성화된 패턴만 필터링
-        const activePatterns = data.filter((pattern: any) => pattern.isActive !== false)
+        const activePatterns = result.data.filter((pattern: any) => pattern.isActive !== false)
         setPatterns(activePatterns)
         return activePatterns
       } else {
