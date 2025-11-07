@@ -258,7 +258,7 @@ export async function recalculateFinalFairness(
     await prisma.staff.update({
       where: { id: snapshot.staffId },
       data: {
-        fairnessScoreTotal: snapshot.deviation.total,
+        fairnessScoreTotalDays: snapshot.deviation.total,
         fairnessScoreNight: snapshot.deviation.night,
         fairnessScoreWeekend: snapshot.deviation.weekend,
         fairnessScoreHoliday: snapshot.deviation.holiday,

@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
 
     // 해당 월의 승인된 휴가 정보 조회 (schedule이 있을 때만)
     let leaves: any[] = []
+    let holidays: any[] = []
     if (schedule) {
       const startDate = new Date(parseInt(year), parseInt(month) - 1, 1)
       const endDate = new Date(parseInt(year), parseInt(month), 0)
@@ -91,6 +92,23 @@ export async function GET(request: NextRequest) {
           status: 'CONFIRMED',
         },
       })
+
+      // 공휴일 조회
+      holidays = await prisma.holiday.findMany({
+        where: {
+          clinicId,
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+        select: {
+          date: true,
+          name: true,
+        },
+      })
+
+      console.log(`📅 /api/schedule: ${year}년 ${month}월 공휴일 ${holidays.length}개 조회`)
     }
 
     return NextResponse.json({
@@ -98,6 +116,7 @@ export async function GET(request: NextRequest) {
       data: schedule ? {
         ...schedule,
         leaves,
+        holidays,
       } : null,
     })
   } catch (error) {

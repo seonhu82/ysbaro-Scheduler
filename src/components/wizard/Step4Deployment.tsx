@@ -49,17 +49,21 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
   const fetchSchedulePreview = async () => {
     try {
       setLoadingSchedule(true)
+      console.log('🔍 fetchSchedulePreview 시작:', wizardState.year, wizardState.month)
 
       // 스케줄 상태 확인
       const statusResponse = await fetch(`/api/schedule/status?year=${wizardState.year}&month=${wizardState.month}`)
       const statusData = await statusResponse.json()
+      console.log('🔍 스케줄 상태:', statusData)
 
       if (statusData.success && statusData.schedule?.status === 'DEPLOYED') {
+        console.log('🔍 DEPLOYED 스케줄 조회')
         setIsDeployed(true)
         setScheduleStatus('DEPLOYED')
         // DEPLOYED 스케줄 조회
         const response = await fetch(`/api/schedule/monthly-view?year=${wizardState.year}&month=${wizardState.month}&status=DEPLOYED`)
         const data = await response.json()
+        console.log('🔍 DEPLOYED monthly-view 응답:', data)
         if (data.success) {
           setScheduleData(data.scheduleData || {})
         }
@@ -78,21 +82,41 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
       }
 
       // 배포 전 스케줄 조회 (CONFIRMED 우선, 없으면 DRAFT)
+      console.log('🔍 CONFIRMED 스케줄 조회 시도')
       let response = await fetch(`/api/schedule/monthly-view?year=${wizardState.year}&month=${wizardState.month}&status=CONFIRMED`)
       let data = await response.json()
+      console.log('🔍 CONFIRMED monthly-view 응답:', data)
       let currentStatus: 'CONFIRMED' | 'DRAFT' = 'CONFIRMED'
 
       // CONFIRMED가 없으면 DRAFT 조회
-      if (!data.success || !data.scheduleData || Object.keys(data.scheduleData).length === 0) {
+      // 현재 월에 해당하는 날짜에 실제 스케줄이 있는지 체크
+      const currentMonthStart = new Date(wizardState.year, wizardState.month - 1, 1)
+      const currentMonthEnd = new Date(wizardState.year, wizardState.month, 0)
+
+      const hasActualSchedule = data.success && data.scheduleData &&
+        Object.entries(data.scheduleData).some(([dateKey, day]: [string, any]) => {
+          const date = new Date(dateKey)
+          return date >= currentMonthStart && date <= currentMonthEnd &&
+                 day.doctorShortNames && day.doctorShortNames.length > 0
+        })
+
+      console.log('🔍 현재 월 스케줄 존재 여부:', hasActualSchedule)
+
+      if (!hasActualSchedule) {
+        console.log('🔍 DRAFT 스케줄 조회 시도 (CONFIRMED에 현재 월 스케줄 없음)')
         response = await fetch(`/api/schedule/monthly-view?year=${wizardState.year}&month=${wizardState.month}&status=DRAFT`)
         data = await response.json()
+        console.log('🔍 DRAFT monthly-view 응답:', data)
         currentStatus = 'DRAFT'
       }
 
       setScheduleStatus(currentStatus)
 
       if (data.success) {
+        console.log('🔍 scheduleData 설정:', data.scheduleData)
         setScheduleData(data.scheduleData || {})
+      } else {
+        console.log('❌ monthly-view API 실패')
       }
 
       // 직원별 근무일수 통계 조회 (CONFIRMED 우선)

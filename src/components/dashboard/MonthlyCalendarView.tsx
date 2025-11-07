@@ -71,8 +71,61 @@ export default function MonthlyCalendarView() {
       const response = await fetch(`/api/schedule/monthly-view?year=${year}&month=${month}`)
       const data = await response.json()
 
-      if (data.success) {
-        setScheduleData(data.data.days)
+      if (data.success && data.scheduleData) {
+        // scheduleData 객체를 DayScheduleData 배열로 변환
+        const days: DayScheduleData[] = []
+        const start = startOfMonth(currentDate)
+        const end = endOfMonth(currentDate)
+        const allDays = eachDayOfInterval({ start, end })
+
+        // API 응답 디버그
+        console.log('📅 API scheduleData keys:', Object.keys(data.scheduleData).length)
+        const holidayDates = Object.keys(data.scheduleData).filter(k => data.scheduleData[k].holidayName)
+        if (holidayDates.length > 0) {
+          console.log('📅 API에서 받은 공휴일:', holidayDates.map(k => `${k}:${data.scheduleData[k].holidayName}`).join(', '))
+        } else {
+          console.log('⚠️ API에서 공휴일 데이터를 받지 못함')
+        }
+
+        allDays.forEach(day => {
+          const dateKey = day.toISOString().split('T')[0]
+          const schedule = data.scheduleData[dateKey]
+
+          if (schedule) {
+            const dayData = {
+              date: day,
+              doctorCombination: schedule.doctorShortNames || [],
+              hasNightShift: schedule.hasNightShift || false,
+              requiredStaff: {}, // 필요하면 나중에 추가
+              leaves: {
+                annual: schedule.annualLeaveCount || 0,
+                off: schedule.offCount || 0
+              },
+              isHoliday: schedule.isHoliday || false,
+              holidayName: schedule.holidayName || undefined,
+              hasSchedule: schedule.doctorShortNames?.length > 0 || false
+            }
+
+            // 공휴일 디버그
+            if (schedule.holidayName) {
+              console.log(`📅 ${dateKey}: holidayName=${schedule.holidayName}`)
+            }
+
+            days.push(dayData)
+          } else {
+            days.push({
+              date: day,
+              doctorCombination: [],
+              hasNightShift: false,
+              requiredStaff: {},
+              leaves: { annual: 0, off: 0 },
+              isHoliday: false,
+              hasSchedule: false
+            })
+          }
+        })
+
+        setScheduleData(days)
       } else {
         toast({
           variant: 'destructive',
@@ -150,7 +203,7 @@ export default function MonthlyCalendarView() {
     return (
       <div
         className={`min-h-[120px] border border-gray-200 p-2 cursor-pointer hover:bg-blue-50 transition-colors ${
-          isToday ? 'bg-blue-100 border-blue-400' : dayData.isHoliday ? 'bg-red-50' : 'bg-white'
+          isToday ? 'bg-blue-100 border-blue-400' : dayData.holidayName ? 'bg-red-50' : 'bg-white'
         }`}
         onClick={() => setSelectedDate(day)}
       >
@@ -158,57 +211,59 @@ export default function MonthlyCalendarView() {
         <div className="flex items-center justify-between mb-2">
           <span
             className={`text-sm font-semibold ${
-              isToday ? 'text-blue-600' : dayData.isHoliday ? 'text-red-600' : 'text-gray-700'
+              isToday ? 'text-blue-600' : dayData.holidayName ? 'text-red-600' : 'text-gray-700'
             }`}
           >
             {format(day, 'd', { locale: ko })}
           </span>
-          {dayData.hasNightShift && (
+          {!dayData.holidayName && dayData.hasNightShift && (
             <Moon className="w-4 h-4 text-indigo-500" title="야간진료" />
           )}
         </div>
 
-        {/* 공휴일 표시 */}
-        {dayData.isHoliday && dayData.holidayName && (
+        {/* 공휴일 표시 - 공휴일일 경우 다른 정보 숨김 */}
+        {dayData.holidayName ? (
           <div className="text-xs text-red-600 font-medium mb-1">{dayData.holidayName}</div>
-        )}
-
-        {/* 원장 조합 */}
-        {dayData.hasSchedule && dayData.doctorCombination.length > 0 && (
-          <div className="text-xs text-gray-600 mb-1 truncate" title={dayData.doctorCombination.join(', ')}>
-            👨‍⚕️ {dayData.doctorCombination.join(', ')}
-          </div>
-        )}
-
-        {/* 필요 인력 */}
-        {dayData.hasSchedule && Object.keys(dayData.requiredStaff).length > 0 && (
-          <div className="text-xs text-gray-500 flex items-center gap-1 mb-1">
-            <Users className="w-3 h-3" />
-            {Object.entries(dayData.requiredStaff)
-              .map(([category, count]) => `${category} ${count}`)
-              .join(', ')}
-          </div>
-        )}
-
-        {/* 연차/오프 신청 수 */}
-        {(dayData.leaves.annual > 0 || dayData.leaves.off > 0) && (
-          <div className="flex gap-2 text-xs mt-1">
-            {dayData.leaves.annual > 0 && (
-              <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
-                연차 {dayData.leaves.annual}
-              </span>
+        ) : (
+          <>
+            {/* 원장 조합 */}
+            {dayData.hasSchedule && dayData.doctorCombination.length > 0 && (
+              <div className="text-xs text-gray-600 mb-1 truncate" title={dayData.doctorCombination.join(', ')}>
+                👨‍⚕️ {dayData.doctorCombination.join(', ')}
+              </div>
             )}
-            {dayData.leaves.off > 0 && (
-              <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                오프 {dayData.leaves.off}
-              </span>
-            )}
-          </div>
-        )}
 
-        {/* 스케줄 미배정 */}
-        {!dayData.hasSchedule && !dayData.isHoliday && (
-          <div className="text-xs text-gray-400 italic">스케줄 미배정</div>
+            {/* 필요 인력 */}
+            {dayData.hasSchedule && Object.keys(dayData.requiredStaff).length > 0 && (
+              <div className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                <Users className="w-3 h-3" />
+                {Object.entries(dayData.requiredStaff)
+                  .map(([category, count]) => `${category} ${count}`)
+                  .join(', ')}
+              </div>
+            )}
+
+            {/* 연차/오프 신청 수 */}
+            {(dayData.leaves.annual > 0 || dayData.leaves.off > 0) && (
+              <div className="flex gap-2 text-xs mt-1">
+                {dayData.leaves.annual > 0 && (
+                  <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                    연차 {dayData.leaves.annual}
+                  </span>
+                )}
+                {dayData.leaves.off > 0 && (
+                  <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                    오프 {dayData.leaves.off}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* 스케줄 미배정 */}
+            {!dayData.hasSchedule && (
+              <div className="text-xs text-gray-400 italic">스케줄 미배정</div>
+            )}
+          </>
         )}
       </div>
     )

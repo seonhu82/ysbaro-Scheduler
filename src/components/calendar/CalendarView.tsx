@@ -23,6 +23,7 @@ interface DaySchedule {
   annualLeaveCount?: number // 연차 인원
   offCount?: number // 오프 인원
   leaveCount?: number // 하위 호환용 (연차+오프 합계)
+  holidayName?: string // 공휴일명
 }
 
 interface CalendarViewProps {
@@ -120,6 +121,16 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
           console.log('Annual leave by date:', annualLeaveByDate)
           console.log('Off count by date:', offCountByDate)
 
+          // 공휴일 맵 생성
+          const holidayMap = new Map<string, string>()
+          if (result.data.holidays && Array.isArray(result.data.holidays)) {
+            result.data.holidays.forEach((holiday: any) => {
+              const dateKey = new Date(holiday.date).toISOString().split('T')[0]
+              holidayMap.set(dateKey, holiday.name)
+            })
+            console.log('📅 공휴일 맵:', Array.from(holidayMap.entries()))
+          }
+
           // 각 날짜에 대해 조합 정보 찾기 (원장이 배치된 날짜만)
           Object.keys(doctorsByDate).forEach(dateKey => {
             const dayDoctors = doctorsByDate[dateKey]
@@ -145,7 +156,24 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
               assignedStaff: assignedCount,
               doctorShortNames,
               annualLeaveCount: annualCount,
-              offCount: Math.max(0, calculatedOffCount) // 음수 방지
+              offCount: Math.max(0, calculatedOffCount), // 음수 방지
+              holidayName: holidayMap.get(dateKey) // 공휴일 정보 추가
+            }
+          })
+
+          // 원장 스케줄이 없는 공휴일도 추가
+          holidayMap.forEach((holidayName, dateKey) => {
+            if (!data[dateKey]) {
+              data[dateKey] = {
+                combinationName: '',
+                hasNightShift: false,
+                requiredStaff: 0,
+                assignedStaff: 0,
+                doctorShortNames: [],
+                annualLeaveCount: 0,
+                offCount: 0,
+                holidayName
+              }
             }
           })
 

@@ -49,7 +49,8 @@ export function CalendarCell({
           className={cn(
             'text-sm font-medium',
             today && 'text-blue-600 font-bold',
-            sunday && !today && 'text-red-600',
+            schedule?.holidayName && 'text-red-600 font-bold', // 공휴일 날짜도 빨간색
+            sunday && !today && !schedule?.holidayName && 'text-red-600',
             !isCurrentMonth && 'text-gray-400'
           )}
         >
@@ -63,11 +64,11 @@ export function CalendarCell({
           !isCurrentMonth && "opacity-60"
         )}>
           {schedule.holidayName ? (
-            // 공휴일일 때는 공휴일명만 표시
+            // 공휴일일 때는 공휴일명만 표시 (빨간색 계열)
             <div className="flex items-center gap-1">
               <span className={cn(
                 "inline-block px-2 py-0.5 text-xs font-medium rounded",
-                isCurrentMonth ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-600"
+                isCurrentMonth ? "bg-red-100 text-red-700" : "bg-gray-200 text-gray-600"
               )}>
                 {schedule.holidayName}
               </span>

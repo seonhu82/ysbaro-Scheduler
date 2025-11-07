@@ -37,7 +37,13 @@ export async function GET(request: NextRequest) {
     // status='DEPLOYED'면 DEPLOYED만 조회
     const scheduleStatus = statusParam || 'DEPLOYED'
 
-    // 스케줄 조회 (새 스키마: doctors, staffAssignments)
+    // 캘린더 그리드 날짜 범위 계산 (이전/다음 달 포함)
+    const monthStart = startOfMonth(new Date(year, month - 1, 1))
+    const monthEnd = endOfMonth(new Date(year, month - 1, 1))
+    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 })
+    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
+
+    // 현재 월 스케줄 조회
     const schedule = await prisma.schedule.findFirst({
       where: {
         clinicId,
@@ -59,6 +65,86 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // 이전/다음 달 DEPLOYED는 현재 월 스케줄이 있을 때만 조회
+    // (CONFIRMED나 DRAFT 스케줄이 없으면 이전 달 데이터도 가져오지 않음)
+    let prevSchedule = null
+    let nextSchedule = null
+
+    if (schedule) {
+      // 이전 달의 DEPLOYED 스케줄 조회 (캘린더 시작 ~ 현재 월 끝까지)
+      // 현재 달에 속하지만 이전 달 스케줄에 포함된 날짜도 가져옴 (예: 2월 1일이 1월 DEPLOYED에 있는 경우)
+      const prevMonth = month === 1 ? 12 : month - 1
+      const prevYear = month === 1 ? year - 1 : year
+      prevSchedule = await prisma.schedule.findFirst({
+      where: {
+        clinicId,
+        year: prevYear,
+        month: prevMonth,
+        status: 'DEPLOYED'
+      },
+      include: {
+        doctors: {
+          include: {
+            doctor: true
+          },
+          where: {
+            date: {
+              gte: calendarStart,
+              lte: monthEnd // 현재 월 끝까지
+            }
+          }
+        },
+        staffAssignments: {
+          include: {
+            staff: true
+          },
+          where: {
+            date: {
+              gte: calendarStart,
+              lte: monthEnd
+            }
+          }
+        }
+      }
+      })
+
+      // 다음 달의 DEPLOYED 스케줄 조회 (캘린더 범위에 포함되는 날짜만)
+      const nextMonth = month === 12 ? 1 : month + 1
+      const nextYear = month === 12 ? year + 1 : year
+      nextSchedule = await prisma.schedule.findFirst({
+        where: {
+          clinicId,
+          year: nextYear,
+          month: nextMonth,
+          status: 'DEPLOYED'
+        },
+        include: {
+          doctors: {
+            include: {
+              doctor: true
+            },
+            where: {
+              date: {
+                gt: monthEnd,
+                lte: calendarEnd
+              }
+            }
+          },
+          staffAssignments: {
+            include: {
+              staff: true
+            },
+            where: {
+              date: {
+                gt: monthEnd,
+                lte: calendarEnd
+              }
+            }
+          }
+        }
+      })
+    }
+
     // 연차/오프 신청 조회
     const leaves = await prisma.leaveApplication.findMany({
       where: {
@@ -73,12 +159,7 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 공휴일 조회 (캘린더 그리드가 표시하는 전체 범위: 이전 달 끝 ~ 다음 달 시작)
-    const monthStart = startOfMonth(new Date(year, month - 1, 1))
-    const monthEnd = endOfMonth(new Date(year, month - 1, 1))
-    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 }) // 일요일 시작
-    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
-
+    // 공휴일 조회 (캘린더 그리드가 표시하는 전체 범위)
     const holidays = await prisma.holiday.findMany({
       where: {
         clinicId,
@@ -115,28 +196,49 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // 모든 스케줄 데이터 병합 (현재 월 우선, 중복 제거)
+    const currentDoctors = schedule?.doctors || []
+    const currentStaff = schedule?.staffAssignments || []
+
+    // 현재 월 스케줄에 이미 있는 날짜는 제외
+    const currentDoctorDates = new Set(currentDoctors.map(d => new Date(d.date).toISOString().split('T')[0]))
+    const currentStaffDates = new Set(currentStaff.map(s => new Date(s.date).toISOString().split('T')[0]))
+
+    const prevDoctors = (prevSchedule?.doctors || []).filter(d =>
+      !currentDoctorDates.has(new Date(d.date).toISOString().split('T')[0])
+    )
+    const prevStaff = (prevSchedule?.staffAssignments || []).filter(s =>
+      !currentStaffDates.has(new Date(s.date).toISOString().split('T')[0])
+    )
+
+    const nextDoctors = (nextSchedule?.doctors || []).filter(d =>
+      !currentDoctorDates.has(new Date(d.date).toISOString().split('T')[0])
+    )
+    const nextStaff = (nextSchedule?.staffAssignments || []).filter(s =>
+      !currentStaffDates.has(new Date(s.date).toISOString().split('T')[0])
+    )
+
+    const allDoctors = [...currentDoctors, ...prevDoctors, ...nextDoctors]
+    const allStaffAssignments = [...currentStaff, ...prevStaff, ...nextStaff]
+
     // 날짜별로 의사 스케줄 그룹화
-    const doctorsByDate = new Map<string, typeof schedule.doctors>()
-    if (schedule) {
-      for (const doctorSchedule of schedule.doctors) {
-        const dateKey = new Date(doctorSchedule.date).toISOString().split('T')[0]
-        if (!doctorsByDate.has(dateKey)) {
-          doctorsByDate.set(dateKey, [])
-        }
-        doctorsByDate.get(dateKey)!.push(doctorSchedule)
+    const doctorsByDate = new Map<string, typeof allDoctors>()
+    for (const doctorSchedule of allDoctors) {
+      const dateKey = new Date(doctorSchedule.date).toISOString().split('T')[0]
+      if (!doctorsByDate.has(dateKey)) {
+        doctorsByDate.set(dateKey, [])
       }
+      doctorsByDate.get(dateKey)!.push(doctorSchedule)
     }
 
     // 날짜별로 직원 배정 그룹화
-    const staffByDate = new Map<string, typeof schedule.staffAssignments>()
-    if (schedule) {
-      for (const staffAssignment of schedule.staffAssignments) {
-        const dateKey = new Date(staffAssignment.date).toISOString().split('T')[0]
-        if (!staffByDate.has(dateKey)) {
-          staffByDate.set(dateKey, [])
-        }
-        staffByDate.get(dateKey)!.push(staffAssignment)
+    const staffByDate = new Map<string, typeof allStaffAssignments>()
+    for (const staffAssignment of allStaffAssignments) {
+      const dateKey = new Date(staffAssignment.date).toISOString().split('T')[0]
+      if (!staffByDate.has(dateKey)) {
+        staffByDate.set(dateKey, [])
       }
+      staffByDate.get(dateKey)!.push(staffAssignment)
     }
 
     // CalendarGrid 형식으로 변환
@@ -179,6 +281,22 @@ export async function GET(request: NextRequest) {
         annualLeaveCount, // 연차 인원
         offCount, // 오프 인원
         holidayName: holidayMap.get(dateKey) || null // 공휴일명
+      }
+    })
+
+    // 의사 스케줄이 없는 공휴일도 추가
+    holidayMap.forEach((holidayName, dateKey) => {
+      if (!scheduleData[dateKey]) {
+        scheduleData[dateKey] = {
+          combinationName: '',
+          hasNightShift: false,
+          requiredStaff: 0,
+          assignedStaff: 0,
+          doctorShortNames: [],
+          annualLeaveCount: 0,
+          offCount: 0,
+          holidayName
+        }
       }
     })
 
