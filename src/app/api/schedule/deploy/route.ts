@@ -105,7 +105,51 @@ export async function POST(request: NextRequest) {
 
     console.log(`   ✅ 스케줄 배포 완료`)
 
-    // 4. Staff 테이블 형평성 점수 업데이트
+    // 4. 해당 월의 연차 사용 업데이트
+    try {
+      console.log(`   📊 연차 사용 현황 업데이트 중...`)
+
+      // 해당 월의 첫날과 마지막 날 계산
+      const startOfMonth = new Date(year, month - 1, 1)
+      const endOfMonth = new Date(year, month, 0)
+
+      // 해당 월의 모든 CONFIRMED 연차 신청 조회
+      const confirmedAnnualLeaves = await prisma.leaveApplication.groupBy({
+        by: ['staffId'],
+        where: {
+          clinicId,
+          leaveType: 'ANNUAL',
+          status: 'CONFIRMED',
+          date: {
+            gte: startOfMonth,
+            lte: endOfMonth
+          }
+        },
+        _count: {
+          id: true
+        }
+      })
+
+      // 각 직원의 사용 연차 업데이트
+      for (const staffLeave of confirmedAnnualLeaves) {
+        await prisma.staff.update({
+          where: { id: staffLeave.staffId },
+          data: {
+            usedAnnualDays: {
+              increment: staffLeave._count.id
+            }
+          }
+        })
+        console.log(`      ✓ ${staffLeave.staffId}: +${staffLeave._count.id}일`)
+      }
+
+      console.log(`   ✅ 연차 사용 업데이트 완료 (${confirmedAnnualLeaves.length}명)`)
+    } catch (error) {
+      console.error('⚠️ 연차 사용 업데이트 실패:', error)
+      // 연차 업데이트 실패해도 배포는 성공으로 처리
+    }
+
+    // 5. Staff 테이블 형평성 점수 업데이트
     try {
       await updateStaffFairnessScores(clinicId, year, month)
     } catch (error) {

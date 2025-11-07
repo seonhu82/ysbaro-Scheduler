@@ -879,16 +879,8 @@ export async function POST(request: NextRequest) {
                 })
               )
 
-              // 날짜 유형별 정렬 + 유연 우선순위 적용
+              // 날짜 유형별 정렬 적용 (형평성 기반)
               const sortedFlexible = sortStaffByDayType(flexibleWithScores, dayType)
-              sortedFlexible.sort((a, b) => {
-                // 1순위: 형평성 (이미 sortStaffByDayType으로 정렬됨)
-                // 2순위: 유연 우선순위
-                if (Math.abs(a.fairness.dimensions.total.deviation - b.fairness.dimensions.total.deviation) < 0.1) {
-                  return a.staff.flexibilityPriority - b.staff.flexibilityPriority
-                }
-                return 0
-              })
 
               const flexibleToAssign = sortedFlexible.slice(0, shortage)
               console.log(`      - 유연 배정: ${flexibleToAssign.map(s => `${s.staff.name}(${s.fairness.dimensions.total.deviation.toFixed(1)})🅱️`).join(', ')}`)

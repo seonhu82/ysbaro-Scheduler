@@ -251,7 +251,6 @@ export async function getFlexibleStaff(
       }
     },
     orderBy: [
-      { flexibilityPriority: 'desc' }, // 우선순위 높은 순
       { categoryName: 'asc' }           // 구분명 오름차순
     ]
   })

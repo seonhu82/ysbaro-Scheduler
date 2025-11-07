@@ -734,6 +734,7 @@ model RuleSettings {
   // 주 영업일 및 근무일 기본값
   weekBusinessDays Int @default(6) // 주 영업일 (1~7)
   defaultWorkDays  Int @default(4) // 신규 직원 기본 근무일수
+  defaultAnnualDays Int @default(15) // 신규 직원 기본 연차 일수
 
   // 배치 구분 설정 (사용자 정의)
   staffCategories String[] @default(["실팀장", "고년차", "중년차", "저년차"])

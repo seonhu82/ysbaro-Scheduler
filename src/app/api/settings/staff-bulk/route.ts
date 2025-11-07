@@ -55,12 +55,19 @@ export async function POST(request: NextRequest) {
       // PIN 생성 (생년월일)
       const pin = s.birthDate
 
+      // 입사일 처리
+      let hireDate = null
+      if (s.hireDate) {
+        hireDate = new Date(s.hireDate)
+      }
+
       await prisma.staff.create({
         data: {
           clinicId,
           name: s.name,
           birthDate,
           birthDateStr: s.birthDate,
+          hireDate,
           departmentName: s.departmentName,
           categoryName: s.categoryName || null,
           position: s.position,
@@ -70,8 +77,8 @@ export async function POST(request: NextRequest) {
           flexibilityPriority: s.flexibilityPriority || 0,
           pin,
           isActive: true,
-          totalAnnualDays: 15, // 기본값
-          usedAnnualDays: 0,
+          totalAnnualDays: s.totalAnnualDays || 15,
+          usedAnnualDays: s.usedAnnualDays || 0,
         }
       })
     }

@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast'
 interface RuleSettings {
   weekBusinessDays: number
   defaultWorkDays: number
+  defaultAnnualDays: number
   maxWeeklyOffs: number
   preventSundayOff: boolean
   preventHolidayOff: boolean
@@ -36,6 +37,7 @@ export default function RulesSettingsPage() {
   const [settings, setSettings] = useState<RuleSettings>({
     weekBusinessDays: 6,
     defaultWorkDays: 4,
+    defaultAnnualDays: 15,
     maxWeeklyOffs: 2,
     preventSundayOff: true,
     preventHolidayOff: true,
@@ -183,6 +185,46 @@ export default function RulesSettingsPage() {
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   신규 직원 등록 시 기본 근무일수
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="defaultAnnualDays">연 기본 연차 일수</Label>
+              <Input
+                id="defaultAnnualDays"
+                type="number"
+                min="0"
+                max="30"
+                value={settings.defaultAnnualDays}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    defaultAnnualDays: parseInt(e.target.value) || 15
+                  })
+                }
+              />
+              <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-xs font-semibold text-blue-900 mb-2">
+                  📚 근로기준법 제60조 (연차 유급휴가)
+                </p>
+                <ul className="text-xs text-blue-800 space-y-1.5">
+                  <li className="flex gap-2">
+                    <span className="font-semibold min-w-[80px]">1년 미만:</span>
+                    <span>1개월 개근 시 1일 (최대 11일)</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-semibold min-w-[80px]">1년 이상:</span>
+                    <span>15일 (기본)</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-semibold min-w-[80px]">3년 이상:</span>
+                    <span>매 2년마다 1일씩 가산 (최대 25일)</span>
+                  </li>
+                </ul>
+                <p className="text-xs text-blue-700 mt-2 pt-2 border-t border-blue-200">
+                  ⚠️ 위 설정값은 신규 직원 등록 시 입사일이 없는 경우에만 사용됩니다.
+                  입사일을 입력하면 근속연수에 따라 자동으로 법정 연차가 계산됩니다.
                 </p>
               </div>
             </div>
