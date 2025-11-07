@@ -36,8 +36,6 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [scheduleData, setScheduleData] = useState<Record<string, DaySchedule>>({})
   const [loading, setLoading] = useState(false)
-  const [combinations, setCombinations] = useState<any[]>([])
-  const [totalActiveStaff, setTotalActiveStaff] = useState(0)
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth() + 1
@@ -47,138 +45,16 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
     const fetchScheduleData = async () => {
       setLoading(true)
       try {
-        // 원장 조합 목록 조회
-        const combResponse = await fetch('/api/settings/combinations', { cache: 'no-store' })
-        const combResult = await combResponse.json()
-        if (combResult.success && Array.isArray(combResult.data)) {
-          setCombinations(combResult.data)
-        }
-
-        // 전체 활성 직원 수 조회 (API가 자동 배치 부서 직원만 반환)
-        const staffResponse = await fetch('/api/staff', { cache: 'no-store' })
-        const staffResult = await staffResponse.json()
-        if (staffResult.success && Array.isArray(staffResult.data)) {
-          const activeStaff = staffResult.data.filter((s: any) => s.isActive)
-          setTotalActiveStaff(activeStaff.length)
-        }
-
-        // 스케줄 조회
-        const response = await fetch(`/api/schedule?year=${year}&month=${month}`, { cache: 'no-store' })
+        // monthly-view API 사용 (이미 offCount를 정확하게 계산함)
+        const response = await fetch(`/api/schedule/monthly-view?year=${year}&month=${month}`, { cache: 'no-store' })
         const result = await response.json()
 
-        console.log('Schedule API response:', result)
+        console.log('Monthly-view API response:', result)
 
-        if (result.success && result.data) {
-          const data: Record<string, DaySchedule> = {}
-          console.log('result.data.doctors:', result.data.doctors)
-
-          // 날짜별로 원장 정보 그룹화
-          const doctorsByDate: Record<string, any[]> = {}
-          if (result.data.doctors && Array.isArray(result.data.doctors)) {
-            result.data.doctors.forEach((item: any) => {
-              const dateKey = new Date(item.date).toISOString().split('T')[0]
-              if (!doctorsByDate[dateKey]) {
-                doctorsByDate[dateKey] = []
-              }
-              doctorsByDate[dateKey].push({
-                shortName: item.doctor.shortName,
-                hasNightShift: item.hasNightShift
-              })
-            })
-          }
-
-          // 날짜별로 직원 수 카운트 및 오프(쉬는 날) 카운트
-          const staffCountByDate: Record<string, number> = {}
-          const scheduledOffByDate: Record<string, number> = {}
-          if (result.data.staffAssignments && Array.isArray(result.data.staffAssignments)) {
-            result.data.staffAssignments.forEach((item: any) => {
-              const dateKey = new Date(item.date).toISOString().split('T')[0]
-              // 근무 인원만 카운트 (DAY, NIGHT)
-              if (item.shiftType === 'DAY' || item.shiftType === 'NIGHT') {
-                staffCountByDate[dateKey] = (staffCountByDate[dateKey] || 0) + 1
-              }
-              // OFF 타입 카운트 (자동 배정된 쉬는 날)
-              if (item.shiftType === 'OFF') {
-                scheduledOffByDate[dateKey] = (scheduledOffByDate[dateKey] || 0) + 1
-              }
-            })
-          }
-          console.log('Scheduled OFF by date:', scheduledOffByDate)
-
-          // 휴가 정보 처리 (연차/오프 분리)
-          const annualLeaveByDate: Record<string, number> = {}
-          const offCountByDate: Record<string, number> = {}
-          if (result.data.leaves && Array.isArray(result.data.leaves)) {
-            result.data.leaves.forEach((leave: any) => {
-              const dateKey = new Date(leave.date).toISOString().split('T')[0]
-              if (leave.leaveType === 'ANNUAL') {
-                annualLeaveByDate[dateKey] = (annualLeaveByDate[dateKey] || 0) + 1
-              } else if (leave.leaveType === 'OFF') {
-                offCountByDate[dateKey] = (offCountByDate[dateKey] || 0) + 1
-              }
-            })
-          }
-          console.log('Annual leave by date:', annualLeaveByDate)
-          console.log('Off count by date:', offCountByDate)
-
-          // 공휴일 맵 생성
-          const holidayMap = new Map<string, string>()
-          if (result.data.holidays && Array.isArray(result.data.holidays)) {
-            result.data.holidays.forEach((holiday: any) => {
-              const dateKey = new Date(holiday.date).toISOString().split('T')[0]
-              holidayMap.set(dateKey, holiday.name)
-            })
-            console.log('📅 공휴일 맵:', Array.from(holidayMap.entries()))
-          }
-
-          // 각 날짜에 대해 조합 정보 찾기 (원장이 배치된 날짜만)
-          Object.keys(doctorsByDate).forEach(dateKey => {
-            const dayDoctors = doctorsByDate[dateKey]
-            const doctorShortNames = dayDoctors.map(d => d.shortName).sort()
-            const hasNightShift = dayDoctors.some(d => d.hasNightShift)
-
-            // 조합 찾기
-            const combination = combResult.data?.find((c: any) => {
-              const combDoctors = (c.doctors as string[]).sort().join(',')
-              const dayDoctorsStr = doctorShortNames.join(',')
-              return combDoctors === dayDoctorsStr && c.hasNightShift === hasNightShift
-            })
-
-            // 오프 인원 계산 = 전체 직원 - 배치된 직원 - 연차 직원
-            const assignedCount = staffCountByDate[dateKey] || 0
-            const annualCount = annualLeaveByDate[dateKey] || 0
-            const calculatedOffCount = totalActiveStaff - assignedCount - annualCount
-
-            data[dateKey] = {
-              combinationName: combination?.name || doctorShortNames.join(', '),
-              hasNightShift,
-              requiredStaff: combination?.requiredStaff || 0,
-              assignedStaff: assignedCount,
-              doctorShortNames,
-              annualLeaveCount: annualCount,
-              offCount: Math.max(0, calculatedOffCount), // 음수 방지
-              holidayName: holidayMap.get(dateKey) // 공휴일 정보 추가
-            }
-          })
-
-          // 원장 스케줄이 없는 공휴일도 추가
-          holidayMap.forEach((holidayName, dateKey) => {
-            if (!data[dateKey]) {
-              data[dateKey] = {
-                combinationName: '',
-                hasNightShift: false,
-                requiredStaff: 0,
-                assignedStaff: 0,
-                doctorShortNames: [],
-                annualLeaveCount: 0,
-                offCount: 0,
-                holidayName
-              }
-            }
-          })
-
-          console.log('Final calendar data:', data)
-          setScheduleData(data)
+        if (result.success && result.scheduleData) {
+          // monthly-view API는 이미 완전히 계산된 scheduleData를 반환함
+          console.log('Final calendar data:', result.scheduleData)
+          setScheduleData(result.scheduleData)
         }
       } catch (error) {
         console.error('Failed to fetch schedule:', error)
