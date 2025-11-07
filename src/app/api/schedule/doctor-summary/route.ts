@@ -145,7 +145,28 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, any>)
 
-    // 일별 슬롯 정보 (원장 조합별로 그룹화, 모든 날짜 포함)
+    // 원장 스케줄이 있는 날짜들이 속한 모든 주(일~토)를 수집
+    const weekRanges = new Set<string>() // "YYYY-MM-DD~YYYY-MM-DD" 형태로 저장
+
+    doctorSchedules.forEach(ds => {
+      const date = new Date(ds.date)
+      const dayOfWeek = date.getDay()
+
+      // 해당 날짜가 속한 주의 일요일 찾기
+      const sunday = new Date(date)
+      sunday.setDate(date.getDate() - dayOfWeek)
+
+      // 해당 주의 토요일
+      const saturday = new Date(sunday)
+      saturday.setDate(sunday.getDate() + 6)
+
+      const weekKey = `${sunday.toISOString().split('T')[0]}~${saturday.toISOString().split('T')[0]}`
+      weekRanges.add(weekKey)
+    })
+
+    console.log('[doctor-summary] Week ranges:', Array.from(weekRanges))
+
+    // 일별 슬롯 정보 (원장 조합별로 그룹화)
     const dayOfWeekMap = ['일', '월', '화', '수', '목', '금', '토']
     const slotsByDate = doctorSchedules.reduce((acc, ds) => {
       const dayOfWeek = ds.date.getDay()
@@ -168,6 +189,36 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, any>)
 
+    // 각 주의 모든 날짜(일~토)를 슬롯 목록에 추가
+    const allDatesInWeeks: Record<string, any> = {}
+
+    weekRanges.forEach(weekKey => {
+      const [sundayStr, saturdayStr] = weekKey.split('~')
+      const sunday = new Date(sundayStr)
+
+      for (let i = 0; i < 7; i++) {
+        const currentDate = new Date(sunday)
+        currentDate.setDate(sunday.getDate() + i)
+        const dateStr = currentDate.toISOString().split('T')[0]
+        const dayOfWeek = currentDate.getDay()
+
+        // 이미 원장 스케줄이 있는 날짜는 그대로 사용
+        if (slotsByDate[dateStr]) {
+          allDatesInWeeks[dateStr] = slotsByDate[dateStr]
+        } else {
+          // 원장 스케줄이 없는 날짜는 빈 슬롯으로 추가
+          allDatesInWeeks[dateStr] = {
+            date: dateStr,
+            dayOfWeek: dayOfWeekMap[dayOfWeek],
+            doctors: [],
+            doctorShortNames: [],
+            hasNightShift: false,
+            isClosed: true // 휴무일 표시
+          }
+        }
+      }
+    })
+
     // 자동 배치 부서 직원 총원 (categoryName이 있는 직원만) - 한 번만 조회
     const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
     const totalTreatmentStaff = await prisma.staff.count({
@@ -187,7 +238,20 @@ export async function GET(request: NextRequest) {
     })
 
     // 각 슬롯에 대해 DoctorCombination에서 requiredStaff 조회
-    const slots = Object.values(slotsByDate).map((slot: any) => {
+    const slots = Object.values(allDatesInWeeks).map((slot: any) => {
+      // 휴무일인 경우
+      if (slot.isClosed) {
+        return {
+          date: slot.date,
+          dayOfWeek: slot.dayOfWeek,
+          doctors: [],
+          hasNightShift: false,
+          requiredStaff: 0,
+          availableSlots: 0,
+          isClosed: true
+        }
+      }
+
       const doctorShortNames = slot.doctorShortNames.sort().join(',')
 
       // 원장 조합 찾기 (배열 순서 무시하고 정렬해서 비교)
@@ -208,6 +272,9 @@ export async function GET(request: NextRequest) {
         availableSlots
       }
     })
+
+    // 날짜순으로 정렬
+    slots.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
     return NextResponse.json({
       success: true,

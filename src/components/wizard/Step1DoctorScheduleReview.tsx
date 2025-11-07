@@ -32,6 +32,7 @@ interface SlotSummary {
   hasNightShift: boolean
   requiredStaff: number
   availableSlots: number
+  isClosed?: boolean
 }
 
 interface WeeklyPattern {
@@ -163,24 +164,9 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
     onNext()
   }
 
-  // 영업일 수 계산 (7일 - 정기 휴무일 수)
-  const workingDaysCount = 7 - regularClosedDays.length
-
-  // 그리드 컬럼 클래스 동적 생성
+  // 그리드 컬럼 클래스 - 주 단위(일~토) 7칸 고정
   const getGridColsClass = () => {
-    // 모바일: 2칸 고정
-    // 태블릿(md): 영업일이 5일 이하면 그대로, 6일 이상이면 4칸
-    // 데스크탑(lg): 영업일이 5일이면 5칸, 6일이면 6칸, 7일이면 7칸
-    if (workingDaysCount === 7) {
-      return 'grid-cols-2 md:grid-cols-4 lg:grid-cols-7'
-    } else if (workingDaysCount === 6) {
-      return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'
-    } else if (workingDaysCount === 5) {
-      return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5'
-    } else {
-      // 4일 이하
-      return `grid-cols-2 md:grid-cols-3 lg:grid-cols-${workingDaysCount}`
-    }
+    return 'grid-cols-2 md:grid-cols-4 lg:grid-cols-7'
   }
 
   return (
@@ -316,20 +302,12 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
 
                 {/* 슬롯 현황 - 달력 형태 */}
                 <div>
-                  <h4 className="text-sm font-semibold mb-3">일별 슬롯 현황</h4>
+                  <h4 className="text-sm font-semibold mb-3">일별 슬롯 현황 (주 단위)</h4>
                   <div className={`grid ${getGridColsClass()} gap-3`}>
-                    {slots
-                      .filter((slot) => {
-                        // 정기 휴무일 필터링
-                        const dayOfWeekMap: Record<string, number> = {
-                          '일': 0, '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6
-                        }
-                        const dayNum = dayOfWeekMap[slot.dayOfWeek]
-                        return !regularClosedDays.includes(dayNum)
-                      })
-                      .map((slot) => {
+                    {slots.map((slot) => {
                         const dateObj = new Date(slot.date)
                         const day = dateObj.getDate()
+                        const isClosed = (slot as any).isClosed || false
                         const isLowSlots = slot.availableSlots < 3
 
                         // 이전/다음 달 여부 확인
@@ -340,62 +318,85 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                         return (
                           <div
                             key={slot.date}
-                            className={`border rounded-lg p-3 transition-all hover:shadow-md ${
-                              isOtherMonth
+                            className={`border rounded-lg p-3 transition-all ${
+                              isClosed
+                                ? 'bg-gray-100 border-gray-300 opacity-60'
+                                : isOtherMonth
                                 ? 'bg-blue-50 border-blue-300 opacity-75'
                                 : isLowSlots
-                                ? 'bg-amber-50 border-amber-200'
-                                : 'bg-gray-50 border-gray-200'
+                                ? 'bg-amber-50 border-amber-200 hover:shadow-md'
+                                : 'bg-gray-50 border-gray-200 hover:shadow-md'
                             }`}
                           >
                             {/* 날짜 헤더 */}
                             <div className="flex items-center justify-between mb-2">
                               <Badge
                                 variant="outline"
-                                className={`text-xs ${isOtherMonth ? 'bg-blue-100 text-blue-700 border-blue-300' : ''}`}
+                                className={`text-xs ${
+                                  isClosed
+                                    ? 'bg-gray-200 text-gray-600 border-gray-400'
+                                    : isOtherMonth
+                                    ? 'bg-blue-100 text-blue-700 border-blue-300'
+                                    : ''
+                                }`}
                               >
                                 {slot.dayOfWeek}
                               </Badge>
                               <div className="flex flex-col items-end">
-                                <span className={`font-bold text-lg ${isOtherMonth ? 'text-blue-700' : ''}`}>
-                                  {day}
-                                </span>
-                                {isOtherMonth && (
-                                  <span className="text-xs text-blue-600">
-                                    {isPrevMonth ? '이전달' : '다음달'}
+                                {isOtherMonth ? (
+                                  <>
+                                    <span className={`font-bold text-sm ${isClosed ? 'text-gray-500' : 'text-blue-700'}`}>
+                                      {dateObj.getMonth() + 1}월 {day}일
+                                    </span>
+                                    <span className={`text-xs ${isClosed ? 'text-gray-500' : 'text-blue-600'}`}>
+                                      {isPrevMonth ? '이전달' : '다음달'}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className={`font-bold text-lg ${isClosed ? 'text-gray-500' : ''}`}>
+                                    {day}
                                   </span>
                                 )}
                               </div>
                             </div>
 
-                            {/* 원장 정보 */}
-                            <div className="text-xs text-gray-600 mb-2 line-clamp-2">
-                              {slot.doctors.join(', ')}
-                            </div>
-
-                            {/* 야간 뱃지 (공간 고정) */}
-                            <div className="h-6 mb-2">
-                              {slot.hasNightShift && (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-blue-50 text-blue-700 border-blue-200 text-xs"
-                                >
-                                  야간
-                                </Badge>
-                              )}
-                            </div>
-
-                            {/* 슬롯 정보 */}
-                            <div className="flex items-center justify-between mt-2 pt-2 border-t">
-                              <div className="text-xs text-gray-500">
-                                필요 {slot.requiredStaff}
+                            {/* 휴무일 표시 또는 원장 정보 */}
+                            {isClosed ? (
+                              <div className="text-center py-6">
+                                <span className="text-sm font-medium text-gray-500">휴무</span>
                               </div>
-                              <div className={`text-xs font-semibold ${
-                                isOtherMonth ? 'text-blue-600' : isLowSlots ? 'text-amber-700' : 'text-green-600'
-                              }`}>
-                                슬롯 {slot.availableSlots}
-                              </div>
-                            </div>
+                            ) : (
+                              <>
+                                {/* 원장 정보 */}
+                                <div className="text-xs text-gray-600 mb-2 line-clamp-2">
+                                  {slot.doctors.join(', ')}
+                                </div>
+
+                                {/* 야간 뱃지 (공간 고정) */}
+                                <div className="h-6 mb-2">
+                                  {slot.hasNightShift && (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-blue-50 text-blue-700 border-blue-200 text-xs"
+                                    >
+                                      야간
+                                    </Badge>
+                                  )}
+                                </div>
+
+                                {/* 슬롯 정보 */}
+                                <div className="flex items-center justify-between mt-2 pt-2 border-t">
+                                  <div className="text-xs text-gray-500">
+                                    필요 {slot.requiredStaff}
+                                  </div>
+                                  <div className={`text-xs font-semibold ${
+                                    isOtherMonth ? 'text-blue-600' : isLowSlots ? 'text-amber-700' : 'text-green-600'
+                                  }`}>
+                                    슬롯 {slot.availableSlots}
+                                  </div>
+                                </div>
+                              </>
+                            )}
                           </div>
                         )
                       })}
@@ -406,7 +407,7 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                     <div className="mt-4 text-xs text-gray-500 flex items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
                       <span>
-                        정기 휴무일({regularClosedDays.map(d => ['일', '월', '화', '수', '목', '금', '토'][d]).join(', ')})은 표시하지 않습니다
+                        정기 휴무일({regularClosedDays.map(d => ['일', '월', '화', '수', '목', '금', '토'][d]).join(', ')})은 회색으로 표시됩니다
                       </span>
                     </div>
                   )}

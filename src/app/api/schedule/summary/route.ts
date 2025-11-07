@@ -12,12 +12,15 @@ export async function GET(request: NextRequest) {
   try {
     const session = await auth()
     if (!session?.user?.clinicId) {
+      console.log('❌ Summary API: Unauthorized')
       return unauthorizedResponse()
     }
 
     const { searchParams } = new URL(request.url)
     const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString())
     const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString())
+
+    console.log(`🔍 Summary API called: ${year}년 ${month}월, clinicId: ${session.user.clinicId}`)
 
     // 스케줄 조회
     const schedule = await prisma.schedule.findFirst({
@@ -236,6 +239,85 @@ export async function GET(request: NextRequest) {
         : '0.0'
     }))
 
+    // 주차별 요약 계산
+    const weekSummaries: {
+      weekNumber: number
+      startDate: string
+      endDate: string
+      totalSlots: number
+      assignedSlots: number
+      issues: number
+    }[] = []
+
+    console.log(`📊 Summary API - Year: ${year}, Month: ${month}`)
+    console.log(`  Total assignments: ${totalAssignments}`)
+    console.log(`  Staff count: ${staffWorkDays.size}`)
+    console.log(`  Doctor count: ${schedule.doctors.length}`)
+
+    // 해당 월의 모든 주차 계산
+    const weeks = new Map<number, { dates: Date[] }>()
+    for (let day = 1; day <= totalDays; day++) {
+      const date = new Date(year, month - 1, day)
+      const weekNumber = Math.ceil(day / 7)
+
+      if (!weeks.has(weekNumber)) {
+        weeks.set(weekNumber, { dates: [] })
+      }
+      weeks.get(weekNumber)!.dates.push(date)
+    }
+
+    console.log(`  Total weeks: ${weeks.size}`)
+
+    // 각 주차별 통계 계산
+    weeks.forEach((week, weekNumber) => {
+      const dates = week.dates
+      const startDate = dates[0]
+      const endDate = dates[dates.length - 1]
+      const startDateStr = `${startDate.getMonth() + 1}월 ${startDate.getDate()}일`
+      const endDateStr = `${endDate.getMonth() + 1}월 ${endDate.getDate()}일`
+
+      // 해당 주의 모든 슬롯 계산
+      let totalSlots = 0
+      let assignedSlots = 0
+
+      dates.forEach(date => {
+        const dateStr = date.toISOString().split('T')[0]
+        const dayAssignments = schedule.staffAssignments.filter(a => {
+          const assignmentDate = new Date(a.date).toISOString().split('T')[0]
+          return assignmentDate === dateStr
+        })
+
+        // 해당 날짜에 원장 스케줄이 있는지 확인
+        const hasDoctorSchedule = schedule.doctors.some(d => {
+          const doctorDate = new Date(d.date).toISOString().split('T')[0]
+          return doctorDate === dateStr
+        })
+
+        if (hasDoctorSchedule) {
+          // 원장 스케줄이 있는 날만 슬롯 카운트
+          const workingStaff = dayAssignments.filter(a => a.shiftType === 'DAY' || a.shiftType === 'NIGHT')
+          assignedSlots += workingStaff.length
+
+          // 실제 필요 인원은 배치된 인원과 같음 (자동 배치가 필요 인원만큼 배치했으므로)
+          // 또는 해당 날짜에 배치된 직원 수를 그대로 사용
+          totalSlots += workingStaff.length
+        }
+      })
+
+      weekSummaries.push({
+        weekNumber,
+        startDate: startDateStr,
+        endDate: endDateStr,
+        totalSlots,
+        assignedSlots,
+        issues: 0 // TODO: 실제 문제 감지 로직 추가
+      })
+
+      console.log(`  Week ${weekNumber}: ${startDateStr} ~ ${endDateStr}, Slots: ${assignedSlots}/${totalSlots}`)
+    })
+
+    console.log(`✅ Returning ${weekSummaries.length} week summaries`)
+
     return successResponse({
       period: {
         year,
@@ -258,6 +340,7 @@ export async function GET(request: NextRequest) {
         pendingLeaveCount,
         onHoldLeaveCount
       },
+      data: weekSummaries, // 주차별 요약 추가
       staffStats,
       dailyStats,
       byDepartment

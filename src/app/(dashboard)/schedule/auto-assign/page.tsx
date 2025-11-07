@@ -53,6 +53,46 @@ export default function AutoAssignPage() {
     setWeeklyPatterns(assignments)
   }
 
+  const handleDelete = async () => {
+    if (!confirm(`정말 ${year}년 ${month}월 원장 스케줄을 삭제하시겠습니까?\n\n삭제된 스케줄은 복구할 수 없습니다.`)) {
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const response = await fetch('/api/schedule/doctor-schedule', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year, month })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast({
+          title: '원장 스케줄 삭제 완료',
+          description: `${year}년 ${month}월 원장 스케줄이 삭제되었습니다`
+        })
+        setResult(null)
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '삭제 실패',
+          description: data.error || '원장 스케줄 삭제에 실패했습니다'
+        })
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: '오류',
+        description: '원장 스케줄 삭제 중 오류가 발생했습니다'
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleApply = async () => {
     // 주간 패턴이 할당되었는지 확인
     if (weeklyPatterns.length === 0) {
@@ -194,24 +234,38 @@ export default function AutoAssignPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         <Card className="lg:col-span-2">
           <CardContent className="p-6">
-            <Button
-              onClick={handleApply}
-              disabled={loading || weeklyPatterns.length === 0}
-              className="w-full"
-              size="lg"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  배치 중...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
-                  원장 스케줄 배치
-                </>
+            <div className="flex gap-3">
+              <Button
+                onClick={handleApply}
+                disabled={loading || weeklyPatterns.length === 0}
+                className="flex-1"
+                size="lg"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    배치 중...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    원장 스케줄 배치
+                  </>
+                )}
+              </Button>
+
+              {result?.success && (
+                <Button
+                  onClick={handleDelete}
+                  disabled={loading}
+                  variant="destructive"
+                  size="lg"
+                  className="px-6"
+                >
+                  삭제
+                </Button>
               )}
-            </Button>
+            </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
               <h4 className="font-semibold text-sm text-blue-900 mb-2">

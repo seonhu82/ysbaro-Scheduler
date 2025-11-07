@@ -315,7 +315,6 @@ function CategoryList({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
-  const [editPriority, setEditPriority] = useState(0)
   const [editDeptId, setEditDeptId] = useState<string | null>(null)
 
   const handleAdd = async () => {
@@ -325,7 +324,6 @@ function CategoryList({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: '새 구분',
-          priority: 0,
           departmentId: null,
         }),
       })
@@ -344,7 +342,6 @@ function CategoryList({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editName,
-          priority: editPriority,
           departmentId: editDeptId,
         }),
       })
@@ -376,7 +373,7 @@ function CategoryList({
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-600">
-          직원 구분을 관리합니다. 우선순위가 낮을수록 먼저 배치됩니다.
+          직원 구분을 관리합니다.
         </p>
         <button
           onClick={handleAdd}
@@ -400,13 +397,6 @@ function CategoryList({
                   onChange={(e) => setEditName(e.target.value)}
                   className="flex-1 px-3 py-2 border border-gray-300 rounded"
                   placeholder="구분명"
-                />
-                <input
-                  type="number"
-                  value={editPriority}
-                  onChange={(e) => setEditPriority(parseInt(e.target.value))}
-                  className="w-24 px-3 py-2 border border-gray-300 rounded"
-                  placeholder="우선순위"
                 />
                 <select
                   value={editDeptId || ''}
@@ -438,14 +428,13 @@ function CategoryList({
                 <div className="flex-1">
                   <div className="font-medium">{cat.name}</div>
                   <div className="text-xs text-gray-500">
-                    우선순위: {cat.priority} • 부서: {cat.department?.name || '없음'}
+                    부서: {cat.department?.name || '없음'}
                   </div>
                 </div>
                 <button
                   onClick={() => {
                     setEditingId(cat.id)
                     setEditName(cat.name)
-                    setEditPriority(cat.priority)
                     setEditDeptId(cat.departmentId)
                   }}
                   className="px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded hover:bg-blue-200"

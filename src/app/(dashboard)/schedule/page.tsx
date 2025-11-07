@@ -34,13 +34,25 @@ export default function ScheduleManagementPage() {
         setLoading(true)
 
         // 주차 요약 조회
+        console.log(`🔍 Fetching summary for ${year}년 ${month}월`)
         const summaryResponse = await fetch(`/api/schedule/summary?year=${year}&month=${month}`)
         const summaryResult = await summaryResponse.json()
 
-        if (summaryResult.success && Array.isArray(summaryResult.data)) {
-          setWeekSummaries(summaryResult.data)
-        } else {
+        console.log('📦 Summary Response:', summaryResult)
+
+        if (!summaryResult.success) {
+          console.error('❌ API Error:', summaryResult.error)
           setWeekSummaries([])
+        } else {
+          // successResponse가 data를 감싸므로 data.data로 접근
+          const weekData = summaryResult.data?.data
+          if (Array.isArray(weekData)) {
+            console.log('✅ Setting week summaries:', weekData)
+            setWeekSummaries(weekData)
+          } else {
+            console.log('❌ No valid week data, setting empty array')
+            setWeekSummaries([])
+          }
         }
 
         // 전체 직원 수 조회
@@ -181,8 +193,9 @@ export default function ScheduleManagementPage() {
           {loading ? (
             <div className="text-center py-8 text-gray-500">로딩 중...</div>
           ) : !weekSummaries || weekSummaries.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              이번 달 스케줄이 없습니다
+            <div className="text-center py-8">
+              <p className="text-gray-500 mb-2">{year}년 {month}월 스케줄이 없습니다</p>
+              <p className="text-sm text-gray-400">스케줄을 생성하거나 다른 월을 선택해주세요</p>
             </div>
           ) : (
             <div className="space-y-3">
