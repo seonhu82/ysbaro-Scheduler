@@ -417,21 +417,20 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // 배포된 날짜 범위 (현재 월에 걸친 부분)
+    // 배포된 날짜 범위 (이전 달 배포 전체 범위)
     let deployedDateRange: { start: Date; end: Date } | null = null
-    if (previousDeployedSchedule?.deployedEndDate) {
+    if (previousDeployedSchedule?.deployedStartDate && previousDeployedSchedule?.deployedEndDate) {
+      const deployedStart = new Date(previousDeployedSchedule.deployedStartDate)
       const deployedEnd = new Date(previousDeployedSchedule.deployedEndDate)
-      const currentMonthStart = new Date(year, month - 1, 1) // 현재 월 1일
 
-      // 배포 종료일이 현재 월 시작일 이후인지 확인 (이전 달 배포가 현재 월로 연장된 경우)
-      if (deployedEnd >= currentMonthStart) {
-        deployedDateRange = {
-          start: currentMonthStart,
-          end: deployedEnd
-        }
-        console.log(`   ⚠️  이전 달 배포 범위 감지: ${deployedDateRange.start.toISOString().split('T')[0]} ~ ${deployedDateRange.end.toISOString().split('T')[0]}`)
-        console.log(`   → 해당 범위의 직원 배치는 건너뜁니다`)
+      // 이전 달 배포의 전체 날짜 범위를 보호
+      // (예: 1월 배포가 12/30~2/1이면, 2월 자동 배정 시 12/30~2/1 모두 건너뜀)
+      deployedDateRange = {
+        start: deployedStart,
+        end: deployedEnd
       }
+      console.log(`   ⚠️  이전 달 배포 범위 감지: ${deployedDateRange.start.toISOString().split('T')[0]} ~ ${deployedDateRange.end.toISOString().split('T')[0]}`)
+      console.log(`   → 해당 범위의 직원 배치는 건너뜁니다`)
     }
 
     // 3. 주 근무일 설정 조회

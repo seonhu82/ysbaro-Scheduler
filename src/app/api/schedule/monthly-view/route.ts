@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
           where: {
             date: {
               gte: calendarStart,
-              lte: monthEnd // 현재 월 끝까지
+              lte: monthEnd // 현재 월 끝까지 (이전 달에서 현재 월 포함된 날짜도 가져옴)
             }
           }
         },

@@ -114,6 +114,12 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
 
       if (data.success) {
         console.log('🔍 scheduleData 설정:', data.scheduleData)
+
+        // 1월 31일 데이터 디버깅
+        if (data.scheduleData && data.scheduleData['2025-01-31']) {
+          console.log('🔍 1월 31일 상세:', data.scheduleData['2025-01-31'])
+        }
+
         setScheduleData(data.scheduleData || {})
       } else {
         console.log('❌ monthly-view API 실패')

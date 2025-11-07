@@ -34,14 +34,22 @@ export async function GET(request: NextRequest) {
     // Schedule 조건 구성
     const scheduleWhere: any = { clinicId }
 
-    // year/month가 제공되면 특정 스케줄만 조회
-    if (yearParam && monthParam) {
-      scheduleWhere.year = parseInt(yearParam)
-      scheduleWhere.month = parseInt(monthParam)
-    }
+    // Cross-month 날짜 처리:
+    // - year/month가 제공되고, 요청 날짜가 해당 월과 다른 경우
+    // - 이전/다음 달의 DEPLOYED 스케줄에서 데이터를 가져와야 함
+    // - 예: 2월 DRAFT를 보는 중에 1월 31일을 클릭하면, 1월 DEPLOYED에서 데이터 가져옴
+    const requestedDateYear = dateOnly.getFullYear()
+    const requestedDateMonth = dateOnly.getMonth() + 1
+    const isCrossMonth = yearParam && monthParam &&
+                        (parseInt(yearParam) !== requestedDateYear || parseInt(monthParam) !== requestedDateMonth)
 
-    // status가 제공되면 해당 상태만 조회 (DRAFT or DEPLOYED)
-    if (statusParam) {
+    if (isCrossMonth) {
+      // Cross-month 날짜: 해당 날짜가 속한 달의 DEPLOYED 스케줄에서 조회
+      scheduleWhere.year = requestedDateYear
+      scheduleWhere.month = requestedDateMonth
+      scheduleWhere.status = 'DEPLOYED'
+    } else if (statusParam) {
+      // 같은 달: status 파라미터 사용
       scheduleWhere.status = statusParam
     } else {
       // status 미지정 시 DRAFT와 DEPLOYED 모두 조회
