@@ -81,6 +81,20 @@ export async function GET(request: NextRequest) {
     const weekBusinessDays = clinic?.weekBusinessDays || 6
     const defaultWorkDays = clinic?.defaultWorkDays || 4
 
+    // 형평성 설정 조회
+    const fairnessSettings = await prisma.fairnessSettings.findUnique({
+      where: { clinicId }
+    })
+
+    // 활성화된 형평성 항목만 포함 (가중치 1로 설정)
+    const fairnessWeights: Record<string, number> = {}
+    if (fairnessSettings) {
+      if (fairnessSettings.enableNightShiftFairness) fairnessWeights.night = 1
+      if (fairnessSettings.enableWeekendFairness) fairnessWeights.weekend = 1
+      if (fairnessSettings.enableHolidayFairness) fairnessWeights.holiday = 1
+      if (fairnessSettings.enableHolidayAdjacentFairness) fairnessWeights.holidayAdjacent = 1
+    }
+
     // 전체 직원 조회
     const allStaff = await prisma.staff.findMany({
       where: {
@@ -96,6 +110,17 @@ export async function GET(request: NextRequest) {
         clinicId,
         status: 'CONFIRMED',
         leaveType: 'ANNUAL',
+        date: {
+          gte: new Date(year, month - 1, 1),
+          lt: new Date(year, month, 1)
+        }
+      }
+    })
+
+    // 공휴일 조회
+    const holidays = await prisma.holiday.findMany({
+      where: {
+        clinicId,
         date: {
           gte: new Date(year, month - 1, 1),
           lt: new Date(year, month, 1)
@@ -245,6 +270,20 @@ export async function GET(request: NextRequest) {
         ? Math.round((fourDayStaffCount / allStaff.length) * 100 * 10) / 10
         : 0
 
+      // 해당 주의 공휴일 확인
+      const weekHolidays = holidays.filter(h => {
+        const holidayDate = new Date(h.date)
+        return getWeekKey(holidayDate) === weekKey
+      })
+
+      // 공휴일로 인해 추가로 OFF 처리된 건수 계산
+      // 주 전체 실제 OFF - 주 목표 OFF = 공휴일로 인한 추가 OFF
+      let holidayOffCount = 0
+      if (weekHolidays.length > 0) {
+        const weekOffTarget = (weekBusinessDays - defaultWorkDays) * allStaff.length
+        holidayOffCount = Math.max(0, weekData.offCount - weekOffTarget)
+      }
+
       return {
         weekKey: `${weekLabel} 주 (${dateRange})`,
         offCount: weekData.offCount,
@@ -253,7 +292,12 @@ export async function GET(request: NextRequest) {
         fourDayStaffCount,
         week4ComplianceRate,
         staffWorkDetails,
-        businessDaysInWeek
+        businessDaysInWeek,
+        holidays: weekHolidays.map(h => ({
+          date: h.date.toISOString().split('T')[0],
+          name: h.name
+        })),
+        holidayOffCount
       }
     })
 
@@ -350,7 +394,8 @@ export async function GET(request: NextRequest) {
           topPositive: positiveDeviations,
           topNegative: negativeDeviations
         },
-        categoryStats
+        categoryStats,
+        fairnessWeights
       }
     })
 

@@ -128,6 +128,19 @@ export async function GET(request: NextRequest) {
       ? (closedDaySettings.regularDays as number[])
       : []
 
+    // 공휴일 조회
+    const holidays = await prisma.holiday.findMany({
+      where: {
+        clinicId,
+        date: {
+          gte: monthStart,
+          lte: monthEnd
+        }
+      }
+    })
+
+    const holidayDates = new Set(holidays.map(h => h.date.toISOString().split('T')[0]))
+
     // 원장별 근무 통계 (모든 날짜 포함)
     const doctorStats = doctorSchedules.reduce((acc, ds) => {
       const name = ds.doctor.name
@@ -263,13 +276,19 @@ export async function GET(request: NextRequest) {
       const requiredStaff = combination?.requiredStaff || 0
       const availableSlots = totalTreatmentStaff - requiredStaff
 
+      // 공휴일 여부 확인
+      const isHoliday = holidayDates.has(slot.date)
+      const holidayInfo = isHoliday ? holidays.find(h => h.date.toISOString().split('T')[0] === slot.date) : null
+
       return {
         date: slot.date,
         dayOfWeek: slot.dayOfWeek,
         doctors: slot.doctors,
         hasNightShift: slot.hasNightShift,
         requiredStaff,
-        availableSlots
+        availableSlots,
+        isHoliday,
+        holidayName: holidayInfo?.name || null
       }
     })
 

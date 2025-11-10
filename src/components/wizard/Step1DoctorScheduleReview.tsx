@@ -308,6 +308,8 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                         const dateObj = new Date(slot.date)
                         const day = dateObj.getDate()
                         const isClosed = (slot as any).isClosed || false
+                        const isHoliday = (slot as any).isHoliday || false
+                        const holidayName = (slot as any).holidayName || null
                         const isLowSlots = slot.availableSlots < 3
 
                         // 이전/다음 달 여부 확인
@@ -321,6 +323,8 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                             className={`border rounded-lg p-3 transition-all ${
                               isClosed
                                 ? 'bg-gray-100 border-gray-300 opacity-60'
+                                : isHoliday
+                                ? 'bg-red-50 border-red-300'
                                 : isOtherMonth
                                 ? 'bg-blue-50 border-blue-300 opacity-75'
                                 : isLowSlots
@@ -360,10 +364,19 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                               </div>
                             </div>
 
-                            {/* 휴무일 표시 또는 원장 정보 */}
+                            {/* 휴무일/공휴일 표시 또는 원장 정보 */}
                             {isClosed ? (
                               <div className="text-center py-6">
                                 <span className="text-sm font-medium text-gray-500">휴무</span>
+                              </div>
+                            ) : isHoliday ? (
+                              <div className="text-center py-6">
+                                <Badge
+                                  variant="outline"
+                                  className="bg-red-100 text-red-700 border-red-300 text-sm px-3 py-1"
+                                >
+                                  {holidayName || '공휴일'}
+                                </Badge>
                               </div>
                             ) : (
                               <>
