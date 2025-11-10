@@ -103,22 +103,22 @@ async function calculateWeeklyWorkDays(
   const year = parseInt(yearStr)
   const weekNumber = parseInt(weekStr)
 
-  // 해당 주의 일요일 계산
-  const firstDayOfYear = new Date(year, 0, 1)
+  // 해당 주의 일요일 계산 (UTC 기준)
+  const firstDayOfYear = new Date(Date.UTC(year, 0, 1))
   const firstSunday = new Date(firstDayOfYear)
-  const firstDayOfWeek = firstDayOfYear.getDay()
+  const firstDayOfWeek = firstDayOfYear.getUTCDay()
 
   if (firstDayOfWeek !== 0) {
-    firstSunday.setDate(firstDayOfYear.getDate() + (7 - firstDayOfWeek))
+    firstSunday.setUTCDate(firstDayOfYear.getUTCDate() + (7 - firstDayOfWeek))
   }
 
   const sundayOfWeek = new Date(firstSunday)
-  sundayOfWeek.setDate(firstSunday.getDate() + (weekNumber - 1) * 7)
+  sundayOfWeek.setUTCDate(firstSunday.getUTCDate() + (weekNumber - 1) * 7)
 
   // 해당 주의 날짜 범위 (일요일 ~ 토요일)
   const weekStart = new Date(sundayOfWeek)
   const weekEnd = new Date(sundayOfWeek)
-  weekEnd.setDate(weekEnd.getDate() + 6) // Saturday
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6) // Saturday
 
   let workDayCount = 0
 
