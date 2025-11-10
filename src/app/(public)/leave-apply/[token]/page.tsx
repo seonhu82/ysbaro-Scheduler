@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { formatDateWithDay } from '@/lib/date-utils'
-import { Calendar, Send, CheckCircle2, Key, LogOut } from 'lucide-react'
+import { Calendar, Send, CheckCircle2, Key, LogOut, AlertCircle, Info } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 interface SlotStatus {
   date: string
@@ -41,6 +42,21 @@ interface AuthData {
   totalAnnualDays: number
   usedAnnualDays: number
   hasPinCode: boolean
+}
+
+interface Statistics {
+  staffName: string
+  categoryName: string
+  totalBusinessDays: number
+  expectedOffDays: number
+  currentApprovedCount: number
+  remainingAutoOff: number
+  applicationRatio: number
+  recommendedMaxApplications: number
+  guidelines: {
+    status: 'good' | 'warning' | 'critical'
+    message: string
+  }
 }
 
 interface StaffOption {
@@ -67,6 +83,7 @@ export default function LeaveApplyPage({
   const [selections, setSelections] = useState<Map<string, LeaveType>>(new Map())
   const [slotStatus, setSlotStatus] = useState<SlotStatus[]>([])
   const [weeklyOffCount, setWeeklyOffCount] = useState(0)
+  const [statistics, setStatistics] = useState<Statistics | null>(null)
 
   // 확인 모달
   const [showConfirm, setShowConfirm] = useState(false)
@@ -116,6 +133,21 @@ export default function LeaveApplyPage({
 
     loadStaffList()
   }, [params.token, toast])
+
+  // 통계 로드
+  const loadStatistics = async (staffId: string) => {
+    try {
+      const response = await fetch(`/api/leave-apply/${params.token}/statistics?staffId=${staffId}`)
+      const result = await response.json()
+
+      if (result.success) {
+        setStatistics(result.data)
+        console.log('✅ 통계 로드 완료:', result.data)
+      }
+    } catch (error) {
+      console.error('❌ 통계 로드 실패:', error)
+    }
+  }
 
   // 슬롯 상태 로드
   const loadSlotStatus = async () => {
@@ -200,8 +232,9 @@ export default function LeaveApplyPage({
           description: `${result.data.staffName}님, 연차/오프 신청이 가능합니다.`,
         })
 
-        // 인증 성공 후 슬롯 상태 로드
+        // 인증 성공 후 슬롯 상태 및 통계 로드
         loadSlotStatus()
+        loadStatistics(selectedStaffId)
       } else {
         throw new Error(result.error || '인증 실패')
       }
@@ -283,7 +316,7 @@ export default function LeaveApplyPage({
       // 각 신청을 순차적으로 처리
       for (const app of applications) {
         try {
-          const response = await fetch(`/api/leave-apply/${params.token}/submit`, {
+          const response = await fetch(`/api/leave-apply/${params.token}/submit-v3`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(app),
@@ -295,7 +328,11 @@ export default function LeaveApplyPage({
             successCount++
           } else {
             failCount++
-            errors.push(`${app.date}: ${result.error || '실패'}`)
+            // 동적 제한 시스템의 상세 에러 메시지 사용
+            const errorMsg = result.userMessage
+              ? `${result.userMessage.title}\n${result.userMessage.message}\n💡 ${result.userMessage.suggestion}`
+              : result.error || '실패'
+            errors.push(`${app.date}: ${errorMsg}`)
           }
         } catch (error: any) {
           failCount++
@@ -311,6 +348,9 @@ export default function LeaveApplyPage({
         })
         setSelections(new Map())
         loadSlotStatus() // 슬롯 상태 새로고침
+        if (authData?.staffId) {
+          loadStatistics(authData.staffId) // 통계 새로고침
+        }
       } else if (successCount > 0 && failCount > 0) {
         toast({
           title: '일부 신청 실패',
@@ -544,7 +584,6 @@ export default function LeaveApplyPage({
     setAuthData(null)
     setSelectedStaffId('')
     setPinCode('')
-    setSelectedDate(undefined)
   }
 
   if (!isAuth) {
@@ -777,6 +816,108 @@ export default function LeaveApplyPage({
           </Button>
         </div>
       </div>
+
+      {/* 중요 안내 사항 */}
+      <Alert className="mb-6 border-blue-200 bg-blue-50">
+        <Info className="h-5 w-5 text-blue-600" />
+        <AlertTitle className="text-blue-900 font-bold mb-2">
+          연차/오프 신청 전 꼭 읽어주세요!
+        </AlertTitle>
+        <AlertDescription className="text-blue-800 space-y-2">
+          <div className="space-y-1">
+            <p className="font-semibold">✅ 꼭 필요한 날짜만 신청해주세요</p>
+            <p className="text-sm ml-4">
+              • 병원 방문, 개인 약속 등 <strong>반드시 쉬어야 하는 날짜</strong>만 신청
+            </p>
+            <p className="text-sm ml-4">
+              • 나머지 OFF는 <strong>자동 배치 시스템이 형평성을 고려하여 자동 배분</strong>합니다
+            </p>
+          </div>
+          <div className="space-y-1 pt-2 border-t border-blue-200">
+            <p className="font-semibold flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              과도한 신청은 전체 스케줄 생성에 문제를 일으킬 수 있습니다
+            </p>
+            <p className="text-sm ml-4">
+              • 신청이 많을수록 자동 배치의 유연성이 감소합니다
+            </p>
+            <p className="text-sm ml-4">
+              • 모든 직원의 형평성 있는 배치가 어려워질 수 있습니다
+            </p>
+          </div>
+        </AlertDescription>
+      </Alert>
+
+      {/* 신청 현황 통계 */}
+      {statistics && (
+        <Card className="mb-6 p-6 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">
+                {statistics.staffName}님의 이번 달 신청 현황
+              </h3>
+              <p className="text-sm text-gray-600">
+                {statistics.categoryName} • 전체 영업일 {statistics.totalBusinessDays}일
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-600 mb-1">예상 OFF 일수</div>
+              <div className="text-2xl font-bold text-blue-600">
+                {statistics.expectedOffDays}일
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                (영업일의 약 {Math.round((statistics.expectedOffDays / statistics.totalBusinessDays) * 100)}%)
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-600 mb-1">현재 신청</div>
+              <div className={`text-2xl font-bold ${
+                statistics.guidelines.status === 'good' ? 'text-green-600' :
+                statistics.guidelines.status === 'warning' ? 'text-yellow-600' :
+                'text-red-600'
+              }`}>
+                {statistics.currentApprovedCount}일
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                ({statistics.applicationRatio}%)
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="text-xs text-gray-600 mb-1">자동 배치 예정</div>
+              <div className="text-2xl font-bold text-purple-600">
+                {statistics.remainingAutoOff}일
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                형평성 기반 배분
+              </div>
+            </div>
+          </div>
+
+          <Alert className={`${
+            statistics.guidelines.status === 'good' ? 'border-green-200 bg-green-50' :
+            statistics.guidelines.status === 'warning' ? 'border-yellow-200 bg-yellow-50' :
+            'border-red-200 bg-red-50'
+          }`}>
+            <AlertCircle className={`h-4 w-4 ${
+              statistics.guidelines.status === 'good' ? 'text-green-600' :
+              statistics.guidelines.status === 'warning' ? 'text-yellow-600' :
+              'text-red-600'
+            }`} />
+            <AlertDescription className={`${
+              statistics.guidelines.status === 'good' ? 'text-green-800' :
+              statistics.guidelines.status === 'warning' ? 'text-yellow-800' :
+              'text-red-800'
+            }`}>
+              {statistics.guidelines.message}
+            </AlertDescription>
+          </Alert>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 왼쪽: 신청 폼 */}
