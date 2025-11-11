@@ -247,6 +247,8 @@ export async function GET(request: NextRequest) {
       totalSlots: number
       assignedSlots: number
       issues: number
+      status: string
+      label: string
     }[] = []
 
     console.log(`📊 Summary API - Year: ${year}, Month: ${month}`)
@@ -254,67 +256,142 @@ export async function GET(request: NextRequest) {
     console.log(`  Staff count: ${staffWorkDays.size}`)
     console.log(`  Doctor count: ${schedule.doctors.length}`)
 
-    // 해당 월의 모든 주차 계산
-    const weeks = new Map<number, { dates: Date[] }>()
+    // 이전 달 스케줄 조회 (배포 범위 확인)
+    const prevMonth = month === 1 ? 12 : month - 1
+    const prevYear = month === 1 ? year - 1 : year
+    const prevSchedule = await prisma.schedule.findFirst({
+      where: {
+        clinicId: session.user.clinicId,
+        year: prevYear,
+        month: prevMonth
+      },
+      select: {
+        deployedEndDate: true,
+        status: true
+      }
+    })
+
+    // 해당 월의 모든 주차 계산 (일~토 기준)
+    const weeks = new Map<number, { dates: Date[], startDate: Date, endDate: Date }>()
+    let weekNumber = 1
+
     for (let day = 1; day <= totalDays; day++) {
       const date = new Date(year, month - 1, day)
-      const weekNumber = Math.ceil(day / 7)
+      const dayOfWeek = date.getDay() // 0=일요일
+
+      // 일요일이면 새로운 주 시작
+      if (dayOfWeek === 0 && day !== 1) {
+        weekNumber++
+      }
 
       if (!weeks.has(weekNumber)) {
-        weeks.set(weekNumber, { dates: [] })
+        weeks.set(weekNumber, { dates: [], startDate: date, endDate: date })
       }
-      weeks.get(weekNumber)!.dates.push(date)
+      const week = weeks.get(weekNumber)!
+      week.dates.push(date)
+      week.endDate = date
     }
 
     console.log(`  Total weeks: ${weeks.size}`)
 
+    // DoctorCombination 조회
+    const allCombinations = await prisma.doctorCombination.findMany({
+      where: {
+        clinicId: session.user.clinicId
+      }
+    })
+
     // 각 주차별 통계 계산
-    weeks.forEach((week, weekNumber) => {
+    for (const [weekNum, week] of weeks.entries()) {
       const dates = week.dates
-      const startDate = dates[0]
-      const endDate = dates[dates.length - 1]
+      const startDate = week.startDate
+      const endDate = week.endDate
       const startDateStr = `${startDate.getMonth() + 1}월 ${startDate.getDate()}일`
       const endDateStr = `${endDate.getMonth() + 1}월 ${endDate.getDate()}일`
+
+      // 이 주가 이전 달 배포 범위인지 확인
+      const isFromPrevMonth = prevSchedule?.deployedEndDate &&
+        prevSchedule.status === 'DEPLOYED' &&
+        endDate <= new Date(prevSchedule.deployedEndDate)
 
       // 해당 주의 모든 슬롯 계산
       let totalSlots = 0
       let assignedSlots = 0
+      let hasDoctorSchedule = false
+      let hasStaffAssignment = false
 
-      dates.forEach(date => {
+      for (const date of dates) {
         const dateStr = date.toISOString().split('T')[0]
-        const dayAssignments = schedule.staffAssignments.filter(a => {
-          const assignmentDate = new Date(a.date).toISOString().split('T')[0]
-          return assignmentDate === dateStr
-        })
 
-        // 해당 날짜에 원장 스케줄이 있는지 확인
-        const hasDoctorSchedule = schedule.doctors.some(d => {
+        // 해당 날짜의 원장 스케줄 확인
+        const doctorsOnDay = schedule.doctors.filter(d => {
           const doctorDate = new Date(d.date).toISOString().split('T')[0]
           return doctorDate === dateStr
         })
 
-        if (hasDoctorSchedule) {
-          // 원장 스케줄이 있는 날만 슬롯 카운트
-          const workingStaff = dayAssignments.filter(a => a.shiftType === 'DAY' || a.shiftType === 'NIGHT')
-          assignedSlots += workingStaff.length
+        if (doctorsOnDay.length > 0) {
+          hasDoctorSchedule = true
 
-          // 실제 필요 인원은 배치된 인원과 같음 (자동 배치가 필요 인원만큼 배치했으므로)
-          // 또는 해당 날짜에 배치된 직원 수를 그대로 사용
-          totalSlots += workingStaff.length
+          // 원장 조합으로 필요 인원 찾기
+          const doctorShortNames = Array.from(new Set(doctorsOnDay.map(d => d.doctor.name))).sort()
+          const hasNightShift = doctorsOnDay.some(d => d.hasNightShift)
+
+          const combination = allCombinations.find(c => {
+            const combDoctors = (c.doctors as string[]).sort().join(',')
+            return combDoctors === doctorShortNames.join(',') && c.hasNightShift === hasNightShift
+          })
+
+          const requiredStaff = combination?.requiredStaff || 0
+          totalSlots += requiredStaff
+
+          // 배치된 직원 수
+          const dayAssignments = schedule.staffAssignments.filter(a => {
+            const assignmentDate = new Date(a.date).toISOString().split('T')[0]
+            return assignmentDate === dateStr && (a.shiftType === 'DAY' || a.shiftType === 'NIGHT')
+          })
+
+          if (dayAssignments.length > 0) {
+            hasStaffAssignment = true
+          }
+
+          assignedSlots += dayAssignments.length
         }
-      })
+      }
+
+      // 상태 및 라벨 결정
+      let status = 'empty'
+      let label = `${weekNum}주차`
+
+      if (isFromPrevMonth) {
+        label = `${prevMonth}월 배포 완료`
+        status = 'prev-month'
+      } else if (!hasDoctorSchedule) {
+        label = `${weekNum}주차 (원장 스케줄 없음)`
+        status = 'no-doctor'
+      } else if (!hasStaffAssignment) {
+        label = `${weekNum}주차 (원장 스케줄 완료)`
+        status = 'doctor-only'
+      } else if (assignedSlots < totalSlots) {
+        label = `${weekNum}주차 (진행중)`
+        status = 'in-progress'
+      } else {
+        label = `${weekNum}주차 (직원 스케줄 완료)`
+        status = 'completed'
+      }
 
       weekSummaries.push({
-        weekNumber,
+        weekNumber: weekNum,
         startDate: startDateStr,
         endDate: endDateStr,
         totalSlots,
         assignedSlots,
-        issues: 0 // TODO: 실제 문제 감지 로직 추가
+        issues: 0,
+        status,
+        label
       })
 
-      console.log(`  Week ${weekNumber}: ${startDateStr} ~ ${endDateStr}, Slots: ${assignedSlots}/${totalSlots}`)
-    })
+      console.log(`  Week ${weekNum}: ${startDateStr} ~ ${endDateStr}, Slots: ${assignedSlots}/${totalSlots}, Status: ${status}`)
+    }
 
     console.log(`✅ Returning ${weekSummaries.length} week summaries`)
 

@@ -15,6 +15,8 @@ interface WeekSummary {
   totalSlots: number
   assignedSlots: number
   issues: number
+  status: string
+  label: string
 }
 
 export default function ScheduleManagementPage() {
@@ -208,7 +210,7 @@ export default function ScheduleManagementPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <Badge variant="outline">
-                          {week.weekNumber}주차
+                          {week.label}
                         </Badge>
                         <span className="text-sm text-gray-600">
                           {week.startDate} ~ {week.endDate}
@@ -230,9 +232,21 @@ export default function ScheduleManagementPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {week.assignedSlots === week.totalSlots ? (
+                      {week.status === 'prev-month' ? (
+                        <Badge className="bg-blue-100 text-blue-800 border-blue-200">
+                          이전달 완료
+                        </Badge>
+                      ) : week.status === 'completed' ? (
                         <Badge className="bg-green-100 text-green-800 border-green-200">
                           완료
+                        </Badge>
+                      ) : week.status === 'doctor-only' ? (
+                        <Badge className="bg-purple-100 text-purple-800 border-purple-200">
+                          원장 스케줄 완료
+                        </Badge>
+                      ) : week.status === 'no-doctor' ? (
+                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200">
+                          원장 스케줄 없음
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
