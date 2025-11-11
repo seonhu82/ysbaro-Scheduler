@@ -55,6 +55,7 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
   const [regularClosedDays, setRegularClosedDays] = useState<number[]>([]) // 정기 휴무일
   const [weekPatterns, setWeekPatterns] = useState<WeekPatternInfo[]>([]) // 주차별 패턴 정보
   const [allPatterns, setAllPatterns] = useState<WeeklyPattern[]>([]) // 전체 패턴 목록
+  const [scheduleInfo, setScheduleInfo] = useState<{ deployedStartDate?: Date | null; deployedEndDate?: Date | null }>({}) // 스케줄 배포 정보
 
   useEffect(() => {
     loadDoctorSchedule()
@@ -92,6 +93,15 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
         setAllPatterns(patternsData.data)
       }
 
+      // 이전 달 스케줄 조회 (배포 종료일 확인용)
+      const prevMonth = wizardState.month === 1 ? 12 : wizardState.month - 1
+      const prevYear = wizardState.month === 1 ? wizardState.year - 1 : wizardState.year
+      const prevResponse = await fetch(
+        `/api/schedule/doctor-summary?year=${prevYear}&month=${prevMonth}`,
+        { cache: 'no-store' }
+      )
+      const prevData = await prevResponse.json()
+
       // 원장 스케줄 조회
       const response = await fetch(
         `/api/schedule/doctor-summary?year=${wizardState.year}&month=${wizardState.month}`,
@@ -100,6 +110,7 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
       const data = await response.json()
 
       console.log('Doctor schedule API response:', data)
+      console.log('Previous month schedule:', prevData)
 
       if (data.success) {
         console.log('Doctor schedules:', data.doctorSchedules)
@@ -108,6 +119,30 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
         setDoctorSchedules(data.doctorSchedules || [])
         setSlots(data.slots || [])
         setHasSchedule(data.hasSchedule || false)
+
+        // 스케줄 배포 정보 저장
+        // 현재 월 스케줄의 deployedStartDate를 우선 사용하고,
+        // 없으면 이전 달의 deployedEndDate 다음날을 사용
+        let effectiveStartDate = null
+        if (data.schedule?.deployedStartDate) {
+          effectiveStartDate = new Date(data.schedule.deployedStartDate)
+        } else if (prevData.success && prevData.schedule?.deployedEndDate) {
+          // 이전 달의 배포 종료일 다음날부터가 현재 월의 시작
+          const prevEndDate = new Date(prevData.schedule.deployedEndDate)
+          prevEndDate.setDate(prevEndDate.getDate() + 1)
+          effectiveStartDate = prevEndDate
+        }
+
+        setScheduleInfo({
+          deployedStartDate: effectiveStartDate,
+          deployedEndDate: data.schedule?.deployedEndDate ? new Date(data.schedule.deployedEndDate) : null
+        })
+
+        console.log('Effective schedule info:', {
+          deployedStartDate: effectiveStartDate,
+          deployedEndDate: data.schedule?.deployedEndDate,
+          prevMonthEndDate: prevData.schedule?.deployedEndDate
+        })
 
         // 기존 스케줄의 weekPatterns를 wizard 상태에 저장 및 표시용 데이터 생성
         if (data.weekPatterns) {
@@ -313,8 +348,40 @@ export default function Step1DoctorScheduleReview({ wizardState, updateWizardSta
                         const isLowSlots = slot.availableSlots < 3
 
                         // 이전/다음 달 여부 확인
-                        const isPrevMonth = isInPreviousMonth(dateObj, wizardState.year, wizardState.month)
-                        const isNextMonth = isInNextMonth(dateObj, wizardState.year, wizardState.month)
+                        // deployedStartDate가 있으면 그것을 기준으로, 없으면 월 기준으로 판단
+                        let isPrevMonth = false
+                        let isNextMonth = false
+
+                        if (scheduleInfo.deployedStartDate) {
+                          // 배포 시작일 이전이면 이전달로 표시
+                          const deployedStart = new Date(scheduleInfo.deployedStartDate)
+                          deployedStart.setHours(0, 0, 0, 0)
+                          const dateObjCopy = new Date(dateObj)
+                          dateObjCopy.setHours(0, 0, 0, 0)
+
+                          if (dateObjCopy < deployedStart) {
+                            isPrevMonth = true
+                          }
+                        }
+
+                        if (scheduleInfo.deployedEndDate && !isPrevMonth) {
+                          // 배포 종료일 이후면 다음달로 표시
+                          const deployedEnd = new Date(scheduleInfo.deployedEndDate)
+                          deployedEnd.setHours(0, 0, 0, 0)
+                          const dateObjCopy = new Date(dateObj)
+                          dateObjCopy.setHours(0, 0, 0, 0)
+
+                          if (dateObjCopy > deployedEnd) {
+                            isNextMonth = true
+                          }
+                        }
+
+                        // 배포 정보가 없으면 기존 로직 사용 (월 기준)
+                        if (!scheduleInfo.deployedStartDate && !scheduleInfo.deployedEndDate) {
+                          isPrevMonth = isInPreviousMonth(dateObj, wizardState.year, wizardState.month)
+                          isNextMonth = isInNextMonth(dateObj, wizardState.year, wizardState.month)
+                        }
+
                         const isOtherMonth = isPrevMonth || isNextMonth
 
                         return (

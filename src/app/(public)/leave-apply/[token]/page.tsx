@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { formatDateWithDay } from '@/lib/date-utils'
+import { formatDateWithDay, formatDate } from '@/lib/date-utils'
 import { Calendar, Send, CheckCircle2, Key, LogOut, AlertCircle, Info } from 'lucide-react'
 import {
   Dialog,
@@ -28,10 +28,16 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 interface SlotStatus {
-  date: string
-  available: number
-  total: number
-  isHoliday: boolean
+  totalSlots: number
+  totalOffSlots: number
+  totalAnnualSlots: number
+  availableSlots: number
+  availableOffSlots: number
+  availableAnnualSlots: number
+  appliedOffCount: number
+  appliedAnnualCount: number
+  appliedCount: number
+  holidayDates: string[]
 }
 
 interface AuthData {
@@ -81,9 +87,10 @@ export default function LeaveApplyPage({
 
   // 신청 폼 상태 - 다중 선택 지원
   const [selections, setSelections] = useState<Map<string, LeaveType>>(new Map())
-  const [slotStatus, setSlotStatus] = useState<SlotStatus[]>([])
+  const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null)
   const [weeklyOffCount, setWeeklyOffCount] = useState(0)
   const [statistics, setStatistics] = useState<Statistics | null>(null)
+  const [fairnessData, setFairnessData] = useState<any>(null) // 형평성 데이터 (한도 체크용)
 
   // 확인 모달
   const [showConfirm, setShowConfirm] = useState(false)
@@ -149,6 +156,21 @@ export default function LeaveApplyPage({
     }
   }
 
+  // 형평성 데이터 로드
+  const loadFairnessData = async (staffId: string) => {
+    try {
+      const response = await fetch(`/api/leave-apply/${params.token}/fairness?staffId=${staffId}`)
+      const result = await response.json()
+
+      if (result.success) {
+        setFairnessData(result.data)
+        console.log('✅ 형평성 데이터 로드 완료:', result.data)
+      }
+    } catch (error) {
+      console.error('❌ 형평성 데이터 로드 실패:', error)
+    }
+  }
+
   // 슬롯 상태 로드
   const loadSlotStatus = async () => {
     try {
@@ -169,23 +191,35 @@ export default function LeaveApplyPage({
 
       console.log('📅 신청 가능 기간:', { startDate, endDate })
 
-      // 2. 해당 기간의 슬롯 상태 조회
+      // 2. 해당 기간의 슬롯 상태 조회 (URL 인코딩)
       const statusResponse = await fetch(
-        `/api/leave-apply/${params.token}/status?startDate=${startDate}&endDate=${endDate}`
+        `/api/leave-apply/${params.token}/status?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`
       )
 
       const statusResult = await statusResponse.json()
 
-      if (statusResult.success) {
-        // slotStatus 형식으로 변환
-        const slots = statusResult.status.map((s: any) => ({
-          date: new Date(s.date).toISOString().split('T')[0],
-          available: s.totalAvailable,
-          total: s.requiredStaff,
-          isHoliday: s.dayOfWeek === 0 // 일요일
-        }))
-        setSlotStatus(slots)
-        console.log('✅ 슬롯 상태 로드 완료:', slots.length, '일')
+      if (statusResult.success && statusResult.summary) {
+        // 새로운 summary 형식의 데이터 사용
+        const summary = statusResult.summary
+        console.log('✅ 슬롯 상태 로드 완료:', summary)
+        console.log('📊 전체 휴무 슬롯:', summary.totalSlots)
+        console.log('📊 신청된 오프:', summary.appliedOffCount)
+        console.log('📊 신청된 연차:', summary.appliedAnnualCount)
+        console.log('📊 신청 가능:', summary.availableSlots)
+
+        // RealTimeStatus 컴포넌트용 데이터 설정
+        setSlotStatus({
+          totalSlots: summary.totalSlots,
+          totalOffSlots: summary.totalOffSlots,
+          totalAnnualSlots: summary.totalAnnualSlots,
+          availableSlots: summary.availableSlots,
+          availableOffSlots: summary.availableOffSlots,
+          availableAnnualSlots: summary.availableAnnualSlots,
+          appliedOffCount: summary.appliedOffCount,
+          appliedAnnualCount: summary.appliedAnnualCount,
+          appliedCount: summary.appliedCount,
+          holidayDates: summary.holidayDates || []
+        })
       }
     } catch (error) {
       console.error('❌ 슬롯 상태 로드 실패:', error)
@@ -232,9 +266,10 @@ export default function LeaveApplyPage({
           description: `${result.data.staffName}님, 연차/오프 신청이 가능합니다.`,
         })
 
-        // 인증 성공 후 슬롯 상태 및 통계 로드
+        // 인증 성공 후 슬롯 상태 및 통계, 형평성 데이터 로드
         loadSlotStatus()
         loadStatistics(selectedStaffId)
+        loadFairnessData(selectedStaffId)
       } else {
         throw new Error(result.error || '인증 실패')
       }
@@ -250,16 +285,78 @@ export default function LeaveApplyPage({
   }
 
   // 선택 추가/제거 함수
-  const handleDateSelection = (date: Date, type: LeaveType) => {
-    const dateStr = date.toISOString().split('T')[0]
-    const newSelections = new Map(selections)
-    newSelections.set(dateStr, type)
-    setSelections(newSelections)
+  const handleDateSelection = async (date: Date, type: LeaveType) => {
+    const dateStr = formatDate(date) // 타임존 이슈 방지
 
-    toast({
-      title: '선택 추가',
-      description: `${dateStr} - ${type === 'ANNUAL' ? '연차' : '오프'}`,
-    })
+    if (!authData?.staffId) return
+
+    console.log('🎯 날짜 선택:', dateStr, type)
+
+    // 실시간 시뮬레이션으로 신청 가능 여부 체크
+    try {
+      // 현재 선택하려는 날짜의 주 시작일/종료일 계산 (UTC 기준, 일~토)
+      const currentDate = new Date(date)
+      const day = currentDate.getUTCDay()
+      const weekStart = new Date(currentDate)
+      weekStart.setUTCDate(currentDate.getUTCDate() - day)
+      weekStart.setUTCHours(0, 0, 0, 0)
+      const weekEnd = new Date(weekStart)
+      weekEnd.setUTCDate(weekStart.getUTCDate() + 6)
+      weekEnd.setUTCHours(23, 59, 59, 999)
+
+      console.log('📅 현재 선택 날짜의 주 범위:',
+        weekStart.toISOString().split('T')[0], '~',
+        weekEnd.toISOString().split('T')[0])
+
+      // 이미 선택한 OFF 중 같은 주에 속한 것만 필터링
+      const existingOffs = Array.from(selections.entries())
+        .filter(([d, t]) => {
+          if (t !== 'OFF') return false
+          const offDate = new Date(d)
+          return offDate >= weekStart && offDate <= weekEnd
+        })
+        .map(([d, _]) => d)
+
+      console.log('📊 같은 주에 이미 선택한 OFF:', existingOffs)
+
+      // existingOffsInWeek 파라미터 추가
+      const existingOffsParam = existingOffs.length > 0
+        ? `&existingOffsInWeek=${existingOffs.join(',')}`
+        : ''
+
+      const response = await fetch(
+        `/api/leave-apply/${params.token}/can-apply?staffId=${authData.staffId}&date=${dateStr}&type=${type}${existingOffsParam}`
+      )
+      const result = await response.json()
+
+      console.log('✅ 시뮬레이션 결과:', result)
+
+      if (!result.success || !result.canApply) {
+        toast({
+          title: result.message || '신청 불가',
+          description: result.technicalReason || '해당 날짜에 신청할 수 없습니다',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      // 시뮬레이션 통과 → 선택 추가
+      const newSelections = new Map(selections)
+      newSelections.set(dateStr, type)
+      setSelections(newSelections)
+
+      toast({
+        title: '선택 추가',
+        description: `${dateStr} - ${type === 'ANNUAL' ? '연차' : '오프'}`,
+      })
+    } catch (error) {
+      console.error('❌ 신청 가능 여부 체크 실패:', error)
+      toast({
+        title: '오류',
+        description: '신청 가능 여부를 확인하는 중 오류가 발생했습니다',
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleRemoveSelection = (dateStr: string) => {
@@ -350,6 +447,7 @@ export default function LeaveApplyPage({
         loadSlotStatus() // 슬롯 상태 새로고침
         if (authData?.staffId) {
           loadStatistics(authData.staffId) // 통계 새로고침
+          loadFairnessData(authData.staffId) // 형평성 데이터 새로고침
         }
       } else if (successCount > 0 && failCount > 0) {
         toast({
@@ -935,8 +1033,8 @@ export default function LeaveApplyPage({
           <DateSelector
             selections={selections}
             onDateSelection={handleDateSelection}
-            slotStatus={slotStatus}
             categoryName={authData?.categoryName}
+            holidayDates={slotStatus?.holidayDates || []}
           />
 
           {/* 선택 항목 리스트 */}
@@ -1015,6 +1113,7 @@ export default function LeaveApplyPage({
           <RealTimeStatus
             token={params.token}
             selectedDate={selections.size > 0 ? new Date(Array.from(selections.keys())[0]) : undefined}
+            slotStatus={slotStatus}
           />
         </div>
       </div>
