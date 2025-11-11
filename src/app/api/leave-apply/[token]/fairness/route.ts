@@ -145,6 +145,118 @@ export async function GET(
       }
     })
 
+    // 각 형평성별 커트라인 정보 계산
+    const fairnessCutoffs = {
+      totalDays: null as { total: number, minRequired: number, maxAllowed: number } | null,
+      night: null as { total: number, minRequired: number, maxAllowed: number } | null,
+      weekend: null as { total: number, minRequired: number, maxAllowed: number } | null,
+      holiday: null as { total: number, minRequired: number, maxAllowed: number } | null,
+      holidayAdjacent: null as { total: number, minRequired: number, maxAllowed: number } | null,
+    }
+
+    // 총 근무일 형평성 (항상 계산)
+    if (staff.fairnessScoreTotalDays !== null) {
+      const totalWorkDays = workingDays
+      const baseReq = totalWorkDays / allStaff.length
+      const adjustedReq = Math.max(0, Math.floor(baseReq + staff.fairnessScoreTotalDays))
+      fairnessCutoffs.totalDays = {
+        total: totalWorkDays,
+        minRequired: adjustedReq,
+        maxAllowed: Math.max(0, totalWorkDays - adjustedReq)
+      }
+    }
+
+    // 야간 형평성
+    if (fairnessSettings?.enableNightShiftFairness && staff.fairnessScoreNight !== null) {
+      const nightShiftDates = await prisma.scheduleDoctor.count({
+        where: {
+          schedule: { clinicId: link.clinicId, year, month },
+          hasNightShift: true
+        },
+        distinct: ['date']
+      })
+      const baseReq = nightShiftDates / allStaff.length
+      const adjustedReq = Math.max(0, Math.floor(baseReq + staff.fairnessScoreNight))
+      fairnessCutoffs.night = {
+        total: nightShiftDates,
+        minRequired: adjustedReq,
+        maxAllowed: Math.max(0, nightShiftDates - adjustedReq)
+      }
+    }
+
+    // 주말 형평성
+    if (fairnessSettings?.enableWeekendFairness && staff.fairnessScoreWeekend !== null) {
+      let saturdays = 0
+      for (let day = 1; day <= lastDayOfMonth; day++) {
+        const date = new Date(year, month - 1, day)
+        if (date.getDay() === 6) saturdays++
+      }
+      const baseReq = saturdays / allStaff.length
+      const adjustedReq = Math.max(0, Math.floor(baseReq + staff.fairnessScoreWeekend))
+      fairnessCutoffs.weekend = {
+        total: saturdays,
+        minRequired: adjustedReq,
+        maxAllowed: Math.max(0, saturdays - adjustedReq)
+      }
+    }
+
+    // 공휴일 형평성
+    if (fairnessSettings?.enableHolidayFairness && staff.fairnessScoreHoliday !== null) {
+      const holidays = await prisma.holiday.count({
+        where: {
+          clinicId: link.clinicId,
+          date: {
+            gte: new Date(year, month - 1, 1),
+            lte: new Date(year, month - 1, lastDayOfMonth)
+          }
+        }
+      })
+      const baseReq = holidays / allStaff.length
+      const adjustedReq = Math.max(0, Math.floor(baseReq + staff.fairnessScoreHoliday))
+      fairnessCutoffs.holiday = {
+        total: holidays,
+        minRequired: adjustedReq,
+        maxAllowed: Math.max(0, holidays - adjustedReq)
+      }
+    }
+
+    // 공휴일 전후 형평성
+    if (fairnessSettings?.enableHolidayAdjacentFairness && staff.fairnessScoreHolidayAdjacent !== null) {
+      const holidays = await prisma.holiday.findMany({
+        where: {
+          clinicId: link.clinicId,
+          date: {
+            gte: new Date(year, month - 1, 1),
+            lte: new Date(year, month - 1, lastDayOfMonth)
+          }
+        },
+        select: { date: true }
+      })
+
+      const adjacentDates = new Set<string>()
+      for (const { date } of holidays) {
+        const dayOfWeek = date.getDay()
+        if (dayOfWeek === 1) { // 월요일이면 전날 금요일
+          const friday = new Date(date)
+          friday.setDate(friday.getDate() - 3)
+          adjacentDates.add(friday.toISOString().split('T')[0])
+        }
+        if (dayOfWeek === 5) { // 금요일이면 다음날 월요일
+          const monday = new Date(date)
+          monday.setDate(monday.getDate() + 3)
+          adjacentDates.add(monday.toISOString().split('T')[0])
+        }
+      }
+
+      const baseReq = adjacentDates.size / allStaff.length
+      const adjustedReq = Math.max(0, Math.floor(baseReq + staff.fairnessScoreHolidayAdjacent))
+      fairnessCutoffs.holidayAdjacent = {
+        total: adjacentDates.size,
+        minRequired: adjustedReq,
+        maxAllowed: Math.max(0, adjacentDates.size - adjustedReq)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -157,6 +269,7 @@ export async function GET(
           holiday: cumulativeFairness.holiday,
           holidayAdjacent: cumulativeFairness.holidayAdjacent,
         },
+        fairnessCutoffs,
         monthlyStats: {
           workingDays,
           appliedOffs,
