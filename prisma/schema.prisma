@@ -355,6 +355,14 @@ model Staff {
   securityQuestion  String? // 보안 질문 (PIN 재설정용)
   securityAnswer    String? // 보안 답변 (PIN 재설정용)
 
+  // 생체인증 정보 (WebAuthn)
+  biometricEnabled      Boolean  @default(false) // 생체인증 활성화 여부
+  biometricPublicKey    String?  @db.Text // 암호화된 공개키
+  biometricCredentialId String? // 인증서 ID
+  biometricCounter      Int      @default(0) // 재생 공격 방지 카운터
+  biometricRegisteredAt DateTime? // 등록 일시
+  biometricDeviceType   String? // 기기 타입 (fingerprint, face 등)
+
   // 형평성 누적 점수 (전월 이월)
   fairnessScoreTotalDays       Float @default(0) // 총근무 형평성
   fairnessScoreNight           Float @default(0) // 야간 형평성
@@ -1121,7 +1129,8 @@ model AttendanceRecord {
   staffId String
   staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
 
-  checkType CheckType // IN (출근) / OUT (퇴근)
+  checkType   CheckType         // IN (출근) / OUT (퇴근)
+  checkMethod AttendanceMethod? // 인증 방법 (BIOMETRIC, PIN, QR, MANUAL)
   checkTime DateTime // 체크 시간
   date      DateTime  @db.Date // 체크 날짜 (검색용)
 
@@ -1190,4 +1199,12 @@ model KakaoSettings {
   updatedAt DateTime @updatedAt
 
   @@index([clinicId])
+}
+
+// 출퇴근 인증 방법
+enum AttendanceMethod {
+  BIOMETRIC // 생체인증
+  PIN       // PIN 번호
+  QR        // QR 코드
+  MANUAL    // 관리자 수동 입력
 }

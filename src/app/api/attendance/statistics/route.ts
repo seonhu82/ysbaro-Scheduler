@@ -50,6 +50,10 @@ export async function GET(request: NextRequest) {
     const totalCheckIns = records.filter(r => r.checkType === 'IN').length
     const totalCheckOuts = records.filter(r => r.checkType === 'OUT').length
     const suspiciousCount = records.filter(r => r.isSuspicious).length
+    const biometricCount = records.filter(r => r.checkMethod === 'BIOMETRIC').length
+    const pinCount = records.filter(r => r.checkMethod === 'PIN').length
+    const qrCount = records.filter(r => r.checkMethod === 'QR').length
+    const manualCount = records.filter(r => r.checkMethod === 'MANUAL').length
 
     // 직원별 통계
     const staffMap = new Map<string, any>()
@@ -66,6 +70,10 @@ export async function GET(request: NextRequest) {
           checkIns: 0,
           checkOuts: 0,
           suspicious: 0,
+          biometric: 0,
+          pin: 0,
+          qr: 0,
+          manual: 0,
           days: new Set()
         })
       }
@@ -75,6 +83,10 @@ export async function GET(request: NextRequest) {
       if (record.checkType === 'IN') stats.checkIns++
       if (record.checkType === 'OUT') stats.checkOuts++
       if (record.isSuspicious) stats.suspicious++
+      if (record.checkMethod === 'BIOMETRIC') stats.biometric++
+      if (record.checkMethod === 'PIN') stats.pin++
+      if (record.checkMethod === 'QR') stats.qr++
+      if (record.checkMethod === 'MANUAL') stats.manual++
       stats.days.add(record.date.toISOString().split('T')[0])
     })
 
@@ -87,6 +99,10 @@ export async function GET(request: NextRequest) {
       checkIns: stats.checkIns,
       checkOuts: stats.checkOuts,
       suspicious: stats.suspicious,
+      biometric: stats.biometric,
+      pin: stats.pin,
+      qr: stats.qr,
+      manual: stats.manual,
       workDays: stats.days.size
     })).sort((a, b) => b.totalChecks - a.totalChecks)
 
@@ -126,7 +142,11 @@ export async function GET(request: NextRequest) {
         totalChecks,
         totalCheckIns,
         totalCheckOuts,
-        suspiciousCount
+        suspiciousCount,
+        biometricCount,
+        pinCount,
+        qrCount,
+        manualCount
       },
       byStaff,
       dailyStats
