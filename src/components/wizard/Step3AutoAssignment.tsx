@@ -415,15 +415,20 @@ export default function Step3AutoAssignment({ wizardState, updateWizardState, on
                     {week.holidays && week.holidays.length > 0 && (
                       <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded">
                         <div className="text-xs font-medium text-red-700 mb-1">
-                          🎌 공휴일
+                          🎌 공휴일 ({week.holidays.length}일)
                         </div>
                         <div className="space-y-1">
                           {week.holidays.map((holiday: any) => (
                             <div key={holiday.date} className="text-xs text-red-600">
-                              {holiday.name} ({new Date(holiday.date).getMonth() + 1}/{new Date(holiday.date).getDate()}) - 추가 {week.holidayOffCount}명 OFF 처리
+                              • {holiday.name} ({new Date(holiday.date).getMonth() + 1}/{new Date(holiday.date).getDate()})
                             </div>
                           ))}
                         </div>
+                        {week.holidayOffCount > 0 && (
+                          <div className="text-xs text-red-700 mt-2 font-medium">
+                            → 공휴일로 인해 추가 {week.holidayOffCount}명 OFF 처리
+                          </div>
+                        )}
                         {week.week4ComplianceRate < 100 && (
                           <div className="text-xs text-red-600 mt-2">
                             ℹ️ 공휴일로 인해 일부 직원이 주4일 미만 근무했습니다.

@@ -105,10 +105,25 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 원장 스케줄 조회
+    // 원장 스케줄 조회 - 주차 범위로 확장 (이전/다음 달 포함)
+    // 월 시작일이 속한 주의 일요일부터 월 마지막일이 속한 주의 토요일까지
+    const firstWeekSunday = new Date(monthStart)
+    const firstDayOfWeek = monthStart.getDay()
+    firstWeekSunday.setDate(monthStart.getDate() - firstDayOfWeek)
+
+    const lastWeekSaturday = new Date(monthEnd)
+    const lastDayOfWeek = monthEnd.getDay()
+    lastWeekSaturday.setDate(monthEnd.getDate() + (6 - lastDayOfWeek))
+
     const doctorSchedules = await prisma.scheduleDoctor.findMany({
       where: {
-        scheduleId: schedule.id
+        schedule: {
+          clinicId
+        },
+        date: {
+          gte: firstWeekSunday,
+          lte: lastWeekSaturday
+        }
       },
       include: {
         doctor: true
@@ -128,21 +143,27 @@ export async function GET(request: NextRequest) {
       ? (closedDaySettings.regularDays as number[])
       : []
 
-    // 공휴일 조회
+    // 공휴일 조회 - 주차 범위에 맞춰 확장 (이전/다음 달 포함)
     const holidays = await prisma.holiday.findMany({
       where: {
         clinicId,
         date: {
-          gte: monthStart,
-          lte: monthEnd
+          gte: firstWeekSunday,
+          lte: lastWeekSaturday
         }
       }
     })
 
     const holidayDates = new Set(holidays.map(h => h.date.toISOString().split('T')[0]))
 
-    // 원장별 근무 통계 (모든 날짜 포함)
-    const doctorStats = doctorSchedules.reduce((acc, ds) => {
+    // 해당 월에 속하는 원장 스케줄만 필터링 (통계 및 주차 계산용)
+    const currentMonthDoctorSchedules = doctorSchedules.filter(ds => {
+      const date = new Date(ds.date)
+      return date >= monthStart && date <= monthEnd
+    })
+
+    // 원장별 근무 통계 (해당 월만)
+    const doctorStats = currentMonthDoctorSchedules.reduce((acc, ds) => {
       const name = ds.doctor.name
       if (!acc[name]) {
         acc[name] = {
@@ -158,10 +179,10 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, any>)
 
-    // 원장 스케줄이 있는 날짜들이 속한 모든 주(일~토)를 수집
+    // 원장 스케줄이 있는 날짜들이 속한 모든 주(일~토)를 수집 (해당 월만)
     const weekRanges = new Set<string>() // "YYYY-MM-DD~YYYY-MM-DD" 형태로 저장
 
-    doctorSchedules.forEach(ds => {
+    currentMonthDoctorSchedules.forEach(ds => {
       const date = new Date(ds.date)
       const dayOfWeek = date.getDay()
 

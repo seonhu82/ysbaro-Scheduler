@@ -143,9 +143,10 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
               <div className="text-sm text-blue-700">
                 <p className="font-medium mb-1">자동 검토 프로세스</p>
                 <ul className="list-disc list-inside space-y-1 mt-2">
-                  <li>형평성 점수 60점 이상 (연차) 또는 75점 이상 (오프) → 자동 승인</li>
-                  <li>점수 부족 또는 슬롯 부족 → ON_HOLD (보류)</li>
-                  <li>ON_HOLD 항목은 Step 3에서 스케줄 확정 후 재검토됩니다</li>
+                  <li>1단계: 동적 제한 시뮬레이션 (주4일제, 구분별 인원, 편차 등) - 실패 시 즉시 거절</li>
+                  <li>2단계: 형평성 편차 검증 (월별 최소 요구 + 연간 누적) - 미달 시 ON_HOLD</li>
+                  <li>3단계: 구분별 슬롯 가용성 확인 - 부족 시 ON_HOLD</li>
+                  <li>✅ 모두 통과 시 자동 승인 (PENDING), ON_HOLD는 Step 3 스케줄 확정 후 재검토</li>
                 </ul>
               </div>
             </div>

@@ -22,42 +22,34 @@ interface CategorySlot {
   onHold: number
 }
 
-interface SlotStatus {
-  date: string
-  available: number
-  total: number
-  isHoliday: boolean
-  categorySlots?: { [categoryName: string]: CategorySlot }
-}
-
 interface DateSelectorProps {
   selections: Map<string, LeaveType>
   onDateSelection: (date: Date, type: LeaveType) => void
-  slotStatus: SlotStatus[]
   categoryName?: string
   availableDates?: Date[]
+  holidayDates?: string[]
 }
 
 export function DateSelector({
   selections,
   onDateSelection,
-  slotStatus,
   categoryName,
   availableDates,
+  holidayDates = [],
 }: DateSelectorProps) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [currentDate, setCurrentDate] = useState<Date | undefined>()
+
   const isDateAvailable = (date: Date) => {
     const dateStr = formatDate(date)
-    const status = slotStatus.find((s) => s.date === dateStr)
 
-    // 휴일이면 비활성화
-    if (status?.isHoliday || isSunday(date)) {
+    // 공휴일이면 비활성화
+    if (holidayDates.includes(dateStr)) {
       return false
     }
 
-    // 슬롯이 없으면 비활성화
-    if (status && status.available === 0) {
+    // 일요일이면 비활성화
+    if (isSunday(date)) {
       return false
     }
 
@@ -68,14 +60,16 @@ export function DateSelector({
       return false
     }
 
+    // availableDates가 제공된 경우, 해당 날짜만 허용
+    if (availableDates && availableDates.length > 0) {
+      return availableDates.some(d => formatDate(d) === dateStr)
+    }
+
     return true
   }
 
   const getDateBadge = (date: Date) => {
     const dateStr = formatDate(date)
-    const status = slotStatus.find((s) => s.date === dateStr)
-
-    if (!status) return null
 
     // 선택된 날짜인지 확인
     const selection = selections.get(dateStr)
@@ -84,35 +78,16 @@ export function DateSelector({
       return <Badge variant="default" className="text-xs bg-blue-600">{label}</Badge>
     }
 
-    if (status.isHoliday || isSunday(date)) {
+    // 공휴일 표시
+    if (holidayDates.includes(dateStr)) {
+      return <Badge variant="destructive" className="text-xs">공휴일</Badge>
+    }
+
+    if (isSunday(date)) {
       return <Badge variant="destructive" className="text-xs">휴무</Badge>
     }
 
-    // 구분별 슬롯 표시 (categoryName이 있을 경우)
-    if (categoryName && status.categorySlots && status.categorySlots[categoryName]) {
-      const categorySlot = status.categorySlots[categoryName]
-
-      if (categorySlot.available === 0) {
-        return <Badge variant="secondary" className="text-xs">마감</Badge>
-      }
-
-      return (
-        <Badge variant="outline" className="text-xs">
-          {categorySlot.available}/{categorySlot.required}
-        </Badge>
-      )
-    }
-
-    // 전체 슬롯 표시 (fallback)
-    if (status.available === 0) {
-      return <Badge variant="secondary" className="text-xs">마감</Badge>
-    }
-
-    return (
-      <Badge variant="outline" className="text-xs">
-        {status.available}/{status.total}
-      </Badge>
-    )
+    return null
   }
 
   const handleDateClick = (date: Date | undefined) => {

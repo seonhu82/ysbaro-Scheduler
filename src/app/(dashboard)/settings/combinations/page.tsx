@@ -96,7 +96,7 @@ export default function CombinationsSettings() {
         staffRes.json()
       ])
 
-      setCombinations(combosData)
+      setCombinations(Array.isArray(combosData) ? combosData : (combosData?.data || []))
 
       if (doctorsData.success && doctorsData.data) {
         const formattedDoctors: Doctor[] = doctorsData.data.map((d: any) => ({

@@ -162,10 +162,7 @@ export async function POST(request: NextRequest) {
     let sharedToken = await prisma.applicationLink.findFirst({
       where: {
         clinicId: session.user.clinicId,
-        staffId: null, // 전체 직원용
-        token: {
-          not: null
-        }
+        staffId: null // 전체 직원용
       },
       select: {
         token: true

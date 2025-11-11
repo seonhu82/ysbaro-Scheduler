@@ -35,11 +35,18 @@ interface MonthlyStats {
   myFairnessScore: number
 }
 
+interface AnnualLeave {
+  total: number
+  used: number
+  remaining: number
+}
+
 interface FairnessData {
   staffName: string
   targetMonth: string
   fairnessScores: FairnessScores
   monthlyStats: MonthlyStats
+  annualLeave: AnnualLeave
   fairnessSettings: {
     enableNightShift: boolean
     enableWeekend: boolean
@@ -129,8 +136,8 @@ export default function FairnessCheck({ token, staffId, startDate, endDate }: Fa
         </div>
         <CardDescription className={canApply ? 'text-green-700' : 'text-yellow-700'}>
           {canApply
-            ? `11월 최대 ${data.monthlyStats.maxAllowedDays}일 신청 가능 (${data.monthlyStats.appliedOffs}일 신청 완료)`
-            : '11월 신청 가능한 일수를 모두 사용하셨습니다'
+            ? `${data.targetMonth} 최대 오프 ${data.monthlyStats.maxAllowedDays}일 신청 가능 (${data.monthlyStats.appliedOffs}일 신청 완료) • 연차 잔여: ${data.annualLeave.remaining}일`
+            : `${data.targetMonth} 신청 가능한 오프 일수를 모두 사용하셨습니다 • 연차 잔여: ${data.annualLeave.remaining}일`
           }
         </CardDescription>
       </CardHeader>
@@ -139,7 +146,7 @@ export default function FairnessCheck({ token, staffId, startDate, endDate }: Fa
         <div className="border rounded-lg p-4 bg-white">
           <div className="flex items-center gap-2 mb-3">
             <Info className="w-4 h-4 text-blue-600" />
-            <span className="font-medium text-sm">형평성 점수 현황</span>
+            <span className="font-medium text-sm">누적 형평성 편차 (10월까지)</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex items-center gap-2 p-2 bg-gray-50 rounded">
@@ -182,35 +189,57 @@ export default function FairnessCheck({ token, staffId, startDate, endDate }: Fa
           </div>
         </div>
 
-        {/* 이번 달 신청 가능 일수 */}
+        {/* 연차 잔여 일수 */}
+        <div className="border rounded-lg p-4 bg-blue-50 border-blue-200">
+          <div className="flex items-center gap-2 mb-3">
+            <Calendar className="w-4 h-4 text-blue-600" />
+            <span className="font-medium text-sm text-blue-900">연차 현황</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white rounded p-2">
+              <div className="text-xs text-gray-500 mb-1">총 연차</div>
+              <div className="font-semibold text-sm text-blue-600">{data.annualLeave.total}일</div>
+            </div>
+            <div className="bg-white rounded p-2">
+              <div className="text-xs text-gray-500 mb-1">사용</div>
+              <div className="font-semibold text-sm text-orange-600">{data.annualLeave.used}일</div>
+            </div>
+            <div className="bg-white rounded p-2">
+              <div className="text-xs text-gray-500 mb-1">잔여</div>
+              <div className="font-semibold text-sm text-green-600">{data.annualLeave.remaining}일</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 이번 달 오프 신청 가능 일수 */}
         <div className="border rounded-lg p-4 bg-white">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="w-4 h-4 text-green-600" />
-            <span className="font-medium text-sm">11월 신청 커트라인</span>
+            <span className="font-medium text-sm">{data.targetMonth} 오프 신청 커트라인 (형평성 기반)</span>
           </div>
           <div className="space-y-2">
             <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-600">11월 총 근무일</span>
+              <span className="text-gray-600">{data.targetMonth} 총 근무일</span>
               <span className="font-semibold">{data.monthlyStats.workingDays}일</span>
             </div>
             <div className="flex justify-between items-center text-sm border-t pt-2">
-              <span className="text-gray-600">{data.targetMonth} 내 형평성 점수</span>
-              <span className="font-semibold text-purple-600">{data.monthlyStats.myFairnessScore}점</span>
+              <span className="text-gray-600">누적 형평성 점수 (10월까지)</span>
+              <span className="font-semibold text-purple-600">{data.monthlyStats.myFairnessScore.toFixed(1)}점</span>
             </div>
             <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-600">{data.targetMonth} 부서 평균 점수</span>
+              <span className="text-gray-600">부서 평균 점수</span>
               <span className="font-semibold text-blue-600">{data.monthlyStats.avgFairnessScore}점</span>
             </div>
             <div className="flex justify-between items-center text-sm border-t pt-2">
-              <span className="text-gray-600">11월 최대 신청 가능</span>
+              <span className="text-gray-600">{data.targetMonth} 최대 오프 신청 가능</span>
               <span className="font-semibold text-blue-600">{data.monthlyStats.maxAllowedDays}일</span>
             </div>
             <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-600">11월 이미 신청함</span>
+              <span className="text-gray-600">{data.targetMonth} 이미 신청한 오프</span>
               <span className="font-semibold text-orange-600">{data.monthlyStats.appliedOffs}일</span>
             </div>
             <div className="border-t pt-2 flex justify-between items-center">
-              <span className="font-medium text-gray-900">11월 남은 신청 가능</span>
+              <span className="font-medium text-gray-900">{data.targetMonth} 남은 오프 신청 가능</span>
               <span className={`font-bold text-lg ${data.monthlyStats.remainingDays > 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {data.monthlyStats.remainingDays}일
               </span>
@@ -223,7 +252,7 @@ export default function FairnessCheck({ token, staffId, startDate, endDate }: Fa
           <Info className="w-4 h-4" />
           <AlertDescription className="text-sm">
             {canApply ? (
-              '형평성 점수가 높을수록 더 많은 연차/오프를 신청할 수 있습니다.'
+              '형평성 점수가 낮을수록(음수일수록) 더 많은 연차/오프를 신청할 수 있습니다. 많이 일한 만큼 휴식이 보장됩니다.'
             ) : (
               '형평성 기준에 따라 이번 달 신청 가능한 일수를 모두 사용하셨습니다.'
             )}

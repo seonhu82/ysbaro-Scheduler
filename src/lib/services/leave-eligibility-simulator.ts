@@ -14,8 +14,9 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { calculateCategoryRequirements } from '@/lib/services/category-slot-service'
+import { calculateCategoryRequirements, calculateCategorySlots, calculateCategorySlotsFromCombination, checkCategoryAvailability } from '@/lib/services/category-slot-service'
 import { getFlexibleStaff } from '@/lib/services/category-slot-service'
+import { calculateFairnessBasedLeaveLimit } from '@/lib/services/fairness-based-leave-calculator'
 
 export interface SimulationRequest {
   clinicId: string
@@ -24,6 +25,7 @@ export interface SimulationRequest {
   leaveType: 'ANNUAL' | 'OFF'
   year: number
   month: number
+  existingOffsInWeek?: string[]  // 같은 주에 이미 선택된 OFF 날짜들 (YYYY-MM-DD)
 }
 
 export interface SimulationResult {
@@ -52,25 +54,26 @@ export interface SimulationResult {
 }
 
 /**
- * 주의 시작일 (일요일) 계산
+ * 주의 시작일 (일요일) 계산 - UTC 기준
  */
 function getWeekStart(date: Date): Date {
   const d = new Date(date)
-  const day = d.getDay()
+  // UTC 기준으로 요일 계산
+  const day = d.getUTCDay()
   const diff = day === 0 ? 0 : -day
-  d.setDate(d.getDate() + diff)
-  d.setHours(0, 0, 0, 0)
+  d.setUTCDate(d.getUTCDate() + diff)
+  d.setUTCHours(0, 0, 0, 0)
   return d
 }
 
 /**
- * 주의 종료일 (토요일) 계산
+ * 주의 종료일 (토요일) 계산 - UTC 기준
  */
 function getWeekEnd(date: Date): Date {
   const weekStart = getWeekStart(date)
   const weekEnd = new Date(weekStart)
-  weekEnd.setDate(weekStart.getDate() + 6)
-  weekEnd.setHours(23, 59, 59, 999)
+  weekEnd.setUTCDate(weekStart.getUTCDate() + 6)
+  weekEnd.setUTCHours(23, 59, 59, 999)
   return weekEnd
 }
 
@@ -82,83 +85,72 @@ async function getHolidaysInWeek(
   weekStart: Date,
   weekEnd: Date
 ): Promise<number> {
-  const year = weekStart.getFullYear()
-  const month = weekStart.getMonth() + 1
-
-  // ClosedDaySettings에서 공휴일 조회
-  const closedDaySettings = await prisma.closedDaySettings.findUnique({
+  // Holiday 모델에서 공휴일 조회
+  const holidays = await prisma.holiday.findMany({
     where: {
-      clinicId_year_month: {
-        clinicId,
-        year,
-        month,
+      clinicId,
+      date: {
+        gte: weekStart,
+        lte: weekEnd,
       }
-    },
-    select: {
-      holidays: true,
     }
   })
 
-  if (!closedDaySettings?.holidays) {
-    return 0
-  }
-
-  const holidays = closedDaySettings.holidays as any[]
-
-  // 주 범위 내의 공휴일 개수 세기
-  const holidayCount = holidays.filter(holiday => {
-    const holidayDate = new Date(holiday.date)
-    return holidayDate >= weekStart && holidayDate <= weekEnd
-  }).length
-
-  return holidayCount
+  return holidays.length
 }
 
 /**
  * 1. 주4일 제약 검증
+ *
+ * 로직:
+ * - 해당 주의 평일 수 (월~토) 계산
+ * - 이미 신청한 OFF 수 확인
+ * - 신청하려는 OFF 추가 시 근무 가능일이 4일 이상인지 확인
+ * - 공휴일은 자동으로 OFF이므로 근무일에서 제외
  */
 async function checkWeek4DayConstraint(
   clinicId: string,
   staffId: string,
   leaveDate: Date,
-  leaveType: 'ANNUAL' | 'OFF'
+  leaveType: 'ANNUAL' | 'OFF',
+  existingOffsInWeek?: string[]  // 프론트엔드에서 이미 선택한 OFF 날짜들
 ): Promise<{ allowed: boolean; message?: string; details?: any }> {
   const weekStart = getWeekStart(leaveDate)
   const weekEnd = getWeekEnd(leaveDate)
 
-  // 해당 주의 스케줄 조회
-  const year = leaveDate.getFullYear()
-  const month = leaveDate.getMonth() + 1
+  console.log('🔍 [주4일 체크] 주 범위:', weekStart.toISOString().split('T')[0], '~', weekEnd.toISOString().split('T')[0])
 
-  // 해당 주에 직원이 배치된 날짜들 조회
-  const assignments = await prisma.dailyStaffAssignment.findMany({
+  // OFF가 아니면 통과 (연차는 근무일로 계산)
+  if (leaveType !== 'OFF') {
+    return { allowed: true }
+  }
+
+  // 해당 주에 공휴일이 있는지 확인
+  const holidaysInWeek = await prisma.holiday.findMany({
     where: {
-      staffId,
-      slot: {
-        date: {
-          gte: weekStart,
-          lte: weekEnd,
-        },
-        week: {
-          schedule: {
-            clinicId,
-            year,
-            month,
-          }
-        }
-      }
-    },
-    include: {
-      slot: {
-        select: {
-          date: true,
-        }
+      clinicId,
+      date: {
+        gte: weekStart,
+        lte: weekEnd,
       }
     }
   })
 
-  // 해당 주의 승인된 연차 조회
-  const approvedLeaves = await prisma.leaveApplication.findMany({
+  if (holidaysInWeek.length > 0) {
+    const holidayDates = holidaysInWeek.map(h => h.date.toISOString().split('T')[0]).join(', ')
+    return {
+      allowed: false,
+      message: `공휴일(${holidayDates})이 있는 주는 OFF 신청이 불가능합니다. 배치 유연성과 형평성 보존을 위해 연차만 신청 가능합니다.`,
+      details: {
+        weekStart: weekStart.toISOString().split('T')[0],
+        weekEnd: weekEnd.toISOString().split('T')[0],
+        holidaysInWeek: holidaysInWeek.length
+      }
+    }
+  }
+
+  // DB에서 해당 주의 승인된/대기중 OFF 조회
+  const approvedOffs = await prisma.leaveApplication.findMany({
     where: {
       staffId,
       clinicId,
@@ -166,59 +158,59 @@ async function checkWeek4DayConstraint(
         gte: weekStart,
         lte: weekEnd,
       },
+      leaveType: 'OFF',
       status: {
         in: ['CONFIRMED', 'PENDING']
       }
     },
-    select: {
-      date: true,
-      leaveType: true,
-    }
+    select: { date: true }
   })
 
-  // 공휴일 수 조회
-  const holidayCount = await getHolidaysInWeek(clinicId, weekStart, weekEnd)
+  console.log('📊 [주4일 체크] DB OFF 수:', approvedOffs.length)
 
-  // 현재 근무일 수 계산
-  let currentWorkDays = assignments.length
+  // 현재 OFF 카운트 = DB OFF 수
+  let totalOffs = approvedOffs.length
 
-  // 신청하려는 날짜가 현재 배치되어 있으면 제외
-  const isAssignedOnLeaveDate = assignments.some(a => {
-    const assignedDate = new Date(a.slot.date)
-    return assignedDate.toISOString().split('T')[0] === leaveDate.toISOString().split('T')[0]
-  })
-
-  if (isAssignedOnLeaveDate) {
-    currentWorkDays--
-  }
-
-  // 연차 일수 계산 (연차는 근무일로 계산)
-  let annualDays = approvedLeaves.filter(l => l.leaveType === 'ANNUAL').length
-
-  // 신청하려는 것이 연차이고, 해당 날짜에 이미 신청한 것이 없으면 추가
-  if (leaveType === 'ANNUAL') {
-    const alreadyApplied = approvedLeaves.some(l => {
-      const appliedDate = new Date(l.date)
-      return appliedDate.toISOString().split('T')[0] === leaveDate.toISOString().split('T')[0]
-    })
-    if (!alreadyApplied) {
-      annualDays++
+  // 프론트엔드에서 이미 선택한 OFF 추가 (DB에 없는 것만)
+  if (existingOffsInWeek && existingOffsInWeek.length > 0) {
+    for (const dateStr of existingOffsInWeek) {
+      const alreadyInDb = approvedOffs.some(off => {
+        const offDate = new Date(off.date)
+        return offDate.toISOString().split('T')[0] === dateStr
+      })
+      if (!alreadyInDb) {
+        totalOffs++
+      }
     }
+    console.log('📊 [주4일 체크] 프론트엔드 추가 선택 후 OFF 수:', totalOffs)
   }
 
-  // 최소 근무일 = 4 - 공휴일 수
-  const minimumRequired = Math.max(0, 4 - holidayCount)
-  const totalWorkEquivalent = currentWorkDays + annualDays
+  // 현재 신청하려는 날짜가 아직 카운트 안됐으면 추가
+  const currentDateStr = leaveDate.toISOString().split('T')[0]
+  const alreadyInDb = approvedOffs.some(off => {
+    const offDate = new Date(off.date)
+    return offDate.toISOString().split('T')[0] === currentDateStr
+  })
+  const alreadySelected = existingOffsInWeek?.includes(currentDateStr)
 
-  if (totalWorkEquivalent < minimumRequired) {
+  if (!alreadyInDb && !alreadySelected) {
+    totalOffs++
+  }
+
+  console.log('📊 [주4일 체크] 최종 OFF 수 (현재 신청 포함):', totalOffs)
+
+  // 주당 OFF 2개 초과 시 차단
+  const MAX_OFFS_PER_WEEK = 2
+
+  if (totalOffs > MAX_OFFS_PER_WEEK) {
     return {
       allowed: false,
-      message: `해당 주는 실제 근무 ${currentWorkDays}일 + 연차 ${annualDays}일 = ${totalWorkEquivalent}일로 주${minimumRequired}일 미만입니다.`,
+      message: `이번 주(${weekStart.toISOString().split('T')[0]} ~ ${weekEnd.toISOString().split('T')[0]})에 이미 ${totalOffs - 1}개의 OFF가 있습니다. 주당 최대 ${MAX_OFFS_PER_WEEK}개까지만 신청 가능합니다.`,
       details: {
         weekStart: weekStart.toISOString().split('T')[0],
         weekEnd: weekEnd.toISOString().split('T')[0],
-        currentWorkDays: totalWorkEquivalent,
-        minimumRequired,
+        currentOffs: totalOffs - 1,
+        maxAllowed: MAX_OFFS_PER_WEEK,
       }
     }
   }
@@ -227,9 +219,146 @@ async function checkWeek4DayConstraint(
 }
 
 /**
- * 2. 구분별 필수 인원 검증
+ * 2. 구분별 필수 인원 검증 (구분별 슬롯 계산 사용)
  */
 async function checkCategoryRequirement(
+  clinicId: string,
+  staffId: string,
+  leaveDate: Date,
+  year: number,
+  month: number
+): Promise<{ allowed: boolean; message?: string; details?: any }> {
+  // 직원의 구분 조회
+  const staff = await prisma.staff.findUnique({
+    where: { id: staffId },
+    select: {
+      categoryName: true,
+      departmentName: true,
+    }
+  })
+
+  if (!staff || !staff.categoryName) {
+    return {
+      allowed: false,
+      message: '직원 정보를 찾을 수 없습니다.',
+    }
+  }
+
+  // 규칙 설정 조회
+  const ruleSettings = await prisma.ruleSettings.findUnique({
+    where: { clinicId },
+    select: {
+      staffCategories: true
+    }
+  })
+
+  if (!ruleSettings) {
+    return {
+      allowed: false,
+      message: '규칙 설정을 찾을 수 없습니다.',
+    }
+  }
+
+  // 해당 날짜의 원장 배치 조회
+  const scheduleDoctors = await prisma.scheduleDoctor.findMany({
+    where: {
+      date: leaveDate,
+      schedule: {
+        clinicId,
+        year,
+        month,
+      }
+    },
+    include: {
+      doctor: {
+        select: {
+          id: true,
+          shortName: true
+        }
+      }
+    },
+    orderBy: {
+      doctorId: 'asc'
+    }
+  })
+
+  if (scheduleDoctors.length === 0) {
+    return {
+      allowed: false,
+      message: '해당 날짜의 스케줄이 아직 생성되지 않았습니다.',
+    }
+  }
+
+  // 원장 조합으로 필요 직원 수 찾기
+  const doctorNames = scheduleDoctors.map(sd => sd.doctor.shortName).sort()
+  const doctorCombination = await prisma.doctorCombination.findFirst({
+    where: {
+      clinicId,
+      doctors: { equals: doctorNames }
+    }
+  })
+
+  if (!doctorCombination) {
+    return {
+      allowed: false,
+      message: `원장 조합 [${doctorNames.join(', ')}]에 대한 필요 직원 설정을 찾을 수 없습니다.`,
+    }
+  }
+
+  const requiredStaff = doctorCombination.requiredStaff
+
+  // 구분별 슬롯 계산 - departmentCategoryStaff가 있으면 사용, 없으면 비율 기반 계산
+  const categorySlots = doctorCombination.departmentCategoryStaff
+    ? await calculateCategorySlotsFromCombination(
+        clinicId,
+        leaveDate,
+        doctorCombination.departmentCategoryStaff,
+        staff.departmentName
+      )
+    : await calculateCategorySlots(
+        clinicId,
+        leaveDate,
+        requiredStaff,
+        ruleSettings.staffCategories
+      )
+
+  console.log('🔍 [DEBUG] Category calculation:')
+  console.log('  - Using departmentCategoryStaff:', !!doctorCombination.departmentCategoryStaff)
+  console.log('  - Staff department:', staff.departmentName)
+  console.log('  - Staff category:', staff.categoryName)
+  console.log('  - Available slots:', Object.keys(categorySlots))
+  console.log('  - Category slots:', JSON.stringify(categorySlots, null, 2))
+
+  const myCategorySlot = categorySlots[staff.categoryName]
+
+  if (!myCategorySlot) {
+    return {
+      allowed: false,
+      message: `구분 '${staff.categoryName}'을 찾을 수 없습니다.`,
+    }
+  }
+
+  // 신청 가능 슬롯이 0이면 거부
+  if (myCategorySlot.available <= 0) {
+    return {
+      allowed: false,
+      message: `${staff.categoryName} 구분의 신청 가능 슬롯이 부족합니다. (필요: ${myCategorySlot.required}명, 이미 신청: ${myCategorySlot.approved}명)`,
+      details: {
+        category: staff.categoryName,
+        required: myCategorySlot.required,
+        available: myCategorySlot.available,
+        approved: myCategorySlot.approved,
+      }
+    }
+  }
+
+  return { allowed: true }
+}
+
+/**
+ * 3. 편차 허용 범위 검증 (형평성 기반 경우의 수 계산)
+ */
+async function checkFairnessDeviation(
   clinicId: string,
   staffId: string,
   leaveDate: Date
@@ -237,121 +366,49 @@ async function checkCategoryRequirement(
   const year = leaveDate.getFullYear()
   const month = leaveDate.getMonth() + 1
 
-  // 직원의 구분 조회
-  const staff = await prisma.staff.findUnique({
-    where: { id: staffId },
-    select: {
-      categoryName: true,
-    }
-  })
-
-  if (!staff) {
-    return {
-      allowed: false,
-      message: '직원 정보를 찾을 수 없습니다.',
-    }
-  }
-
-  // 해당 날짜의 DailySlot 조회
-  const slot = await prisma.dailySlot.findFirst({
-    where: {
-      date: leaveDate,
-      week: {
-        schedule: {
-          clinicId,
-          year,
-          month,
-        }
-      }
-    },
-    select: {
-      id: true,
-      requiredStaff: true,
-      doctorSchedule: true,
-    }
-  })
-
-  if (!slot) {
-    return {
-      allowed: false,
-      message: '해당 날짜의 스케줄이 아직 생성되지 않았습니다.',
-    }
-  }
-
-  // 의사 조합 정보 조회
-  const doctorSchedule = slot.doctorSchedule as any
-  const doctorCombo = doctorSchedule?.doctors || []
-
-  // Category ratio settings 조회
-  const ratioSettings = await prisma.categoryRatioSettings.findUnique({
-    where: { clinicId }
-  })
-
-  if (!ratioSettings) {
-    return {
-      allowed: false,
-      message: '구분별 비율 설정을 찾을 수 없습니다.',
-    }
-  }
-
-  const ratios = ratioSettings.ratios as { [key: string]: number }
-
-  // 구분별 필요 인원 계산
-  const categoryRequirements = calculateCategoryRequirements(slot.requiredStaff, ratios)
-  const minRequired = categoryRequirements[staff.categoryName] || 0
-
-  // 해당 구분의 전체 직원 조회 (활성 + 이미 OFF 신청 안한 사람)
-  const availableStaff = await prisma.staff.findMany({
-    where: {
+  try {
+    // 형평성 기반 최대 신청 가능 일수 계산
+    const fairnessLimit = await calculateFairnessBasedLeaveLimit(
       clinicId,
-      categoryName: staff.categoryName,
-      isActive: true,
-      id: {
-        not: staffId, // 신청자 제외
-      },
-      leaveApplications: {
-        none: {
-          date: leaveDate,
-          status: { in: ['PENDING', 'CONFIRMED'] }
+      staffId,
+      year,
+      month
+    )
+
+    // 이미 신청한 오프 수 확인
+    const appliedOffs = await prisma.leaveApplication.count({
+      where: {
+        staffId,
+        clinicId,
+        status: { in: ['CONFIRMED', 'PENDING'] },
+        leaveType: 'OFF',
+        date: {
+          gte: new Date(year, month - 1, 1),
+          lte: new Date(year, month, 0),
+        }
+      }
+    })
+
+    // 신청 가능 일수 초과 체크
+    if (appliedOffs >= fairnessLimit.maxAllowedDays) {
+      return {
+        allowed: false,
+        message: `형평성 기준 초과: ${fairnessLimit.reason} (최대 ${fairnessLimit.maxAllowedDays}일, 이미 ${appliedOffs}일 신청)`,
+        details: {
+          currentDeviation: fairnessLimit.currentDeviation,
+          avgDeviation: fairnessLimit.avgDeviation,
+          maxAllowedDays: fairnessLimit.maxAllowedDays,
+          appliedOffs,
         }
       }
     }
-  })
 
-  // Flexible staff 확인
-  const flexibleStaff = await getFlexibleStaff(
-    clinicId,
-    staff.categoryName,
-    [staffId]
-  )
-
-  const totalAvailable = availableStaff.length + flexibleStaff.length
-
-  if (totalAvailable < minRequired) {
-    return {
-      allowed: false,
-      message: `${staff.categoryName}급은 최소 ${minRequired}명 필요하지만, 귀하 제외 시 ${totalAvailable}명만 가능합니다.`,
-      details: {
-        category: staff.categoryName,
-        required: minRequired,
-        available: totalAvailable,
-      }
-    }
+    return { allowed: true }
+  } catch (error) {
+    console.error('형평성 체크 오류:', error)
+    // 오류 시 통과로 처리 (안전장치)
+    return { allowed: true }
   }
-
-  return { allowed: true }
-}
-
-/**
- * 3. 편차 허용 범위 검증 (선택적 - 추후 구현)
- */
-async function checkFairnessDeviation(
-  staffId: string,
-  leaveDate: Date
-): Promise<{ allowed: boolean; message?: string; details?: any }> {
-  // TODO: 과거 누적 편차 조회 및 검증
-  // 현재는 통과로 처리
-  return { allowed: true }
 }
 
 /**
@@ -362,14 +419,25 @@ export async function simulateScheduleWithLeave(
 ): Promise<SimulationResult> {
   const { clinicId, staffId, leaveDate, leaveType, year, month } = request
 
+  console.log('🔍 [Simulator] 시뮬레이션 시작:', {
+    staffId,
+    leaveDate: leaveDate.toISOString().split('T')[0],
+    leaveType,
+    year,
+    month
+  })
+
   try {
     // 1. 주4일 제약 검증
+    console.log('📋 [Simulator] 1단계: 주4일 제약 검증 시작')
     const week4DayCheck = await checkWeek4DayConstraint(
       clinicId,
       staffId,
       leaveDate,
-      leaveType
+      leaveType,
+      request.existingOffsInWeek
     )
+    console.log('📋 [Simulator] 주4일 제약 결과:', week4DayCheck)
 
     if (!week4DayCheck.allowed) {
       return {
@@ -384,11 +452,15 @@ export async function simulateScheduleWithLeave(
     }
 
     // 2. 구분별 필수 인원 검증
+    console.log('📋 [Simulator] 2단계: 구분별 슬롯 검증 시작')
     const categoryCheck = await checkCategoryRequirement(
       clinicId,
       staffId,
-      leaveDate
+      leaveDate,
+      year,
+      month
     )
+    console.log('📋 [Simulator] 구분별 슬롯 결과:', categoryCheck)
 
     if (!categoryCheck.allowed) {
       return {
@@ -405,7 +477,9 @@ export async function simulateScheduleWithLeave(
     }
 
     // 3. 편차 검증 (선택적)
-    const fairnessCheck = await checkFairnessDeviation(staffId, leaveDate)
+    console.log('📋 [Simulator] 3단계: 형평성 편차 검증 시작')
+    const fairnessCheck = await checkFairnessDeviation(clinicId, staffId, leaveDate)
+    console.log('📋 [Simulator] 형평성 편차 결과:', fairnessCheck)
 
     if (!fairnessCheck.allowed) {
       return {
@@ -420,12 +494,13 @@ export async function simulateScheduleWithLeave(
     }
 
     // 모든 제약 조건 통과
+    console.log('✅ [Simulator] 모든 제약 조건 통과 - 신청 가능')
     return {
       feasible: true,
     }
 
   } catch (error: any) {
-    console.error('Simulation error:', error)
+    console.error('❌ [Simulator] 시뮬레이션 오류:', error)
     return {
       feasible: false,
       reason: 'UNKNOWN',

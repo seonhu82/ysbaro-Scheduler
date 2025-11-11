@@ -60,6 +60,84 @@ export function calculateCategoryRequirements(
 }
 
 /**
+ * 원장 조합의 departmentCategoryStaff 정보를 사용하여 구분별 슬롯 계산
+ *
+ * @param clinicId 병원 ID
+ * @param date 날짜
+ * @param departmentCategoryStaff 부서별 구분 상세 정보
+ * @param departmentName 직원의 부서명
+ * @returns 구분별 슬롯 정보
+ */
+export async function calculateCategorySlotsFromCombination(
+  clinicId: string,
+  date: Date,
+  departmentCategoryStaff: any,
+  departmentName: string
+): Promise<CategorySlots> {
+  const slots: CategorySlots = {}
+
+  // 해당 부서의 구분별 요구사항 가져오기
+  const deptCategories = departmentCategoryStaff[departmentName]
+
+  if (!deptCategories) {
+    return slots
+  }
+
+  // 각 구분별로 슬롯 계산
+  for (const [categoryName, categoryInfo] of Object.entries(deptCategories)) {
+    const info = categoryInfo as { count: number; minRequired: number }
+    const required = info.count
+
+    // 해당 구분의 승인된/대기중 신청 수
+    const approvedCount = await prisma.leaveApplication.count({
+      where: {
+        clinicId,
+        date,
+        status: {
+          in: ['CONFIRMED', 'PENDING']
+        },
+        staff: {
+          categoryName
+        }
+      }
+    })
+
+    // 해당 구분의 보류 중인 신청 수
+    const onHoldCount = await prisma.leaveApplication.count({
+      where: {
+        clinicId,
+        date,
+        status: 'ON_HOLD',
+        staff: {
+          categoryName
+        }
+      }
+    })
+
+    // 해당 구분의 총 직원 수
+    const totalStaffCount = await prisma.staff.count({
+      where: {
+        clinicId,
+        categoryName,
+        isActive: true
+      }
+    })
+
+    // 신청 가능 슬롯 = 총 직원 수 - 필요 인원
+    const availableSlots = totalStaffCount - required
+
+    slots[categoryName] = {
+      required,
+      available: Math.max(0, availableSlots - approvedCount),
+      approved: approvedCount,
+      onHold: onHoldCount
+    }
+  }
+
+  return slots
+}
+
+/**
  * 구분별 신청 가능한 슬롯 계산
  *
  * @param clinicId 병원 ID
@@ -122,12 +200,14 @@ export async function calculateCategorySlots(
   for (const category of staffCategories) {
     const required = requirements[category] || 0
 
-    // 해당 구분의 승인된 신청 수
+    // 해당 구분의 승인된/대기중 신청 수
     const approvedCount = await prisma.leaveApplication.count({
       where: {
         clinicId,
         date,
-        status: 'CONFIRMED',
+        status: {
+          in: ['CONFIRMED', 'PENDING']
+        },
         staff: {
           categoryName: category
         }

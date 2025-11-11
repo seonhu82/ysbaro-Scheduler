@@ -117,13 +117,26 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 공휴일 조회
+    // 공휴일 조회 - 주차 범위에 맞춰 확장 (이전/다음 달 포함)
+    const monthStart = new Date(year, month - 1, 1)
+    const monthEnd = new Date(year, month, 0)
+
+    // 월 시작일이 속한 주의 일요일부터
+    const firstWeekSunday = new Date(monthStart)
+    const firstDayOfWeek = monthStart.getDay()
+    firstWeekSunday.setDate(monthStart.getDate() - firstDayOfWeek)
+
+    // 월 마지막일이 속한 주의 토요일까지
+    const lastWeekSaturday = new Date(monthEnd)
+    const lastDayOfWeek = monthEnd.getDay()
+    lastWeekSaturday.setDate(monthEnd.getDate() + (6 - lastDayOfWeek))
+
     const holidays = await prisma.holiday.findMany({
       where: {
         clinicId,
         date: {
-          gte: new Date(year, month - 1, 1),
-          lt: new Date(year, month, 1)
+          gte: firstWeekSunday,
+          lte: lastWeekSaturday
         }
       }
     })
