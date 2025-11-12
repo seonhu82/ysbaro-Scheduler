@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { RefreshCw, Search, TrendingUp, TrendingDown } from 'lucide-react'
+import { StaffApplicationsDialog } from './StaffApplicationsDialog'
 
 type StaffMember = {
   id: string
@@ -83,6 +84,11 @@ export function StaffView() {
   const [departments, setDepartments] = useState<FilterOption[]>([])
   const [categories, setCategories] = useState<FilterOption[]>([])
   const [loadingOptions, setLoadingOptions] = useState(true)
+
+  // 직원별 신청 내역 다이얼로그
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null)
+  const [selectedStaffName, setSelectedStaffName] = useState<string | null>(null)
 
   const fetchFilterOptions = async () => {
     try {
@@ -287,73 +293,46 @@ export function StaffView() {
           </Card>
         ) : (
           filteredStaff.map((member) => (
-            <Card key={member.id} className="p-4 hover:shadow-lg transition-shadow">
+            <Card
+              key={member.id}
+              className="p-3 hover:shadow-lg transition-shadow cursor-pointer"
+              onClick={() => {
+                setSelectedStaffId(member.id)
+                setSelectedStaffName(member.name)
+                setDialogOpen(true)
+              }}
+            >
               {/* 직원 정보 */}
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between mb-3">
                 <div>
-                  <h3 className="font-semibold text-lg">{member.name}</h3>
-                  <p className="text-sm text-gray-600">{RANK_LABELS[member.rank]}</p>
-                  {member.email && (
-                    <p className="text-xs text-gray-500 mt-1">{member.email}</p>
-                  )}
+                  <h3 className="font-semibold text-base">{member.name}</h3>
+                  <p className="text-xs text-gray-600">{RANK_LABELS[member.rank]}</p>
                 </div>
-                <Badge variant="outline">
-                  {member.statistics.confirmed}/{member.statistics.total}
-                </Badge>
               </div>
 
               {/* 통계 */}
-              <div className="grid grid-cols-3 gap-2 mb-4 p-3 bg-gray-50 rounded-lg">
+              <div className="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-lg">
                 <div className="text-center">
-                  <div className="text-lg font-semibold text-green-600">
-                    {member.statistics.annual}
+                  <div className="text-base font-semibold text-blue-600">
+                    {member.statistics.total}
+                    {member.statistics.annual > 0 && (
+                      <span className="text-xs text-gray-500 ml-1">({member.statistics.annual})</span>
+                    )}
                   </div>
-                  <div className="text-xs text-gray-600">연차</div>
+                  <div className="text-[10px] text-gray-600">총 신청(연차)</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-lg font-semibold text-purple-600">
-                    {member.statistics.off}
+                  <div className="text-base font-semibold text-green-600">
+                    {member.statistics.confirmed}
                   </div>
-                  <div className="text-xs text-gray-600">오프</div>
+                  <div className="text-[10px] text-gray-600">승인</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-lg font-semibold text-yellow-600">
+                  <div className="text-base font-semibold text-yellow-600">
                     {member.statistics.pending}
                   </div>
-                  <div className="text-xs text-gray-600">대기</div>
+                  <div className="text-[10px] text-gray-600">대기</div>
                 </div>
-              </div>
-
-              {/* 최근 신청 내역 */}
-              <div>
-                <h4 className="text-sm font-semibold mb-2 text-gray-700">최근 신청 내역</h4>
-                {member.recentApplications.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-2">신청 내역 없음</p>
-                ) : (
-                  <div className="space-y-2">
-                    {member.recentApplications.map((app) => (
-                      <div
-                        key={app.id}
-                        className="flex items-center justify-between text-xs p-2 bg-white border rounded"
-                      >
-                        <div className="flex-1">
-                          <div className="font-medium">
-                            {new Date(app.date).toLocaleDateString('ko-KR', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </div>
-                          <div className="text-gray-500">
-                            {LEAVE_TYPE_LABELS[app.leaveType]}
-                          </div>
-                        </div>
-                        <Badge className={`text-xs ${STATUS_COLORS[app.status]}`}>
-                          {STATUS_LABELS[app.status]}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </Card>
           ))
@@ -411,6 +390,19 @@ export function StaffView() {
           </p>
         </Card>
       )}
+
+      {/* 직원별 신청 내역 다이얼로그 */}
+      <StaffApplicationsDialog
+        open={dialogOpen}
+        onClose={() => {
+          setDialogOpen(false)
+          setSelectedStaffId(null)
+          setSelectedStaffName(null)
+          fetchStaffData() // 다이얼로그 닫을 때 데이터 새로고침
+        }}
+        staffId={selectedStaffId}
+        staffName={selectedStaffName}
+      />
     </div>
   )
 }

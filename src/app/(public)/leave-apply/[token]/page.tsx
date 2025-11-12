@@ -412,6 +412,8 @@ export default function LeaveApplyPage({
     setSubmitting(true)
 
     try {
+      console.log('🔑 일괄 신청 시작 - PIN:', pinCode, '직원:', authData?.staffName)
+
       const applications = Array.from(selections.entries()).map(([date, type]) => ({
         date,
         type,

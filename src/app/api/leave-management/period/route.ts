@@ -82,7 +82,13 @@ export async function GET(request: NextRequest) {
         })
 
         return {
-          ...link,
+          id: link.id,
+          token: link.token,
+          year: link.year,
+          month: link.month,
+          expiresAt: link.expiresAt,
+          status: link.status,
+          _count: link._count,
           slotLimits: [{
             id: link.id,
             date: `${link.year}-${String(link.month).padStart(2, '0')}`,

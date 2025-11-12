@@ -44,10 +44,12 @@ export function LeaveDetailDialog({ open, onClose, application }: LeaveDetailDia
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [leaveType, setLeaveType] = useState<'ANNUAL' | 'OFF'>(application?.leaveType || 'ANNUAL')
+  const [status, setStatus] = useState<'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'REJECTED'>(application?.status || 'PENDING')
 
   const handleEdit = () => {
     if (application) {
       setLeaveType(application.leaveType)
+      setStatus(application.status)
       setEditing(true)
     }
   }
@@ -61,6 +63,7 @@ export function LeaveDetailDialog({ open, onClose, application }: LeaveDetailDia
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leaveType,
+          status,
         }),
       })
 
@@ -163,13 +166,27 @@ export function LeaveDetailDialog({ open, onClose, application }: LeaveDetailDia
 
           {/* 상태 */}
           <div>
-            <Label>상태</Label>
-            <div className="mt-1 p-2 bg-gray-50 rounded">
-              {application.status === 'PENDING' && '대기중'}
-              {application.status === 'CONFIRMED' && '승인'}
-              {application.status === 'CANCELLED' && '취소'}
-              {application.status === 'REJECTED' && '반려'}
-            </div>
+            <Label htmlFor="status">상태</Label>
+            {editing ? (
+              <Select value={status} onValueChange={(v) => setStatus(v as 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'REJECTED')}>
+                <SelectTrigger id="status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PENDING">대기중</SelectItem>
+                  <SelectItem value="CONFIRMED">승인</SelectItem>
+                  <SelectItem value="CANCELLED">취소</SelectItem>
+                  <SelectItem value="REJECTED">반려</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="mt-1 p-2 bg-gray-50 rounded">
+                {application.status === 'PENDING' && '대기중'}
+                {application.status === 'CONFIRMED' && '승인'}
+                {application.status === 'CANCELLED' && '취소'}
+                {application.status === 'REJECTED' && '반려'}
+              </div>
+            )}
           </div>
         </div>
 

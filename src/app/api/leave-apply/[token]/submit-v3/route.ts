@@ -43,7 +43,7 @@ export async function POST(
       )
     }
 
-    // 2. PIN으로 직원 조회
+    // 2. PIN 또는 생년월일로 직원 조회
     let staff
     if (link.staffId) {
       // 특정 직원용 링크
@@ -53,15 +53,65 @@ export async function POST(
           { status: 404 }
         )
       }
-      if (link.staff.pinCode !== pin) {
-        return NextResponse.json(
-          { success: false, error: 'Invalid PIN' },
-          { status: 401 }
-        )
+
+      // 🔐 PIN 설정 여부에 따라 인증 (생년월일도 허용)
+      if (link.staff.pinCode) {
+        // PIN이 설정되어 있으면 PIN 또는 생년월일로 인증 (전환기 지원)
+        const isPinMatch = link.staff.pinCode === pin
+        let isBirthdateMatch = false
+
+        // PIN이 일치하지 않으면 생년월일도 확인
+        if (!isPinMatch && pin.length === 6) {
+          const inputYear = parseInt(pin.substring(0, 2))
+          const inputMonth = parseInt(pin.substring(2, 4))
+          const inputDay = parseInt(pin.substring(4, 6))
+          const fullYear = inputYear >= 50 ? 1900 + inputYear : 2000 + inputYear
+
+          const staffBirthDate = new Date(link.staff.birthDate)
+          const dbYear = staffBirthDate.getUTCFullYear()
+          const dbMonth = staffBirthDate.getUTCMonth() + 1
+          const dbDay = staffBirthDate.getUTCDate()
+
+          isBirthdateMatch = (fullYear === dbYear && inputMonth === dbMonth && inputDay === dbDay)
+        }
+
+        // PIN도 생년월일도 일치하지 않으면 인증 실패
+        if (!isPinMatch && !isBirthdateMatch) {
+          return NextResponse.json(
+            { success: false, error: 'Invalid PIN or birthdate' },
+            { status: 401 }
+          )
+        }
+      } else {
+        // PIN이 없으면 생년월일로 인증
+        if (pin.length !== 6) {
+          return NextResponse.json(
+            { success: false, error: '생년월일은 6자리입니다 (YYMMDD)' },
+            { status: 400 }
+          )
+        }
+
+        const inputYear = parseInt(pin.substring(0, 2))
+        const inputMonth = parseInt(pin.substring(2, 4))
+        const inputDay = parseInt(pin.substring(4, 6))
+        const fullYear = inputYear >= 50 ? 1900 + inputYear : 2000 + inputYear
+
+        const staffBirthDate = new Date(link.staff.birthDate)
+        const dbYear = staffBirthDate.getUTCFullYear()
+        const dbMonth = staffBirthDate.getUTCMonth() + 1
+        const dbDay = staffBirthDate.getUTCDate()
+
+        if (fullYear !== dbYear || inputMonth !== dbMonth || inputDay !== dbDay) {
+          return NextResponse.json(
+            { success: false, error: 'Invalid birthdate' },
+            { status: 401 }
+          )
+        }
       }
+
       staff = link.staff
     } else {
-      // 전체 직원용 링크
+      // 전체 직원용 링크 - PIN으로 먼저 조회
       staff = await prisma.staff.findFirst({
         where: {
           clinicId: link.clinicId,
@@ -70,9 +120,39 @@ export async function POST(
         }
       })
 
+      // PIN으로 못 찾으면 생년월일로 조회 (PIN 설정 여부 무관)
+      if (!staff && pin.length === 6) {
+        const inputYear = parseInt(pin.substring(0, 2))
+        const inputMonth = parseInt(pin.substring(2, 4))
+        const inputDay = parseInt(pin.substring(4, 6))
+        const fullYear = inputYear >= 50 ? 1900 + inputYear : 2000 + inputYear
+
+        // 생년월일이 일치하는 직원 찾기 (PIN 설정 여부 무관)
+        const allStaff = await prisma.staff.findMany({
+          where: {
+            clinicId: link.clinicId,
+            isActive: true,
+          }
+        })
+
+        for (const s of allStaff) {
+          if (!s.birthDate) continue
+
+          const staffBirthDate = new Date(s.birthDate)
+          const dbYear = staffBirthDate.getUTCFullYear()
+          const dbMonth = staffBirthDate.getUTCMonth() + 1
+          const dbDay = staffBirthDate.getUTCDate()
+
+          if (fullYear === dbYear && inputMonth === dbMonth && inputDay === dbDay) {
+            staff = s
+            break
+          }
+        }
+      }
+
       if (!staff) {
         return NextResponse.json(
-          { success: false, error: 'Invalid PIN' },
+          { success: false, error: 'Invalid PIN or birthdate' },
           { status: 401 }
         )
       }

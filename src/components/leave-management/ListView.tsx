@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -71,6 +72,8 @@ export function ListView() {
   const [monthFilter, setMonthFilter] = useState('')
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
   const [selectedApplication, setSelectedApplication] = useState<LeaveApplication | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkProcessing, setBulkProcessing] = useState(false)
 
   const fetchApplications = async () => {
     try {
@@ -147,6 +150,86 @@ export function ListView() {
     }
   }
 
+  const handleBulkAction = async (newStatus: 'CONFIRMED' | 'CANCELLED') => {
+    if (selectedIds.size === 0) {
+      toast({
+        variant: 'destructive',
+        title: '선택 오류',
+        description: '선택된 항목이 없습니다.',
+      })
+      return
+    }
+
+    const action = newStatus === 'CONFIRMED' ? '승인' : '취소'
+    if (!confirm(`선택한 ${selectedIds.size}건을 ${action}하시겠습니까?`)) {
+      return
+    }
+
+    try {
+      setBulkProcessing(true)
+      let successCount = 0
+      let failCount = 0
+
+      for (const id of selectedIds) {
+        try {
+          const response = await fetch(`/api/leave-management/${id}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ status: newStatus }),
+          })
+
+          const result = await response.json()
+          if (result.success) {
+            successCount++
+          } else {
+            failCount++
+          }
+        } catch (error) {
+          failCount++
+        }
+      }
+
+      toast({
+        title: `일괄 ${action} 완료`,
+        description: `성공: ${successCount}건, 실패: ${failCount}건`,
+        variant: failCount > 0 ? 'destructive' : 'default',
+      })
+
+      setSelectedIds(new Set())
+      fetchApplications()
+    } catch (error) {
+      console.error('Failed bulk action:', error)
+      toast({
+        variant: 'destructive',
+        title: '오류 발생',
+        description: '일괄 처리 중 오류가 발생했습니다.',
+      })
+    } finally {
+      setBulkProcessing(false)
+    }
+  }
+
+  const toggleSelection = (id: string) => {
+    const newSelection = new Set(selectedIds)
+    if (newSelection.has(id)) {
+      newSelection.delete(id)
+    } else {
+      newSelection.add(id)
+    }
+    setSelectedIds(newSelection)
+  }
+
+  const toggleSelectAll = () => {
+    const pendingApplications = filteredApplications.filter(app => app.status === 'PENDING')
+    if (selectedIds.size === pendingApplications.length && pendingApplications.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(pendingApplications.map(app => app.id)))
+    }
+  }
+
   // 검색어 필터링
   const filteredApplications = applications.filter((app) => {
     if (!searchTerm) return true
@@ -158,8 +241,44 @@ export function ListView() {
     )
   })
 
+  const pendingCount = filteredApplications.filter(app => app.status === 'PENDING').length
+  const selectedCount = selectedIds.size
+
   return (
     <div className="space-y-4">
+      {/* 일괄 작업 버튼 */}
+      {selectedCount > 0 && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              {selectedCount}개 항목 선택됨
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleBulkAction('CONFIRMED')}
+                disabled={bulkProcessing}
+                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+              >
+                <Check className="w-4 h-4 mr-1" />
+                일괄 승인
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleBulkAction('CANCELLED')}
+                disabled={bulkProcessing}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <X className="w-4 h-4 mr-1" />
+                일괄 취소
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* 필터 및 검색 */}
       <Card className="p-4">
         <div className="flex flex-col lg:flex-row gap-4">
@@ -214,6 +333,13 @@ export function ListView() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b">
               <tr>
+                <th className="px-4 py-3 text-left">
+                  <Checkbox
+                    checked={pendingCount > 0 && selectedCount === pendingCount}
+                    onCheckedChange={toggleSelectAll}
+                    disabled={pendingCount === 0}
+                  />
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   날짜
                 </th>
@@ -240,20 +366,28 @@ export function ListView() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                     <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin" />
                     로딩 중...
                   </td>
                 </tr>
               ) : filteredApplications.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                     연차 신청 내역이 없습니다.
                   </td>
                 </tr>
               ) : (
                 filteredApplications.map((app) => (
                   <tr key={app.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-4">
+                      {app.status === 'PENDING' && (
+                        <Checkbox
+                          checked={selectedIds.has(app.id)}
+                          onCheckedChange={() => toggleSelection(app.id)}
+                        />
+                      )}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {new Date(app.date).toLocaleDateString('ko-KR', {
                         year: 'numeric',
@@ -283,7 +417,7 @@ export function ListView() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                       <div className="flex justify-end gap-2">
-                        {app.status === 'PENDING' && (
+                        {app.status === 'PENDING' ? (
                           <>
                             <Button
                               size="sm"
@@ -304,7 +438,25 @@ export function ListView() {
                               취소
                             </Button>
                           </>
-                        )}
+                        ) : app.status === 'CONFIRMED' ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleStatusChange(app.id, 'PENDING')}
+                            className="text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50"
+                          >
+                            대기로 변경
+                          </Button>
+                        ) : app.status === 'CANCELLED' ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleStatusChange(app.id, 'PENDING')}
+                            className="text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50"
+                          >
+                            대기로 변경
+                          </Button>
+                        ) : null}
                         <Button
                           size="sm"
                           variant="outline"

@@ -28,12 +28,20 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { leaveType } = body
+    const { leaveType, status } = body
 
     // 타입 검증
     if (leaveType && leaveType !== 'ANNUAL' && leaveType !== 'OFF') {
       return NextResponse.json(
         { success: false, error: 'Invalid leave type' },
+        { status: 400 }
+      )
+    }
+
+    // 상태 검증
+    if (status && !['PENDING', 'CONFIRMED', 'CANCELLED', 'ON_HOLD', 'REJECTED'].includes(status)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid status' },
         { status: 400 }
       )
     }
@@ -71,11 +79,12 @@ export async function PATCH(
     const updated = await prisma.leaveApplication.update({
       where: { id: params.id },
       data: {
-        ...(leaveType && { leaveType })
+        ...(leaveType && { leaveType }),
+        ...(status && { status })
       }
     })
 
-    console.log(`✅ 연차/오프 수정: ${application.staff.name} - ${params.id}`)
+    console.log(`✅ 연차/오프 수정: ${application.staff.name} - ${params.id}${status ? ` (상태: ${status})` : ''}`)
 
     return NextResponse.json({
       success: true,

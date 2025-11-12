@@ -43,7 +43,7 @@ export async function GET(
     // 해당 기간의 신청 내역 조회
     const applications = await prisma.leaveApplication.findMany({
       where: {
-        applicationLinkId: id
+        linkId: id
       },
       include: {
         staff: {
