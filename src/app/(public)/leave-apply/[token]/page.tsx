@@ -291,6 +291,13 @@ export default function LeaveApplyPage({
       const result = await response.json()
 
       if (result.success) {
+        // 이전 사용자의 상태 초기화
+        setSelections(new Map())
+        setMyApplications([])
+        setStatistics(null)
+        setFairnessData(null)
+        setSlotStatus(null)
+
         setIsAuth(true)
         setAuthData(result.data)
         toast({
@@ -464,12 +471,13 @@ export default function LeaveApplyPage({
     setSubmitting(true)
 
     try {
-      console.log('🔑 일괄 신청 시작 - PIN:', pinCode, '직원:', authData?.staffName)
+      console.log('🔑 일괄 신청 시작 - staffId:', authData?.staffId, '직원:', authData?.staffName)
 
       const applications = Array.from(selections.entries()).map(([date, type]) => ({
         date,
         type,
         pin: pinCode, // PIN 추가
+        staffId: authData?.staffId, // staffId 추가로 중복 PIN 문제 해결
       }))
 
       // 모든 선택된 날짜 목록 (형평성 검증용)
@@ -765,6 +773,11 @@ export default function LeaveApplyPage({
     setAuthData(null)
     setSelectedStaffId('')
     setPinCode('')
+    setSelections(new Map())
+    setMyApplications([])
+    setStatistics(null)
+    setFairnessData(null)
+    setSlotStatus(null)
   }
 
   if (!isAuth) {

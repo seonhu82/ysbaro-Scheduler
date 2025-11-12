@@ -65,6 +65,7 @@ export const leaveApplicationSchema = z.object({
   pin: z.string()
     .length(6, 'PIN은 6자리여야 합니다')
     .regex(/^\d{6}$/, 'PIN은 숫자만 입력 가능합니다'),
+  staffId: z.string().optional(), // staffId로 직원을 정확히 식별 (중복 PIN 문제 해결)
   otherSelectedDates: z.array(dateSchema).optional() // 형평성 검증용 다른 선택 날짜들
 })
 

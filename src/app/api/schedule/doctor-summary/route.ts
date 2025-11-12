@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
     const lastDayOfWeek = monthEnd.getDay()
     lastWeekSaturday.setDate(monthEnd.getDate() + (6 - lastDayOfWeek))
 
-    const doctorSchedules = await prisma.scheduleDoctor.findMany({
+    const allDoctorSchedules = await prisma.scheduleDoctor.findMany({
       where: {
         schedule: {
           clinicId
@@ -126,11 +126,49 @@ export async function GET(request: NextRequest) {
         }
       },
       include: {
-        doctor: true
+        doctor: true,
+        schedule: true
       },
       orderBy: {
         date: 'asc'
       }
+    })
+
+    // 중복 제거: 같은 날짜에 여러 스케줄의 데이터가 있을 경우
+    // 1. 해당 월의 스케줄 우선
+    // 2. 배포된 스케줄 우선
+    // 3. 최신 스케줄 우선
+    const doctorSchedulesByDate = new Map<string, typeof allDoctorSchedules>()
+
+    allDoctorSchedules.forEach(ds => {
+      const dateStr = ds.date.toISOString().split('T')[0]
+
+      if (!doctorSchedulesByDate.has(dateStr)) {
+        doctorSchedulesByDate.set(dateStr, [])
+      }
+      doctorSchedulesByDate.get(dateStr)!.push(ds)
+    })
+
+    // 각 날짜별로 최적의 스케줄 선택
+    const doctorSchedules = Array.from(doctorSchedulesByDate.entries()).flatMap(([dateStr, schedules]) => {
+      // 우선순위: 해당 월 스케줄 > 배포된 스케줄 > 최신 스케줄
+      const currentMonthSchedules = schedules.filter(ds =>
+        ds.schedule.year === year && ds.schedule.month === month
+      )
+
+      if (currentMonthSchedules.length > 0) {
+        return currentMonthSchedules
+      }
+
+      const deployedSchedules = schedules.filter(ds => ds.schedule.status === 'DEPLOYED')
+      if (deployedSchedules.length > 0) {
+        return deployedSchedules
+      }
+
+      // 최신 스케줄 선택
+      return schedules.sort((a, b) =>
+        new Date(b.schedule.createdAt).getTime() - new Date(a.schedule.createdAt).getTime()
+      ).slice(0, 3) // 같은 날짜에 최대 3명의 원장 (중복 방지를 위해 첫 번째 스케줄만)
     })
 
     // 휴무일 설정 조회

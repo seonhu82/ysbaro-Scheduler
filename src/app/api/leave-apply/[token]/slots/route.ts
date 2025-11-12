@@ -127,10 +127,16 @@ export async function GET(
       },
     })
 
-    // 스케줄 정보 추가
+    // 날짜별로 원장 그룹핑
+    const doctorsByDate = new Map<string, typeof scheduleDoctors>()
     for (const sd of scheduleDoctors) {
       const dateStr = sd.date.toISOString().split('T')[0]
+      if (!doctorsByDate.has(dateStr)) {
+        doctorsByDate.set(dateStr, [])
+      }
+      doctorsByDate.get(dateStr)!.push(sd)
 
+      // 스케줄 정보 추가
       if (dateMap.has(dateStr)) {
         const dayData = dateMap.get(dateStr)
         dayData.doctors.push(sd.doctor.name)
@@ -143,40 +149,29 @@ export async function GET(
     // 날짜별 원장 조합 조회하여 필요 인원 계산
     for (const [dateStr, dayData] of dateMap.entries()) {
       const date = new Date(dateStr)
-      const dayOfWeek = date.getDay()
 
-      // 해당 날짜의 스케줄 조회
-      const schedule = await prisma.schedule.findFirst({
-        where: { clinicId },
-        include: {
-          doctors: {
-            where: { date },
-            include: {
-              doctor: { select: { shortName: true } }
-            }
-          }
+      const dateDoctors = doctorsByDate.get(dateStr)
+      if (!dateDoctors || dateDoctors.length === 0) {
+        continue
+      }
+
+      const doctorShortNames = Array.from(
+        new Set(dateDoctors.map(d => d.doctor.shortName))
+      ).sort()
+      const hasNightShift = dateDoctors.some(d => d.hasNightShift)
+
+      // 원장 조합 조회
+      const combination = await prisma.doctorCombination.findFirst({
+        where: {
+          clinicId,
+          doctors: { equals: doctorShortNames },
+          hasNightShift
         }
       })
 
-      if (schedule && schedule.doctors.length > 0) {
-        const doctorShortNames = Array.from(
-          new Set(schedule.doctors.map(d => d.doctor.shortName))
-        ).sort()
-        const hasNightShift = schedule.doctors.some(d => d.hasNightShift)
-
-        // 원장 조합 조회
-        const combination = await prisma.doctorCombination.findFirst({
-          where: {
-            clinicId,
-            doctors: { equals: doctorShortNames },
-            hasNightShift
-          }
-        })
-
-        if (combination) {
-          dayData.requiredStaff = combination.requiredStaff
-          dayData.departmentCategoryStaff = combination.departmentCategoryStaff
-        }
+      if (combination) {
+        dayData.requiredStaff = combination.requiredStaff
+        dayData.departmentCategoryStaff = combination.departmentCategoryStaff
       }
     }
 
@@ -250,6 +245,8 @@ export async function GET(
 
       // departmentCategoryStaff가 있으면 calculateCategorySlotsFromCombination 사용
       if (dayData.departmentCategoryStaff) {
+        console.log(`🔍 [slots] ${dateStr}: departmentCategoryStaff 있음`)
+
         // 자동배치 사용 부서 조회
         const departments = await prisma.department.findMany({
           where: {
@@ -257,6 +254,8 @@ export async function GET(
             useAutoAssignment: true,
           },
         })
+
+        console.log(`🔍 [slots] ${dateStr}: 자동배치 부서 ${departments.length}개`)
 
         // 각 부서별로 슬롯 계산
         for (const dept of departments) {
@@ -267,11 +266,15 @@ export async function GET(
             dept.name
           )
 
+          console.log(`🔍 [slots] ${dateStr}: ${dept.name} 슬롯 계산 결과`, Object.keys(categorySlots))
+
           // 결과 병합
           for (const [categoryName, slotInfo] of Object.entries(categorySlots)) {
             dayData.categorySlots[categoryName] = slotInfo
           }
         }
+      } else {
+        console.log(`⚠️ [slots] ${dateStr}: departmentCategoryStaff 없음`)
       }
 
       // totalAvailable 계산

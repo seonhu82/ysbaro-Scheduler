@@ -40,6 +40,7 @@ interface DateSelectorProps {
   token: string  // API 호출을 위한 토큰
   startDate?: Date  // 신청 가능 시작일
   endDate?: Date    // 신청 가능 종료일
+  myApplications?: Array<{ date: Date, status: string }> // 이미 신청한 날짜
 }
 
 export function DateSelector({
@@ -51,6 +52,7 @@ export function DateSelector({
   token,
   startDate,
   endDate,
+  myApplications = [],
 }: DateSelectorProps) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [currentDate, setCurrentDate] = useState<Date | undefined>()
@@ -115,6 +117,14 @@ export function DateSelector({
 
   const isDateAvailable = (date: Date) => {
     const dateStr = formatDate(date)
+
+    // 이미 신청한 날짜는 비활성화 (거부된 건 제외)
+    const alreadyApplied = myApplications.some(app =>
+      formatDate(app.date) === dateStr && app.status !== 'REJECTED'
+    )
+    if (alreadyApplied) {
+      return false
+    }
 
     // 공휴일이면 비활성화
     if (holidayDates.includes(dateStr)) {

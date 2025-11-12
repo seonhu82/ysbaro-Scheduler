@@ -10,8 +10,6 @@ import { prisma } from '@/lib/prisma'
 import { checkDynamicFairness } from '@/lib/services/dynamic-fairness-calculator'
 import { leaveApplicationSchema, validateSchema, validationErrorResponse } from '@/lib/validation/schemas'
 import { notifyLeaveApplication } from '@/lib/services/notification-helper'
-import { simulateScheduleWithLeave } from '@/lib/services/leave-eligibility-simulator'
-import { buildRejectionMessage } from '@/lib/services/leave-rejection-message-builder'
 
 export async function POST(
   request: NextRequest,
@@ -27,7 +25,7 @@ export async function POST(
       return NextResponse.json(validationErrorResponse(validation.errors), { status: 400 })
     }
 
-    const { date, type, pin, otherSelectedDates = [] } = validation.data
+    const { date, type, pin, staffId: requestStaffId, otherSelectedDates = [] } = validation.data
 
     // 1. Token으로 link 조회
     const link = await prisma.applicationLink.findUnique({
@@ -42,9 +40,76 @@ export async function POST(
       )
     }
 
-    // 2. PIN 또는 생년월일로 직원 조회
+    // 2. staffId 또는 PIN으로 직원 조회
     let staff
-    if (link.staffId) {
+
+    // 2-1. staffId가 제공된 경우 (중복 PIN 문제 해결)
+    if (requestStaffId) {
+      staff = await prisma.staff.findUnique({
+        where: { id: requestStaffId }
+      })
+
+      if (!staff || staff.clinicId !== link.clinicId || !staff.isActive) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid staff' },
+          { status: 404 }
+        )
+      }
+
+      // PIN 검증
+      if (staff.pinCode) {
+        const isPinMatch = staff.pinCode === pin
+        let isBirthdateMatch = false
+
+        if (!isPinMatch && pin.length === 6) {
+          const inputYear = parseInt(pin.substring(0, 2))
+          const inputMonth = parseInt(pin.substring(2, 4))
+          const inputDay = parseInt(pin.substring(4, 6))
+          const fullYear = inputYear >= 50 ? 1900 + inputYear : 2000 + inputYear
+
+          const staffBirthDate = new Date(staff.birthDate)
+          const dbYear = staffBirthDate.getUTCFullYear()
+          const dbMonth = staffBirthDate.getUTCMonth() + 1
+          const dbDay = staffBirthDate.getUTCDate()
+
+          isBirthdateMatch = (fullYear === dbYear && inputMonth === dbMonth && inputDay === dbDay)
+        }
+
+        if (!isPinMatch && !isBirthdateMatch) {
+          return NextResponse.json(
+            { success: false, error: 'Invalid PIN or birthdate' },
+            { status: 401 }
+          )
+        }
+      } else {
+        // PIN이 없으면 생년월일로 인증
+        if (pin.length !== 6) {
+          return NextResponse.json(
+            { success: false, error: '생년월일은 6자리입니다 (YYMMDD)' },
+            { status: 400 }
+          )
+        }
+
+        const inputYear = parseInt(pin.substring(0, 2))
+        const inputMonth = parseInt(pin.substring(2, 4))
+        const inputDay = parseInt(pin.substring(4, 6))
+        const fullYear = inputYear >= 50 ? 1900 + inputYear : 2000 + inputYear
+
+        const staffBirthDate = new Date(staff.birthDate)
+        const dbYear = staffBirthDate.getUTCFullYear()
+        const dbMonth = staffBirthDate.getUTCMonth() + 1
+        const dbDay = staffBirthDate.getUTCDate()
+
+        if (fullYear !== dbYear || inputMonth !== dbMonth || inputDay !== dbDay) {
+          return NextResponse.json(
+            { success: false, error: 'Invalid birthdate' },
+            { status: 401 }
+          )
+        }
+      }
+    }
+    // 2-2. staffId가 없으면 기존 로직 (하위 호환성)
+    else if (link.staffId) {
       // 특정 직원용 링크
       if (!link.staff) {
         return NextResponse.json(
@@ -163,40 +228,8 @@ export async function POST(
     const year = applicationDate.getFullYear()
     const month = applicationDate.getMonth() + 1
 
-    // 3. 📊 시뮬레이션: 자동 배치 가능성 사전 검증
-    console.log(`🔍 [동적 제한] 시뮬레이션 시작: ${staff.name} - ${date} (${type})`)
-
-    const simulation = await simulateScheduleWithLeave({
-      clinicId,
-      staffId,
-      leaveDate: applicationDate,
-      leaveType: type,
-      year,
-      month,
-    })
-
-    if (!simulation.feasible) {
-      console.log(`❌ [동적 제한] 시뮬레이션 실패: ${simulation.reason}`)
-      const rejectionMessage = buildRejectionMessage(simulation)
-
-      return NextResponse.json({
-        success: false,
-        error: rejectionMessage.message,
-        title: rejectionMessage.title,
-        suggestion: rejectionMessage.suggestion,
-        technicalReason: simulation.technicalReason,
-        reason: simulation.reason,
-        details: simulation.details,
-        userMessage: {
-          title: rejectionMessage.title,
-          message: rejectionMessage.message,
-          suggestion: rejectionMessage.suggestion,
-          icon: rejectionMessage.icon,
-        }
-      }, { status: 400 })
-    }
-
-    console.log(`✅ [동적 제한] 시뮬레이션 통과: 자동 배치 가능`)
+    // 3. 시뮬레이션 제거: 구분별 슬롯으로 이미 체크하므로 불필요
+    // 구분별로 슬롯을 나눠서 받고 있기 때문에 다른 구분의 인원은 영향을 주지 않음
 
     // 4. ScheduleDoctor 확인 (DailySlot보다 우선)
     const doctorSchedules = await prisma.scheduleDoctor.findMany({
@@ -367,10 +400,19 @@ export async function POST(
 
         if (categoryInfo) {
           const requiredCount = categoryInfo.count || 0
-          const minRequired = categoryInfo.minRequired || 0
 
-          // 휴무 가능 인원 = 필요 인원 - 필수 인원
-          const maxOffAllowed = requiredCount - minRequired
+          // 해당 구분의 총 직원 수 조회
+          const totalStaffInCategory = await tx.staff.count({
+            where: {
+              clinicId,
+              categoryName: staff.categoryName,
+              isActive: true,
+              departmentName: staff.departmentName
+            }
+          })
+
+          // 휴무 가능 인원 = 총 인원 - 필요 인원
+          const maxOffAllowed = totalStaffInCategory - requiredCount
 
           // 해당 구분의 현재 신청 수 (CONFIRMED + PENDING)
           const currentApplications = await tx.leaveApplication.count({

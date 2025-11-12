@@ -338,6 +338,7 @@ export default function CombinationsSettings() {
                 <CombinationCard
                   key={combo.id}
                   combination={combo}
+                  doctors={doctors}
                   onEdit={() => handleEdit(combo)}
                   onDelete={() => handleDelete(combo.id)}
                   onDuplicate={() => handleDuplicate(combo)}
@@ -356,17 +357,27 @@ export default function CombinationsSettings() {
  */
 function CombinationCard({
   combination,
+  doctors,
   onEdit,
   onDelete,
   onDuplicate,
 }: {
   combination: Combination
+  doctors: Doctor[]
   onEdit: () => void
   onDelete: () => void
   onDuplicate: () => void
 }) {
   const deptStaff = combination.departmentRequiredStaff || {}
   const catStaff = combination.departmentCategoryStaff || {}
+
+  // shortName을 전체 이름으로 변환
+  const getDoctorFullNames = (shortNames: string[]) => {
+    return shortNames.map(shortName => {
+      const doctor = doctors.find(d => d.shortName === shortName || d.name === shortName)
+      return doctor?.name || shortName
+    })
+  }
 
   return (
     <Card className="hover:shadow-lg transition-shadow">
@@ -394,7 +405,7 @@ function CombinationCard({
           <div className="text-xs text-gray-500 mb-1">원장</div>
           <div className="text-sm">
             {combination.doctors.length > 0
-              ? combination.doctors.join(', ')
+              ? getDoctorFullNames(combination.doctors).join(', ')
               : '없음'}
           </div>
         </div>
