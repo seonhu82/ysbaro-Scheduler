@@ -16,7 +16,14 @@
 import { prisma } from '@/lib/prisma'
 import { calculateCategoryRequirements, calculateCategorySlots, calculateCategorySlotsFromCombination, checkCategoryAvailability } from '@/lib/services/category-slot-service'
 import { getFlexibleStaff } from '@/lib/services/category-slot-service'
-import { calculateFairnessBasedLeaveLimit } from '@/lib/services/fairness-based-leave-calculator'
+import {
+  checkWeekendFairness,
+  checkNightShiftFairness,
+  checkHolidayFairness,
+  checkHolidayAdjacentFairness,
+  checkTotalDaysFairness,
+  checkDynamicFairness
+} from '@/lib/services/dynamic-fairness-calculator'
 
 export interface SimulationRequest {
   clinicId: string
@@ -26,6 +33,9 @@ export interface SimulationRequest {
   year: number
   month: number
   existingOffsInWeek?: string[]  // 같은 주에 이미 선택된 OFF 날짜들 (YYYY-MM-DD)
+  pendingSelections?: Date[]  // 선택 중인 모든 OFF 날짜들 (형평성 체크용)
+  applicationStartDate?: Date  // 신청 가능 시작일
+  applicationEndDate?: Date    // 신청 가능 종료일
 }
 
 export interface SimulationResult {
@@ -365,40 +375,271 @@ async function checkFairnessDeviation(
 ): Promise<{ allowed: boolean; message?: string; details?: any }> {
   const year = leaveDate.getFullYear()
   const month = leaveDate.getMonth() + 1
+  const dateStr = leaveDate.toISOString().split('T')[0]
+  const dayOfWeek = leaveDate.getDay()
 
   try {
-    // 형평성 기반 최대 신청 가능 일수 계산
-    const fairnessLimit = await calculateFairnessBasedLeaveLimit(
-      clinicId,
-      staffId,
-      year,
-      month
-    )
+    // 형평성 설정 확인
+    const fairnessSettings = await prisma.fairnessSettings.findUnique({
+      where: { clinicId }
+    })
 
-    // 이미 신청한 오프 수 확인
-    const appliedOffs = await prisma.leaveApplication.count({
+    if (!fairnessSettings) {
+      return { allowed: true }
+    }
+
+    // 총 근무일 형평성 (항상 체크)
+    const totalDaysApplicationData = await prisma.leaveApplication.findMany({
       where: {
         staffId,
         clinicId,
-        status: { in: ['CONFIRMED', 'PENDING'] },
+        status: 'CONFIRMED',
         leaveType: 'OFF',
         date: {
           gte: new Date(year, month - 1, 1),
           lte: new Date(year, month, 0),
         }
-      }
+      },
+      select: { date: true }
     })
 
-    // 신청 가능 일수 초과 체크
-    if (appliedOffs >= fairnessLimit.maxAllowedDays) {
+    const applicationDates = totalDaysApplicationData.map(app => app.date)
+    const allApplicationDates = [...applicationDates, leaveDate]
+
+    const totalDaysCheck = await checkTotalDaysFairness(
+      clinicId,
+      staffId,
+      leaveDate,
+      year,
+      month,
+      allApplicationDates  // 날짜 배열 전달
+    )
+
+    if (!totalDaysCheck.allowed) {
       return {
         allowed: false,
-        message: `형평성 기준 초과: ${fairnessLimit.reason} (최대 ${fairnessLimit.maxAllowedDays}일, 이미 ${appliedOffs}일 신청)`,
-        details: {
-          currentDeviation: fairnessLimit.currentDeviation,
-          avgDeviation: fairnessLimit.avgDeviation,
-          maxAllowedDays: fairnessLimit.maxAllowedDays,
-          appliedOffs,
+        message: totalDaysCheck.reason,
+        details: totalDaysCheck.details
+      }
+    }
+
+    // 주말 형평성 (토요일만, 설정 활성화 시)
+    if (fairnessSettings.enableWeekendFairness && dayOfWeek === 6) {
+      const weekendApplications = await prisma.leaveApplication.count({
+        where: {
+          staffId,
+          clinicId,
+          status: 'CONFIRMED',
+          date: {
+            gte: new Date(year, month - 1, 1),
+            lte: new Date(year, month, 0),
+          }
+        }
+      })
+
+      // 주말인 날짜만 필터
+      const weekendDates = await prisma.leaveApplication.findMany({
+        where: {
+          staffId,
+          clinicId,
+          status: 'CONFIRMED',
+          date: {
+            gte: new Date(year, month - 1, 1),
+            lte: new Date(year, month, 0),
+          }
+        },
+        select: { date: true }
+      })
+
+      const saturdayDates = weekendDates.filter(app => app.date.getDay() === 6).map(app => app.date)
+
+      // 현재 신청 날짜가 토요일인 경우에만 추가
+      const allSaturdayDates = [...saturdayDates]
+      if (leaveDate.getDay() === 6) {
+        allSaturdayDates.push(leaveDate)
+      }
+
+      const weekendCheck = await checkWeekendFairness(
+        clinicId,
+        staffId,
+        leaveDate,
+        year,
+        month,
+        allSaturdayDates  // 날짜 배열 전달
+      )
+
+      if (!weekendCheck.allowed) {
+        return {
+          allowed: false,
+          message: weekendCheck.reason,
+          details: weekendCheck.details
+        }
+      }
+    }
+
+    // 야간 형평성 (설정 활성화 시)
+    if (fairnessSettings.enableNightShiftFairness) {
+      // 해당 날짜가 야간 근무일인지 확인
+      const nightShiftSchedule = await prisma.scheduleDoctor.findFirst({
+        where: {
+          date: leaveDate,
+          hasNightShift: true,
+          schedule: {
+            clinicId,
+            year,
+            month
+          }
+        }
+      })
+
+      if (nightShiftSchedule) {
+        const nightApplications = await prisma.leaveApplication.findMany({
+          where: {
+            staffId,
+            clinicId,
+            status: 'CONFIRMED',
+            date: {
+              gte: new Date(year, month - 1, 1),
+              lte: new Date(year, month, 0),
+            }
+          },
+          select: { date: true }
+        })
+
+        // 야간 근무일만 필터
+        const nightDatesList: Date[] = []
+        for (const app of nightApplications) {
+          const hasNight = await prisma.scheduleDoctor.findFirst({
+            where: {
+              date: app.date,
+              hasNightShift: true,
+              schedule: { clinicId, year, month }
+            }
+          })
+          if (hasNight) nightDatesList.push(app.date)
+        }
+
+        // 현재 신청 날짜가 야간 근무일이므로 추가 (이미 nightShiftSchedule로 확인됨)
+        const allNightDates = [...nightDatesList, leaveDate]
+
+        const nightCheck = await checkNightShiftFairness(
+          clinicId,
+          staffId,
+          leaveDate,
+          year,
+          month,
+          allNightDates  // 날짜 배열 전달
+        )
+
+        if (!nightCheck.allowed) {
+          return {
+            allowed: false,
+            message: nightCheck.reason,
+            details: nightCheck.details
+          }
+        }
+      }
+    }
+
+    // 공휴일 형평성 (설정 활성화 시)
+    if (fairnessSettings.enableHolidayFairness) {
+      const holiday = await prisma.holiday.findFirst({
+        where: {
+          clinicId,
+          date: leaveDate
+        }
+      })
+
+      if (holiday) {
+        const holidayApplications = await prisma.leaveApplication.findMany({
+          where: {
+            staffId,
+            clinicId,
+            status: 'CONFIRMED',
+            date: {
+              gte: new Date(year, month - 1, 1),
+              lte: new Date(year, month, 0),
+            }
+          },
+          select: { date: true }
+        })
+
+        // 공휴일만 필터
+        const holidayDatesList: Date[] = []
+        for (const app of holidayApplications) {
+          const isHoliday = await prisma.holiday.findFirst({
+            where: { clinicId, date: app.date }
+          })
+          if (isHoliday) holidayDatesList.push(app.date)
+        }
+
+        // 현재 신청 날짜가 공휴일이므로 추가 (이미 holiday로 확인됨)
+        const allHolidayDates = [...holidayDatesList, leaveDate]
+
+        const holidayCheck = await checkHolidayFairness(
+          clinicId,
+          staffId,
+          leaveDate,
+          year,
+          month,
+          allHolidayDates  // 날짜 배열 전달
+        )
+
+        if (!holidayCheck.allowed) {
+          return {
+            allowed: false,
+            message: holidayCheck.reason,
+            details: holidayCheck.details
+          }
+        }
+      }
+    }
+
+    // 공휴일 전후 형평성 (설정 활성화 시)
+    if (fairnessSettings.enableHolidayAdjacentFairness) {
+      // 해당 날짜가 공휴일 전후일인지 확인
+      const isAdjacentToHoliday = await checkIfAdjacentToHoliday(clinicId, leaveDate)
+
+      if (isAdjacentToHoliday) {
+        const adjacentApplications = await prisma.leaveApplication.findMany({
+          where: {
+            staffId,
+            clinicId,
+            status: 'CONFIRMED',
+            date: {
+              gte: new Date(year, month - 1, 1),
+              lte: new Date(year, month, 0),
+            }
+          },
+          select: { date: true }
+        })
+
+        // 공휴일 전후일만 필터
+        const adjacentDatesList: Date[] = []
+        for (const app of adjacentApplications) {
+          if (await checkIfAdjacentToHoliday(clinicId, app.date)) {
+            adjacentDatesList.push(app.date)
+          }
+        }
+
+        // 현재 신청 날짜가 공휴일 전후일이므로 추가 (이미 isAdjacentToHoliday로 확인됨)
+        const allAdjacentDates = [...adjacentDatesList, leaveDate]
+
+        const adjacentCheck = await checkHolidayAdjacentFairness(
+          clinicId,
+          staffId,
+          leaveDate,
+          year,
+          month,
+          allAdjacentDates  // 날짜 배열 전달
+        )
+
+        if (!adjacentCheck.allowed) {
+          return {
+            allowed: false,
+            message: adjacentCheck.reason,
+            details: adjacentCheck.details
+          }
         }
       }
     }
@@ -409,6 +650,35 @@ async function checkFairnessDeviation(
     // 오류 시 통과로 처리 (안전장치)
     return { allowed: true }
   }
+}
+
+/**
+ * 공휴일 전후일 체크 헬퍼 함수
+ */
+async function checkIfAdjacentToHoliday(clinicId: string, date: Date): Promise<boolean> {
+  const dayOfWeek = date.getDay()
+
+  // 월요일이면 전날(금요일) 공휴일 체크
+  if (dayOfWeek === 1) {
+    const friday = new Date(date)
+    friday.setDate(friday.getDate() - 3)
+    const holiday = await prisma.holiday.findFirst({
+      where: { clinicId, date: friday }
+    })
+    if (holiday) return true
+  }
+
+  // 금요일이면 다음날(월요일) 공휴일 체크
+  if (dayOfWeek === 5) {
+    const monday = new Date(date)
+    monday.setDate(monday.getDate() + 3)
+    const holiday = await prisma.holiday.findFirst({
+      where: { clinicId, date: monday }
+    })
+    if (holiday) return true
+  }
+
+  return false
 }
 
 /**
@@ -478,7 +748,14 @@ export async function simulateScheduleWithLeave(
 
     // 3. 편차 검증 (선택적)
     console.log('📋 [Simulator] 3단계: 형평성 편차 검증 시작')
-    const fairnessCheck = await checkFairnessDeviation(clinicId, staffId, leaveDate)
+    const fairnessCheck = await checkDynamicFairness(
+      clinicId,
+      staffId,
+      leaveDate,
+      year,
+      month,
+      request.pendingSelections || []
+    )
     console.log('📋 [Simulator] 형평성 편차 결과:', fairnessCheck)
 
     if (!fairnessCheck.allowed) {

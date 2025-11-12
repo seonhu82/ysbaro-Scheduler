@@ -308,7 +308,7 @@ export default function LeaveApplyPage({
         weekStart.toISOString().split('T')[0], '~',
         weekEnd.toISOString().split('T')[0])
 
-      // 이미 선택한 OFF 중 같은 주에 속한 것만 필터링
+      // 이미 선택한 OFF 중 같은 주에 속한 것만 필터링 (주4일 제약용)
       const existingOffs = Array.from(selections.entries())
         .filter(([d, t]) => {
           if (t !== 'OFF') return false
@@ -319,13 +319,24 @@ export default function LeaveApplyPage({
 
       console.log('📊 같은 주에 이미 선택한 OFF:', existingOffs)
 
-      // existingOffsInWeek 파라미터 추가
+      // 모든 선택된 OFF (형평성 체크용) - 현재 날짜 제외
+      const allPendingOffs = Array.from(selections.entries())
+        .filter(([d, t]) => t === 'OFF' && d !== dateStr)
+        .map(([d, _]) => d)
+
+      console.log('📊 전체 선택 중인 OFF:', allPendingOffs)
+
+      // 파라미터 구성
       const existingOffsParam = existingOffs.length > 0
         ? `&existingOffsInWeek=${existingOffs.join(',')}`
         : ''
 
+      const pendingSelectionsParam = allPendingOffs.length > 0
+        ? `&pendingSelections=${allPendingOffs.join(',')}`
+        : ''
+
       const response = await fetch(
-        `/api/leave-apply/${params.token}/can-apply?staffId=${authData.staffId}&date=${dateStr}&type=${type}${existingOffsParam}`
+        `/api/leave-apply/${params.token}/can-apply?staffId=${authData.staffId}&date=${dateStr}&type=${type}${existingOffsParam}${pendingSelectionsParam}`
       )
       const result = await response.json()
 
@@ -1021,12 +1032,12 @@ export default function LeaveApplyPage({
         {/* 왼쪽: 신청 폼 */}
         <div className="lg:col-span-2 space-y-6">
           {/* 형평성 체크 */}
-          {authData && selections.size > 0 && (
+          {authData && (
             <FairnessCheck
               token={params.token}
               staffId={authData.staffId}
-              startDate={new Date(Array.from(selections.keys()).sort()[0])}
-              endDate={new Date(Array.from(selections.keys()).sort()[selections.size - 1])}
+              startDate={new Date()}
+              endDate={new Date()}
             />
           )}
 

@@ -281,7 +281,7 @@ export default function FairnessCheck({ token, staffId, startDate, endDate }: Fa
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div>
-                    <div className="text-gray-500">전체 야간</div>
+                    <div className="text-gray-500">야간 일수</div>
                     <div className="font-semibold">{data.fairnessCutoffs.night.total}일</div>
                   </div>
                   <div>
@@ -305,7 +305,7 @@ export default function FairnessCheck({ token, staffId, startDate, endDate }: Fa
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div>
-                    <div className="text-gray-500">전체 주말</div>
+                    <div className="text-gray-500">주말 일수</div>
                     <div className="font-semibold">{data.fairnessCutoffs.weekend.total}일</div>
                   </div>
                   <div>
@@ -329,7 +329,7 @@ export default function FairnessCheck({ token, staffId, startDate, endDate }: Fa
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div>
-                    <div className="text-gray-500">전체 공휴일</div>
+                    <div className="text-gray-500">공휴일 일수</div>
                     <div className="font-semibold">{data.fairnessCutoffs.holiday.total}일</div>
                   </div>
                   <div>

@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { checkCategoryAvailability } from '@/lib/services/category-slot-service'
-import { fairnessValidationService } from '@/lib/services/fairness-validation-service'
+import { checkDynamicFairness } from '@/lib/services/dynamic-fairness-calculator'
 import { leaveApplicationSchema, validateSchema, validationErrorResponse } from '@/lib/validation/schemas'
 import { notifyLeaveApplication } from '@/lib/services/notification-helper'
 import { simulateScheduleWithLeave } from '@/lib/services/leave-eligibility-simulator'
@@ -157,22 +157,23 @@ export async function POST(
       isHoliday = !!holiday
     }
 
-    // 6. 형평성 검증
-    const fairnessCheck = await fairnessValidationService.validateOffApplication(
-      clinicId,
-      staffId,
-      applicationDate,
-      hasNightShift,
-      isHoliday
-    )
+    // 6. 동적 형평성 검증 (OFF만 해당)
+    if (type === 'OFF') {
+      const fairnessCheck = await checkDynamicFairness(
+        clinicId,
+        staffId,
+        applicationDate,
+        link.year,
+        link.month
+      )
 
-    if (!fairnessCheck.allowed) {
-      return NextResponse.json({
-        success: false,
-        error: fairnessCheck.message,
-        reason: fairnessCheck.reason,
-        details: fairnessCheck.details
-      }, { status: 400 })
+      if (!fairnessCheck.allowed) {
+        return NextResponse.json({
+          success: false,
+          error: fairnessCheck.reason || '형평성 기준을 초과했습니다',
+          details: fairnessCheck.details
+        }, { status: 400 })
+      }
     }
 
     // 7-8. 🔒 트랜잭션: 슬롯 확인 및 신청 생성

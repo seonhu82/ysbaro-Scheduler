@@ -83,7 +83,57 @@ export async function GET(
       )
     }
 
-    // 해당 월의 원장 스케줄 조회 (전체 영업일 계산)
+    // 실제 신청 가능 기간 계산
+    let applicationStartDate = leavePeriod.startDate
+    let applicationEndDate = leavePeriod.endDate
+
+    // StaffAssignment 최종일 확인
+    const lastStaffAssignment = await prisma.staffAssignment.findFirst({
+      where: {
+        schedule: {
+          clinicId: link.clinicId,
+        },
+      },
+      orderBy: {
+        date: 'desc',
+      },
+      select: {
+        date: true,
+      },
+    })
+
+    if (lastStaffAssignment?.date) {
+      const nextDay = new Date(lastStaffAssignment.date)
+      nextDay.setDate(nextDay.getDate() + 1)
+      if (nextDay > new Date(leavePeriod.startDate)) {
+        applicationStartDate = nextDay
+      }
+    }
+
+    // ScheduleDoctor 최종일 확인
+    const lastDoctorSchedule = await prisma.scheduleDoctor.findFirst({
+      where: {
+        schedule: {
+          clinicId: link.clinicId,
+        },
+      },
+      orderBy: {
+        date: 'desc',
+      },
+      select: {
+        date: true,
+      },
+    })
+
+    if (lastDoctorSchedule?.date) {
+      const doctorEndDate = new Date(lastDoctorSchedule.date)
+      const leavePeriodEndDate = new Date(leavePeriod.endDate)
+      if (doctorEndDate < leavePeriodEndDate) {
+        applicationEndDate = doctorEndDate
+      }
+    }
+
+    // 신청 가능 기간 내의 원장 스케줄 날짜만 조회 (중복 제거)
     const doctorSchedules = await prisma.scheduleDoctor.findMany({
       where: {
         schedule: {
@@ -91,13 +141,18 @@ export async function GET(
           year: link.year,
           month: link.month,
         },
+        date: {
+          gte: applicationStartDate,
+          lte: applicationEndDate,
+        }
       },
       select: {
         date: true,
-      }
+      },
+      distinct: ['date']
     })
 
-    // 일요일 제외한 전체 영업일 수 계산
+    // 일요일 제외한 신청 가능 영업일 수 계산
     const totalBusinessDays = doctorSchedules.filter(ds => {
       const date = new Date(ds.date)
       return date.getDay() !== 0 // 일요일 제외

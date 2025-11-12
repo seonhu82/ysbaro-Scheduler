@@ -19,6 +19,12 @@ export async function GET(
     const existingOffsInWeekParam = searchParams.get('existingOffsInWeek')
     const existingOffsInWeek = existingOffsInWeekParam ? existingOffsInWeekParam.split(',') : []
 
+    // 선택 중인 모든 OFF 날짜들 (형평성 체크용)
+    const pendingSelectionsParam = searchParams.get('pendingSelections')
+    const pendingSelections = pendingSelectionsParam
+      ? pendingSelectionsParam.split(',').map(d => new Date(d))
+      : []
+
     if (!staffId || !dateStr || !type) {
       return NextResponse.json(
         { success: false, error: '필수 파라미터가 누락되었습니다' },
@@ -66,13 +72,77 @@ export async function GET(
     const year = link.year
     const month = link.month
 
+    // 신청 가능 기간 조회
+    const leavePeriod = await prisma.leavePeriod.findFirst({
+      where: {
+        clinicId: link.clinicId,
+        year,
+        month,
+        isActive: true,
+      },
+    })
+
+    // 실제 신청 가능 기간 계산
+    let applicationStartDate = leavePeriod?.startDate
+    let applicationEndDate = leavePeriod?.endDate
+
+    if (leavePeriod) {
+      // StaffAssignment 최종일 확인
+      const lastStaffAssignment = await prisma.staffAssignment.findFirst({
+        where: {
+          schedule: {
+            clinicId: link.clinicId,
+          },
+        },
+        orderBy: {
+          date: 'desc',
+        },
+        select: {
+          date: true,
+        },
+      })
+
+      if (lastStaffAssignment?.date) {
+        const nextDay = new Date(lastStaffAssignment.date)
+        nextDay.setDate(nextDay.getDate() + 1)
+        if (nextDay > new Date(leavePeriod.startDate)) {
+          applicationStartDate = nextDay
+        }
+      }
+
+      // ScheduleDoctor 최종일 확인
+      const lastDoctorSchedule = await prisma.scheduleDoctor.findFirst({
+        where: {
+          schedule: {
+            clinicId: link.clinicId,
+          },
+        },
+        orderBy: {
+          date: 'desc',
+        },
+        select: {
+          date: true,
+        },
+      })
+
+      if (lastDoctorSchedule?.date) {
+        const doctorEndDate = new Date(lastDoctorSchedule.date)
+        const leavePeriodEndDate = new Date(leavePeriod.endDate)
+        if (doctorEndDate < leavePeriodEndDate) {
+          applicationEndDate = doctorEndDate
+        }
+      }
+    }
+
     console.log('🔍 [API can-apply] 시뮬레이션 요청:', {
       staffId,
       staffName: staff.name,
       dateStr,
       type,
       year,
-      month
+      month,
+      applicationStartDate,
+      applicationEndDate
     })
 
     // 시뮬레이션을 통한 검증 (주4일, 구분별 인원, 형평성 등 모든 제약 조건 체크)
@@ -84,6 +154,9 @@ export async function GET(
       year,
       month,
       existingOffsInWeek: existingOffsInWeek.length > 0 ? existingOffsInWeek : undefined,
+      pendingSelections: pendingSelections.length > 0 ? pendingSelections : undefined,
+      applicationStartDate,
+      applicationEndDate,
     })
 
     console.log('🔍 [API can-apply] 시뮬레이션 결과:', simulation)
