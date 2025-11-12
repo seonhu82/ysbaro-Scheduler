@@ -7,7 +7,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { checkCategoryAvailability } from '@/lib/services/category-slot-service'
 import { checkDynamicFairness } from '@/lib/services/dynamic-fairness-calculator'
 import { leaveApplicationSchema, validateSchema, validationErrorResponse } from '@/lib/validation/schemas'
 import { notifyLeaveApplication } from '@/lib/services/notification-helper'
@@ -28,7 +27,7 @@ export async function POST(
       return NextResponse.json(validationErrorResponse(validation.errors), { status: 400 })
     }
 
-    const { date, type, pin } = validation.data
+    const { date, type, pin, otherSelectedDates = [] } = validation.data
 
     // 1. Token으로 link 조회
     const link = await prisma.applicationLink.findUnique({
@@ -235,12 +234,24 @@ export async function POST(
 
     // 6. 동적 형평성 검증 (OFF만 해당)
     if (type === 'OFF') {
+      // otherSelectedDates를 Date 배열로 변환 (현재 신청 날짜 제외)
+      const pendingSelections = otherSelectedDates
+        .filter(d => d !== date) // 현재 날짜 제외
+        .map(d => new Date(d))
+
+      console.log('🔍 [submit-v3] 형평성 검증:', {
+        currentDate: date,
+        otherSelectedDates,
+        pendingSelections: pendingSelections.map(d => d.toISOString().split('T')[0])
+      })
+
       const fairnessCheck = await checkDynamicFairness(
         clinicId,
         staffId,
         applicationDate,
         link.year,
-        link.month
+        link.month,
+        pendingSelections // 다른 선택된 날짜들 전달
       )
 
       if (!fairnessCheck.allowed) {
@@ -341,15 +352,48 @@ export async function POST(
         throw new Error('해당 원장 조합에 대한 설정을 찾을 수 없습니다')
       }
 
-      const requiredStaff = combination.requiredStaff as Record<string, number>
+      // 7-5. 구분별 슬롯 가용성 확인 (원장 조합 설정 기반)
+      const departmentCategoryStaff = combination.departmentCategoryStaff as any
+      const deptCategories = departmentCategoryStaff[staff.departmentName || '']
 
-      // 7-5. 슬롯 가용성 재확인 (트랜잭션 내부에서 최신 데이터로)
-      const categoryCheck = await checkCategoryAvailability(
-        clinicId,
-        applicationDate,
-        requiredStaff,
-        staff.categoryName || ''
-      )
+      let categoryCheck = {
+        canApply: true,
+        shouldHold: false,
+        message: '신청이 승인되었습니다'
+      }
+
+      if (deptCategories && staff.categoryName) {
+        const categoryInfo = deptCategories[staff.categoryName]
+
+        if (categoryInfo) {
+          const requiredCount = categoryInfo.count || 0
+          const minRequired = categoryInfo.minRequired || 0
+
+          // 휴무 가능 인원 = 필요 인원 - 필수 인원
+          const maxOffAllowed = requiredCount - minRequired
+
+          // 해당 구분의 현재 신청 수 (CONFIRMED + PENDING)
+          const currentApplications = await tx.leaveApplication.count({
+            where: {
+              date: applicationDate,
+              status: { in: ['CONFIRMED', 'PENDING'] },
+              staff: {
+                clinicId,
+                categoryName: staff.categoryName
+              }
+            }
+          })
+
+          // 슬롯 초과 시 보류
+          if (currentApplications >= maxOffAllowed) {
+            categoryCheck = {
+              canApply: true,
+              shouldHold: true,
+              message: `구분별 슬롯이 부족하여 신청이 보류되었습니다. (최대 ${maxOffAllowed}명, 현재 ${currentApplications}명 신청)`
+            }
+          }
+        }
+      }
 
       // 7-6. 중복 신청 방지 (같은 날짜에 이미 신청했는지)
       const existingApplication = await tx.leaveApplication.findFirst({

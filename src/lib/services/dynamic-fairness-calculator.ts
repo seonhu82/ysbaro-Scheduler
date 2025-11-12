@@ -119,6 +119,7 @@ export async function checkWeekendFairness(
 
   // 5. 각 토요일에 필요한 해당 구분 인력 계산
   let totalRequiredSlots = 0
+  let workingSaturdaysCount = 0 // 원장 스케줄이 있는 토요일 수
 
   for (const saturday of saturdays) {
     const dateStr = saturday.toISOString().split('T')[0]
@@ -158,6 +159,9 @@ export async function checkWeekendFairness(
 
     if (!combination) continue
 
+    // 원장 스케줄이 있는 토요일 카운트
+    workingSaturdaysCount++
+
     // 부서별 필요 인원 중 해당 구분 필요 인원
     const departmentRequiredStaff = combination.departmentRequiredStaff as { [key: string]: number }
     const departmentCategoryStaff = combination.departmentCategoryStaff as {
@@ -173,113 +177,66 @@ export async function checkWeekendFairness(
     totalRequiredSlots += categoryRequired
   }
 
-  // 6. 기준 근무 횟수 계산 (슬롯 기준)
+  // 6. 기준: 총 슬롯 / 인원수 (일 단위)
   const baseRequirement = totalRequiredSlots / totalStaffInCategory
 
   // 7. 편차 적용
   const currentWeekendDeviation = staff.fairnessScoreWeekend || 0
 
-  // 편차 적용: 기준 + 편차
-  // 예: 기준 2.67, 편차 -0.5 → 2.67 + (-0.5) = 2.17 → 최소 2번 근무
+  // 편차 적용: 기준 + 편차 = 최소 일해야 하는 날 수
   const adjustedRequirement = Math.max(0, Math.round(baseRequirement + currentWeekendDeviation))
 
-  // 8. 최대 신청 가능 슬롯 수
-  const maxApplicationSlots = Math.max(0, totalRequiredSlots - adjustedRequirement)
+  // 8. 최대 신청 가능 일수 = 근무 토요일 - 일해야하는 날
+  const totalSaturdayDays = workingSaturdaysCount // 원장 스케줄이 있는 토요일만 카운트
+  const maxApplicationDays = Math.max(0, totalSaturdayDays - adjustedRequirement)
 
-  // 9. 현재 신청의 실제 슬롯 수 계산
-  let currentUsedSlots = 0
-
-  if (Array.isArray(currentApplications)) {
-    // 날짜 배열이 제공된 경우: 각 날짜의 실제 슬롯 수를 계산
-    for (const appDate of currentApplications) {
-      const doctorSchedules = await prisma.scheduleDoctor.findMany({
-        where: {
-          date: appDate,
-          schedule: { clinicId, year, month }
-        },
-        include: {
-          doctor: { select: { shortName: true } }
-        }
-      })
-
-      if (doctorSchedules.length === 0) continue
-
-      const doctorShortNames = Array.from(new Set(doctorSchedules.map(d => d.doctor.shortName))).sort()
-      const hasNightShift = doctorSchedules.some(d => d.hasNightShift)
-
-      const combination = await prisma.doctorCombination.findFirst({
-        where: {
-          clinicId,
-          doctors: { equals: doctorShortNames },
-          hasNightShift
-        }
-      })
-
-      if (combination) {
-        const departmentCategoryStaff = combination.departmentCategoryStaff as {
-          [key: string]: {
-            [key: string]: { count: number; minRequired: number }
-          }
-        }
-        const treatmentDept = departmentCategoryStaff['진료실'] || {}
-        const categoryData = treatmentDept[category]
-        const categoryRequired = categoryData?.count || 0
-        currentUsedSlots += categoryRequired
-      }
-    }
-  } else {
-    // 숫자가 제공된 경우 (하위 호환성): 평균 슬롯 수로 추정
-    const avgSlotsPerDay = saturdays.length > 0 ? totalRequiredSlots / saturdays.length : 0
-    currentUsedSlots = currentApplications * avgSlotsPerDay
-  }
-
+  // 9. 현재 신청한 토요일 수 (날짜 개수)
   const applicationCount = Array.isArray(currentApplications) ? currentApplications.length : currentApplications
 
   console.log('📊 [checkWeekendFairness] 상세 정보:', {
     category,
     totalStaff: totalStaffInCategory,
+    totalSaturdayDays,
     totalRequiredSlots,
     baseRequirement: Math.round(baseRequirement * 100) / 100,
     currentWeekendDeviation: staff.fairnessScoreWeekend,
     adjustedRequirement,
+    maxApplicationDays,
     applicationCount,
-    maxApplicationSlots,
-    currentUsedSlots: Math.round(currentUsedSlots * 100) / 100,
-    totalOpportunities: saturdays.length
   })
 
-  if (currentUsedSlots >= maxApplicationSlots) {
-    console.log('❌ [checkWeekendFairness] 슬롯 수 초과로 거부')
+  if (applicationCount > maxApplicationDays) {
+    console.log('❌ [checkWeekendFairness] 날짜 개수 초과로 거부')
     return {
       allowed: false,
-      reason: `주말 형평성 기준 초과: 현재 ${currentUsedSlots.toFixed(1)}슬롯 사용 중 (최대 ${maxApplicationSlots}슬롯)`,
+      reason: `주말 형평성 기준 초과: 현재 ${applicationCount}일 신청 중 (최대 ${maxApplicationDays}일)`,
       details: {
         category,
         totalStaff: totalStaffInCategory,
-        requiredSlots: totalRequiredSlots,
+        totalSaturdayDays,
+        totalRequiredSlots,
         baseRequirement: Math.round(baseRequirement * 100) / 100,
+        currentWeekendDeviation: staff.fairnessScoreWeekend,
         adjustedRequirement,
-        currentApplications: applicationCount,
-        maxApplicationSlots,
-        currentUsedSlots: Math.round(currentUsedSlots * 100) / 100,
-        totalOpportunities: saturdays.length
+        maxApplicationDays,
+        applicationCount,
       }
     }
   }
 
-  console.log('✅ [checkWeekendFairness] 슬롯 여유 있음 - 통과')
+  console.log('✅ [checkWeekendFairness] 날짜 개수 여유 있음 - 통과')
   return {
     allowed: true,
     details: {
       category,
       totalStaff: totalStaffInCategory,
-      requiredSlots: totalRequiredSlots,
+      totalSaturdayDays,
+      totalRequiredSlots,
       baseRequirement: Math.round(baseRequirement * 100) / 100,
+      currentWeekendDeviation: staff.fairnessScoreWeekend,
       adjustedRequirement,
-      currentApplications: applicationCount,
-      maxApplicationSlots,
-      currentUsedSlots: Math.round(currentUsedSlots * 100) / 100,
-      totalOpportunities: saturdays.length
+      maxApplicationDays,
+      applicationCount,
     }
   }
 }

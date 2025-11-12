@@ -21,7 +21,7 @@ type LeaveApplication = {
   id: string
   date: string
   leaveType: 'ANNUAL' | 'OFF'
-  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED'
+  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'ON_HOLD' | 'REJECTED'
   staff: {
     id: string
     name: string
@@ -38,16 +38,20 @@ type LeaveApplication = {
   createdAt: string
 }
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<string, string> = {
   PENDING: '대기중',
   CONFIRMED: '승인',
   CANCELLED: '취소',
+  ON_HOLD: '보류',
+  REJECTED: '반려',
 }
 
-const STATUS_COLORS = {
+const STATUS_COLORS: Record<string, string> = {
   PENDING: 'bg-yellow-100 text-yellow-800',
   CONFIRMED: 'bg-green-100 text-green-800',
   CANCELLED: 'bg-gray-100 text-gray-800',
+  ON_HOLD: 'bg-orange-100 text-orange-800',
+  REJECTED: 'bg-red-100 text-red-800',
 }
 
 const LEAVE_TYPE_LABELS = {
@@ -68,8 +72,11 @@ export function ListView() {
   const [applications, setApplications] = useState<LeaveApplication[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [typeFilter, setTypeFilter] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [monthFilter, setMonthFilter] = useState('')
+  const [sortBy, setSortBy] = useState<'createdAt' | 'date' | 'name'>('createdAt')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
   const [selectedApplication, setSelectedApplication] = useState<LeaveApplication | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -230,16 +237,38 @@ export function ListView() {
     }
   }
 
-  // 검색어 필터링
-  const filteredApplications = applications.filter((app) => {
-    if (!searchTerm) return true
-    const searchLower = searchTerm.toLowerCase()
-    return (
-      app.staff.name.toLowerCase().includes(searchLower) ||
-      app.staff.email?.toLowerCase().includes(searchLower) ||
-      RANK_LABELS[app.staff.rank]?.toLowerCase().includes(searchLower)
-    )
-  })
+  // 검색어 및 유형 필터링
+  const filteredApplications = applications
+    .filter((app) => {
+      if (!searchTerm) return true
+      const searchLower = searchTerm.toLowerCase()
+      return (
+        app.staff.name.toLowerCase().includes(searchLower) ||
+        app.staff.email?.toLowerCase().includes(searchLower) ||
+        RANK_LABELS[app.staff.rank]?.toLowerCase().includes(searchLower)
+      )
+    })
+    .filter((app) => {
+      if (typeFilter === 'all') return true
+      return app.leaveType === typeFilter
+    })
+    .sort((a, b) => {
+      let comparison = 0
+
+      switch (sortBy) {
+        case 'createdAt':
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          break
+        case 'date':
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime()
+          break
+        case 'name':
+          comparison = a.staff.name.localeCompare(b.staff.name, 'ko-KR')
+          break
+      }
+
+      return sortOrder === 'asc' ? comparison : -comparison
+    })
 
   const pendingCount = filteredApplications.filter(app => app.status === 'PENDING').length
   const selectedCount = selectedIds.size
@@ -294,17 +323,50 @@ export function ListView() {
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue />
+              <SelectTrigger className="w-[130px]">
+                <SelectValue placeholder="상태" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">전체 상태</SelectItem>
                 <SelectItem value="PENDING">대기중</SelectItem>
                 <SelectItem value="CONFIRMED">승인</SelectItem>
                 <SelectItem value="CANCELLED">취소</SelectItem>
+                <SelectItem value="ON_HOLD">보류</SelectItem>
+                <SelectItem value="REJECTED">반려</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-[130px]">
+                <SelectValue placeholder="유형" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 유형</SelectItem>
+                <SelectItem value="ANNUAL">연차</SelectItem>
+                <SelectItem value="OFF">오프</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as 'createdAt' | 'date' | 'name')}>
+              <SelectTrigger className="w-[130px]">
+                <SelectValue placeholder="정렬" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="createdAt">신청순</SelectItem>
+                <SelectItem value="date">날짜순</SelectItem>
+                <SelectItem value="name">직원순</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as 'asc' | 'desc')}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="desc">↓ 내림차순</SelectItem>
+                <SelectItem value="asc">↑ 오름차순</SelectItem>
               </SelectContent>
             </Select>
 
@@ -312,7 +374,7 @@ export function ListView() {
               type="month"
               value={monthFilter}
               onChange={(e) => setMonthFilter(e.target.value)}
-              className="w-[160px]"
+              className="w-[150px]"
             />
 
             <Button

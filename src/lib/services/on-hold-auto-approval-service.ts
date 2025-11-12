@@ -6,7 +6,6 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { checkCategoryAvailability } from './category-slot-service'
 import { notifyLeaveApproved } from './notification-helper'
 import { logOnHoldAutoApproved } from './activity-log-service'
 
@@ -113,40 +112,88 @@ export async function processOnHoldAutoApproval(
         continue
       }
 
-      const requiredStaff = dailySlot.requiredStaff
-
-      // 3-2. 현재 신청 수 (CONFIRMED + PENDING) 카운트
-      const currentApplications = await prisma.leaveApplication.count({
-        where: {
-          date: application.date,
-          status: { in: ['CONFIRMED', 'PENDING'] },
-          staff: { clinicId }
-        }
-      })
-
-      // 3-3. 구분별 신청 수 카운트
-      const categoryApplications = await prisma.leaveApplication.count({
-        where: {
-          date: application.date,
-          status: { in: ['CONFIRMED', 'PENDING'] },
-          staff: {
-            clinicId,
-            categoryName: application.staff.categoryName
+      // 3-2. 원장 조합 조회 (scheduleId 통해)
+      const schedule = await prisma.schedule.findUnique({
+        where: { id: dailySlot.scheduleId },
+        include: {
+          doctors: {
+            include: {
+              doctor: { select: { shortName: true } }
+            },
+            where: {
+              date: application.date
+            }
           }
         }
       })
 
-      // 3-4. 슬롯 가용성 확인
-      const categoryCheck = await checkCategoryAvailability(
-        clinicId,
-        application.date,
-        requiredStaff,
-        application.staff.categoryName || '',
-        prisma
-      )
+      if (!schedule || schedule.doctors.length === 0) {
+        console.log(`      ⏭️  SKIP: 스케줄 정보 없음`)
+        failedApplications.push({
+          id: application.id,
+          staffName: application.staff.name || '직원',
+          date: application.date,
+          reason: '스케줄 정보 없음'
+        })
+        continue
+      }
 
-      // 3-5. 승인 가능 여부 판단
-      if (!categoryCheck.shouldHold) {
+      const doctorShortNames = Array.from(new Set(schedule.doctors.map(d => d.doctor.shortName))).sort()
+      const hasNightShift = schedule.doctors.some(d => d.hasNightShift)
+
+      const combination = await prisma.doctorCombination.findFirst({
+        where: {
+          clinicId,
+          doctors: { equals: doctorShortNames },
+          hasNightShift
+        }
+      })
+
+      if (!combination) {
+        console.log(`      ⏭️  SKIP: 조합 설정 없음`)
+        failedApplications.push({
+          id: application.id,
+          staffName: application.staff.name || '직원',
+          date: application.date,
+          reason: '조합 설정 없음'
+        })
+        continue
+      }
+
+      // 3-3. 구분별 슬롯 확인
+      const departmentCategoryStaff = combination.departmentCategoryStaff as any
+      const deptCategories = departmentCategoryStaff[application.staff.departmentName || '']
+
+      let canApprove = true
+
+      if (deptCategories && application.staff.categoryName) {
+        const categoryInfo = deptCategories[application.staff.categoryName]
+
+        if (categoryInfo) {
+          const requiredCount = categoryInfo.count || 0
+          const minRequired = categoryInfo.minRequired || 0
+          const maxOffAllowed = requiredCount - minRequired
+
+          // 현재 신청 수 확인
+          const currentApplications = await prisma.leaveApplication.count({
+            where: {
+              date: application.date,
+              status: { in: ['CONFIRMED', 'PENDING'] },
+              staff: {
+                clinicId,
+                categoryName: application.staff.categoryName
+              }
+            }
+          })
+
+          if (currentApplications >= maxOffAllowed) {
+            canApprove = false
+          }
+        }
+      }
+
+      // 3-4. 승인 가능 여부 판단
+      if (canApprove) {
         // 승인 가능!
         await prisma.leaveApplication.update({
           where: { id: application.id },
@@ -287,23 +334,100 @@ export async function processOnHoldForDate(
     }
   }
 
-  const requiredStaff = dailySlot.requiredStaff
   const approvedApplications: AutoApprovalResult['approvedApplications'] = []
   const failedApplications: AutoApprovalResult['failedApplications'] = []
+
+  // 2-2. 원장 조합 조회
+  const schedule = await prisma.schedule.findUnique({
+    where: { id: dailySlot.scheduleId },
+    include: {
+      doctors: {
+        include: {
+          doctor: { select: { shortName: true } }
+        },
+        where: { date }
+      }
+    }
+  })
+
+  if (!schedule || schedule.doctors.length === 0) {
+    console.log(`   ❌ 스케줄 정보 없음`)
+    return {
+      totalOnHold: onHoldApplications.length,
+      approved: 0,
+      remainingOnHold: onHoldApplications.length,
+      approvedApplications: [],
+      failedApplications: onHoldApplications.map(app => ({
+        id: app.id,
+        staffName: app.staff.name || '직원',
+        date: app.date,
+        reason: '스케줄 정보 없음'
+      }))
+    }
+  }
+
+  const doctorShortNames = Array.from(new Set(schedule.doctors.map(d => d.doctor.shortName))).sort()
+  const hasNightShift = schedule.doctors.some(d => d.hasNightShift)
+
+  const combination = await prisma.doctorCombination.findFirst({
+    where: {
+      clinicId,
+      doctors: { equals: doctorShortNames },
+      hasNightShift
+    }
+  })
+
+  if (!combination) {
+    console.log(`   ❌ 조합 설정 없음`)
+    return {
+      totalOnHold: onHoldApplications.length,
+      approved: 0,
+      remainingOnHold: onHoldApplications.length,
+      approvedApplications: [],
+      failedApplications: onHoldApplications.map(app => ({
+        id: app.id,
+        staffName: app.staff.name || '직원',
+        date: app.date,
+        reason: '조합 설정 없음'
+      }))
+    }
+  }
+
+  const departmentCategoryStaff = combination.departmentCategoryStaff as any
 
   // 3. 각 신청 검토
   for (const application of onHoldApplications) {
     try {
       // 슬롯 가용성 확인
-      const categoryCheck = await checkCategoryAvailability(
-        clinicId,
-        date,
-        requiredStaff,
-        application.staff.categoryName || '',
-        prisma
-      )
+      const deptCategories = departmentCategoryStaff[application.staff.departmentName || '']
+      let canApprove = true
 
-      if (!categoryCheck.shouldHold) {
+      if (deptCategories && application.staff.categoryName) {
+        const categoryInfo = deptCategories[application.staff.categoryName]
+
+        if (categoryInfo) {
+          const requiredCount = categoryInfo.count || 0
+          const minRequired = categoryInfo.minRequired || 0
+          const maxOffAllowed = requiredCount - minRequired
+
+          const currentApplications = await prisma.leaveApplication.count({
+            where: {
+              date,
+              status: { in: ['CONFIRMED', 'PENDING'] },
+              staff: {
+                clinicId,
+                categoryName: application.staff.categoryName
+              }
+            }
+          })
+
+          if (currentApplications >= maxOffAllowed) {
+            canApprove = false
+          }
+        }
+      }
+
+      if (canApprove) {
         // 승인 가능
         await prisma.leaveApplication.update({
           where: { id: application.id },

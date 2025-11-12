@@ -11,7 +11,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { calculateStaffFairnessV2, canApplyLeaveType } from '@/lib/services/fairness-calculator-v2'
-import { checkCategoryAvailability } from '@/lib/services/category-slot-service'
 import { auth } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
@@ -90,15 +89,73 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        // 3. 슬롯 가용성 재확인
-        const categoryCheck = await checkCategoryAvailability(
-          clinicId,
-          applicationDate,
-          0,
-          staff.categoryName || ''
-        )
+        // 3. 슬롯 가용성 재확인 (원장 조합 기반)
+        const doctorSchedules = await prisma.scheduleDoctor.findMany({
+          where: {
+            date: applicationDate,
+            schedule: {
+              clinicId,
+              year: appYear,
+              month: appMonth
+            }
+          },
+          include: {
+            doctor: { select: { shortName: true } }
+          }
+        })
 
-        if (categoryCheck.shouldHold) {
+        if (doctorSchedules.length === 0) {
+          console.log(`   ⏭️  SKIP: ${staff.name} (스케줄 없음)`)
+          continue
+        }
+
+        const doctorShortNames = Array.from(new Set(doctorSchedules.map(d => d.doctor.shortName))).sort()
+        const hasNightShift = doctorSchedules.some(d => d.hasNightShift)
+
+        const combination = await prisma.doctorCombination.findFirst({
+          where: {
+            clinicId,
+            doctors: { equals: doctorShortNames },
+            hasNightShift
+          }
+        })
+
+        if (!combination) {
+          console.log(`   ⏭️  SKIP: ${staff.name} (조합 설정 없음)`)
+          continue
+        }
+
+        const departmentCategoryStaff = combination.departmentCategoryStaff as any
+        const deptCategories = departmentCategoryStaff[staff.departmentName || '']
+
+        let shouldHold = false
+
+        if (deptCategories && staff.categoryName) {
+          const categoryInfo = deptCategories[staff.categoryName]
+
+          if (categoryInfo) {
+            const requiredCount = categoryInfo.count || 0
+            const minRequired = categoryInfo.minRequired || 0
+            const maxOffAllowed = requiredCount - minRequired
+
+            const currentApplications = await prisma.leaveApplication.count({
+              where: {
+                date: applicationDate,
+                status: { in: ['CONFIRMED', 'PENDING'] },
+                staff: {
+                  clinicId,
+                  categoryName: staff.categoryName
+                }
+              }
+            })
+
+            if (currentApplications >= maxOffAllowed) {
+              shouldHold = true
+            }
+          }
+        }
+
+        if (shouldHold) {
           // 여전히 슬롯 부족 → 그대로 유지
           remainOnHoldCount++
           console.log(`   ⏳ 보류 유지: ${staff.name} (슬롯 부족)`)

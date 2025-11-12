@@ -71,6 +71,15 @@ interface StaffOption {
   departmentName: string | null
 }
 
+interface MyApplication {
+  id: string
+  date: string
+  leaveType: 'ANNUAL' | 'OFF'
+  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'ON_HOLD' | 'REJECTED'
+  holdReason: string | null
+  createdAt: string
+}
+
 export default function LeaveApplyPage({
   params,
 }: {
@@ -91,6 +100,8 @@ export default function LeaveApplyPage({
   const [weeklyOffCount, setWeeklyOffCount] = useState(0)
   const [statistics, setStatistics] = useState<Statistics | null>(null)
   const [fairnessData, setFairnessData] = useState<any>(null) // 형평성 데이터 (한도 체크용)
+  const [myApplications, setMyApplications] = useState<MyApplication[]>([]) // 기존 신청 내역
+  const [applicationPeriod, setApplicationPeriod] = useState<{ startDate: Date; endDate: Date } | null>(null) // 신청 가능 기간
 
   // 확인 모달
   const [showConfirm, setShowConfirm] = useState(false)
@@ -171,6 +182,21 @@ export default function LeaveApplyPage({
     }
   }
 
+  // 내 신청 내역 로드
+  const loadMyApplications = async (staffId: string) => {
+    try {
+      const response = await fetch(`/api/leave-apply/${params.token}/my-applications?staffId=${staffId}`)
+      const result = await response.json()
+
+      if (result.success) {
+        setMyApplications(result.applications)
+        console.log('✅ 신청 내역 로드 완료:', result.applications)
+      }
+    } catch (error) {
+      console.error('❌ 신청 내역 로드 실패:', error)
+    }
+  }
+
   // 슬롯 상태 로드
   const loadSlotStatus = async () => {
     try {
@@ -190,6 +216,12 @@ export default function LeaveApplyPage({
       const { startDate, endDate } = periodResult.data
 
       console.log('📅 신청 가능 기간:', { startDate, endDate })
+
+      // 신청 가능 기간 상태 저장
+      setApplicationPeriod({
+        startDate: new Date(startDate),
+        endDate: new Date(endDate)
+      })
 
       // 2. 해당 기간의 슬롯 상태 조회 (URL 인코딩)
       const statusResponse = await fetch(
@@ -266,10 +298,11 @@ export default function LeaveApplyPage({
           description: `${result.data.staffName}님, 연차/오프 신청이 가능합니다.`,
         })
 
-        // 인증 성공 후 슬롯 상태 및 통계, 형평성 데이터 로드
+        // 인증 성공 후 슬롯 상태 및 통계, 형평성 데이터, 신청 내역 로드
         loadSlotStatus()
         loadStatistics(selectedStaffId)
         loadFairnessData(selectedStaffId)
+        loadMyApplications(selectedStaffId)
       } else {
         throw new Error(result.error || '인증 실패')
       }
@@ -291,6 +324,25 @@ export default function LeaveApplyPage({
     if (!authData?.staffId) return
 
     console.log('🎯 날짜 선택:', dateStr, type)
+
+    // 이미 신청한 날짜인지 확인
+    const existingApplication = myApplications.find(app => app.date === dateStr)
+    if (existingApplication) {
+      const statusLabels = {
+        PENDING: '대기중',
+        CONFIRMED: '승인',
+        CANCELLED: '취소',
+        ON_HOLD: '보류',
+        REJECTED: '반려',
+      }
+
+      toast({
+        title: '중복 신청 불가',
+        description: `${dateStr}은 이미 신청한 날짜입니다. (상태: ${statusLabels[existingApplication.status]})`,
+        variant: 'destructive',
+      })
+      return
+    }
 
     // 실시간 시뮬레이션으로 신청 가능 여부 체크
     try {
@@ -420,6 +472,9 @@ export default function LeaveApplyPage({
         pin: pinCode, // PIN 추가
       }))
 
+      // 모든 선택된 날짜 목록 (형평성 검증용)
+      const allSelectedDates = Array.from(selections.keys())
+
       let successCount = 0
       let failCount = 0
       const errors: string[] = []
@@ -427,10 +482,16 @@ export default function LeaveApplyPage({
       // 각 신청을 순차적으로 처리
       for (const app of applications) {
         try {
+          // 현재 날짜를 제외한 다른 선택된 날짜들을 otherSelectedDates로 전달
+          const otherSelectedDates = allSelectedDates.filter(d => d !== app.date)
+
           const response = await fetch(`/api/leave-apply/${params.token}/submit-v3`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(app),
+            body: JSON.stringify({
+              ...app,
+              otherSelectedDates // 형평성 검증용 다른 선택 날짜들
+            }),
           })
 
           const result = await response.json()
@@ -462,6 +523,7 @@ export default function LeaveApplyPage({
         if (authData?.staffId) {
           loadStatistics(authData.staffId) // 통계 새로고침
           loadFairnessData(authData.staffId) // 형평성 데이터 새로고침
+          loadMyApplications(authData.staffId) // 신청 내역 새로고침
         }
       } else if (successCount > 0 && failCount > 0) {
         toast({
@@ -469,6 +531,13 @@ export default function LeaveApplyPage({
           description: `성공: ${successCount}건, 실패: ${failCount}건\n${errors.join('\n')}`,
           variant: 'destructive',
         })
+        // 일부 성공한 경우에도 데이터 새로고침
+        loadSlotStatus()
+        if (authData?.staffId) {
+          loadStatistics(authData.staffId)
+          loadFairnessData(authData.staffId)
+          loadMyApplications(authData.staffId)
+        }
       } else {
         toast({
           title: '신청 실패',
@@ -1031,6 +1100,98 @@ export default function LeaveApplyPage({
         </Card>
       )}
 
+      {/* 내 신청 내역 */}
+      {myApplications.length > 0 && (
+        <Card className="mb-6 p-6">
+          <h3 className="text-lg font-bold mb-4">내 신청 내역</h3>
+          <div className="space-y-2">
+            {myApplications.map((app) => {
+              const statusColors = {
+                PENDING: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+                CONFIRMED: 'bg-green-100 text-green-800 border-green-200',
+                CANCELLED: 'bg-gray-100 text-gray-800 border-gray-200',
+                ON_HOLD: 'bg-orange-100 text-orange-800 border-orange-200',
+                REJECTED: 'bg-red-100 text-red-800 border-red-200',
+              }
+
+              const statusLabels = {
+                PENDING: '대기중',
+                CONFIRMED: '승인',
+                CANCELLED: '취소',
+                ON_HOLD: '보류',
+                REJECTED: '반려',
+              }
+
+              return (
+                <div
+                  key={app.id}
+                  className={`flex items-center justify-between p-3 rounded-lg border ${
+                    app.status === 'ON_HOLD' ? 'bg-orange-50 border-orange-200' :
+                    app.status === 'REJECTED' ? 'bg-red-50 border-red-200' :
+                    'bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <Calendar className="w-4 h-4 text-gray-500" />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{formatDateWithDay(new Date(app.date))}</span>
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          app.leaveType === 'ANNUAL' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                        }`}>
+                          {app.leaveType === 'ANNUAL' ? '연차' : '오프'}
+                        </span>
+                        <span className={`text-xs px-2 py-1 rounded border ${statusColors[app.status]}`}>
+                          {statusLabels[app.status]}
+                        </span>
+                      </div>
+                      {app.status === 'ON_HOLD' && app.holdReason && (
+                        <div className="mt-1 text-sm text-orange-700 flex items-start gap-1">
+                          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                          <span>{app.holdReason}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* 상태별 요약 */}
+          <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+            <div className="text-center">
+              <div className="text-xs text-gray-600">총 신청</div>
+              <div className="font-semibold">{myApplications.length}건</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-green-600">승인</div>
+              <div className="font-semibold text-green-700">
+                {myApplications.filter(a => a.status === 'CONFIRMED').length}건
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-yellow-600">대기중</div>
+              <div className="font-semibold text-yellow-700">
+                {myApplications.filter(a => a.status === 'PENDING').length}건
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-orange-600">보류</div>
+              <div className="font-semibold text-orange-700">
+                {myApplications.filter(a => a.status === 'ON_HOLD').length}건
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs text-red-600">반려</div>
+              <div className="font-semibold text-red-700">
+                {myApplications.filter(a => a.status === 'REJECTED').length}건
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 왼쪽: 신청 폼 */}
         <div className="lg:col-span-2 space-y-6">
@@ -1049,6 +1210,9 @@ export default function LeaveApplyPage({
             onDateSelection={handleDateSelection}
             categoryName={authData?.categoryName}
             holidayDates={slotStatus?.holidayDates || []}
+            token={params.token}
+            startDate={applicationPeriod?.startDate}
+            endDate={applicationPeriod?.endDate}
           />
 
           {/* 선택 항목 리스트 */}

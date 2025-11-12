@@ -64,7 +64,8 @@ export const leaveApplicationSchema = z.object({
   type: z.enum(['ANNUAL', 'OFF']),
   pin: z.string()
     .length(6, 'PIN은 6자리여야 합니다')
-    .regex(/^\d{6}$/, 'PIN은 숫자만 입력 가능합니다')
+    .regex(/^\d{6}$/, 'PIN은 숫자만 입력 가능합니다'),
+  otherSelectedDates: z.array(dateSchema).optional() // 형평성 검증용 다른 선택 날짜들
 })
 
 export const leaveStatusUpdateSchema = z.object({
