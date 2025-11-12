@@ -53,7 +53,7 @@ export async function POST(
           { status: 404 }
         )
       }
-      if (link.staff.pin !== pin) {
+      if (link.staff.pinCode !== pin) {
         return NextResponse.json(
           { success: false, error: 'Invalid PIN' },
           { status: 401 }
@@ -65,7 +65,7 @@ export async function POST(
       staff = await prisma.staff.findFirst({
         where: {
           clinicId: link.clinicId,
-          pin,
+          pinCode: pin,
           isActive: true
         }
       })

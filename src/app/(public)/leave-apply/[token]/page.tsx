@@ -415,6 +415,7 @@ export default function LeaveApplyPage({
       const applications = Array.from(selections.entries()).map(([date, type]) => ({
         date,
         type,
+        pin: pinCode, // PIN 추가
       }))
 
       let successCount = 0
