@@ -71,7 +71,7 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { name, rank, phoneNumber, email, isActive, workType } = body
+    const { name, rank, phoneNumber, email, isActive, workType, birthDate, birthDateStr } = body
 
     // workType이 변경되면 workDays도 같이 업데이트
     const updateData: any = {
@@ -80,6 +80,8 @@ export async function PATCH(
       ...(phoneNumber !== undefined && { phoneNumber }),
       ...(email !== undefined && { email }),
       ...(isActive !== undefined && { isActive }),
+      ...(birthDate !== undefined && { birthDate: new Date(birthDate) }),
+      ...(birthDateStr !== undefined && { birthDateStr }),
     }
 
     if (workType) {

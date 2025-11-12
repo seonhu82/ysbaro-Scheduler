@@ -21,6 +21,17 @@ interface CreateNotificationParams {
  */
 export async function createNotification(params: CreateNotificationParams) {
   try {
+    // User에서 clinicId 조회
+    const user = await prisma.user.findUnique({
+      where: { id: params.userId },
+      select: { clinicId: true }
+    })
+
+    if (!user?.clinicId) {
+      console.error(`알림 생성 실패: User ${params.userId}의 clinicId를 찾을 수 없습니다`)
+      return null
+    }
+
     // 최근 5분 이내 동일한 알림이 있는지 확인 (중복 방지)
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
 
@@ -41,6 +52,7 @@ export async function createNotification(params: CreateNotificationParams) {
     // 새 알림 생성
     const notification = await prisma.notification.create({
       data: {
+        clinicId: user.clinicId,
         userId: params.userId,
         type: params.type,
         title: params.title,
