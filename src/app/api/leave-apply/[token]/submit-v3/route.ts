@@ -119,29 +119,25 @@ export async function POST(
 
     console.log(`✅ [동적 제한] 시뮬레이션 통과: 자동 배치 가능`)
 
-    // 4. DailySlot 조회
-    const dailySlot = await prisma.dailySlot.findFirst({
+    // 4. ScheduleDoctor 확인 (DailySlot보다 우선)
+    const doctorSchedules = await prisma.scheduleDoctor.findMany({
       where: {
         date: applicationDate,
-        week: { clinicId }
-      },
-      include: {
-        week: true
+        schedule: {
+          clinicId,
+          year,
+          month
+        }
       }
     })
 
-    if (!dailySlot) {
+    // ScheduleDoctor가 없으면 해당 날짜에 스케줄이 없는 것
+    if (doctorSchedules.length === 0) {
       return NextResponse.json(
         { success: false, error: 'No schedule for this date' },
         { status: 400 }
       )
     }
-
-    const requiredStaff = dailySlot.requiredStaff
-
-    // doctorSchedule에서 hasNightShift 확인
-    const doctorSchedule = dailySlot.doctorSchedule as any
-    const hasNightShift = doctorSchedule?.night_shift || false
 
     // 5. 공휴일 확인
     const dayOfWeek = applicationDate.getDay()
@@ -230,7 +226,44 @@ export async function POST(
         }
       })
 
-      // 7-4. 슬롯 가용성 재확인 (트랜잭션 내부에서 최신 데이터로)
+      // 7-4. ScheduleDoctor에서 requiredStaff 계산 (트랜잭션 내부)
+      const doctorSchedulesInTx = await tx.scheduleDoctor.findMany({
+        where: {
+          date: applicationDate,
+          schedule: {
+            clinicId,
+            year,
+            month
+          }
+        },
+        include: {
+          doctor: { select: { shortName: true } }
+        }
+      })
+
+      if (doctorSchedulesInTx.length === 0) {
+        throw new Error('No schedule for this date')
+      }
+
+      // 원장 조합으로 DoctorCombination 조회
+      const doctorShortNames = Array.from(new Set(doctorSchedulesInTx.map(d => d.doctor.shortName))).sort()
+      const hasNightShift = doctorSchedulesInTx.some(d => d.hasNightShift)
+
+      const combination = await tx.doctorCombination.findFirst({
+        where: {
+          clinicId,
+          doctors: { equals: doctorShortNames },
+          hasNightShift
+        }
+      })
+
+      if (!combination) {
+        throw new Error('해당 원장 조합에 대한 설정을 찾을 수 없습니다')
+      }
+
+      const requiredStaff = combination.requiredStaff as Record<string, number>
+
+      // 7-5. 슬롯 가용성 재확인 (트랜잭션 내부에서 최신 데이터로)
       const categoryCheck = await checkCategoryAvailability(
         clinicId,
         applicationDate,
@@ -238,7 +271,7 @@ export async function POST(
         staff.categoryName || ''
       )
 
-      // 7-5. 중복 신청 방지 (같은 날짜에 이미 신청했는지)
+      // 7-6. 중복 신청 방지 (같은 날짜에 이미 신청했는지)
       const existingApplication = await tx.leaveApplication.findFirst({
         where: {
           staffId,
