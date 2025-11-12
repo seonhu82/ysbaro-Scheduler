@@ -33,7 +33,9 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             rank: true,
-            email: true
+            email: true,
+            departmentName: true,
+            categoryName: true
           }
         },
         link: {
@@ -43,6 +45,30 @@ export async function GET(request: NextRequest) {
             month: true,
             token: true,
             status: true
+          }
+        }
+      },
+      orderBy: {
+        date: 'asc'
+      }
+    })
+
+    // 의사 스케줄 조회
+    const doctorSchedules = await prisma.scheduleDoctor.findMany({
+      where: {
+        schedule: {
+          clinicId: session.user.clinicId
+        },
+        date: {
+          gte: startDate,
+          lte: endDate
+        }
+      },
+      include: {
+        doctor: {
+          select: {
+            name: true,
+            shortName: true
           }
         }
       },
@@ -62,7 +88,24 @@ export async function GET(request: NextRequest) {
       groupedByDate[dateKey].push(app)
     })
 
-    return successResponse(groupedByDate)
+    // 날짜별 의사 스케줄 그룹화
+    const doctorSchedulesByDate: Record<string, any[]> = {}
+    doctorSchedules.forEach(ds => {
+      const dateKey = ds.date.toISOString().split('T')[0]
+      if (!doctorSchedulesByDate[dateKey]) {
+        doctorSchedulesByDate[dateKey] = []
+      }
+      doctorSchedulesByDate[dateKey].push({
+        doctorName: ds.doctor.name,
+        doctorShortName: ds.doctor.shortName,
+        hasNightShift: ds.hasNightShift
+      })
+    })
+
+    return successResponse({
+      applications: groupedByDate,
+      doctorSchedules: doctorSchedulesByDate
+    })
   } catch (error) {
     console.error('Calendar view error:', error)
     return errorResponse('Failed to fetch calendar data', 500)

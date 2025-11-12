@@ -14,18 +14,20 @@ import {
   isSunday,
   isSaturday,
 } from '@/lib/date-utils'
-import { AdminLeaveDialog } from './AdminLeaveDialog'
-import { LeaveDetailDialog } from './LeaveDetailDialog'
+import { DayApplicationsDialog } from './DayApplicationsDialog'
+import { Moon } from 'lucide-react'
 
 type LeaveApplication = {
   id: string
   leaveType: 'ANNUAL' | 'OFF'
-  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED'
+  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'ON_HOLD' | 'REJECTED'
   staff: {
     id: string
     name: string
     rank: string
     email: string | null
+    departmentName: string | null
+    categoryName: string | null
   }
   link: {
     id: string
@@ -35,6 +37,13 @@ type LeaveApplication = {
     status: string
   }
   date?: string
+  holdReason?: string | null
+}
+
+type DoctorSchedule = {
+  doctorName: string
+  doctorShortName: string
+  hasNightShift: boolean
 }
 
 const STATUS_COLORS = {
@@ -50,11 +59,10 @@ export function CalendarView() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1)
   const [applications, setApplications] = useState<Record<string, LeaveApplication[]>>({})
+  const [doctorSchedules, setDoctorSchedules] = useState<Record<string, DoctorSchedule[]>>({})
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
-  const [selectedApplication, setSelectedApplication] = useState<LeaveApplication | null>(null)
+  const [dayDialogOpen, setDayDialogOpen] = useState(false)
 
   const fetchApplications = async () => {
     try {
@@ -66,7 +74,8 @@ export function CalendarView() {
       const result = await response.json()
 
       if (result.success) {
-        setApplications(result.data)
+        setApplications(result.data.applications || {})
+        setDoctorSchedules(result.data.doctorSchedules || {})
       } else {
         toast({
           variant: 'destructive',
@@ -118,36 +127,13 @@ export function CalendarView() {
     // 현재 월의 날짜만 클릭 가능
     if (isInMonth(date, currentYear, currentMonth)) {
       setSelectedDate(date)
-      setDialogOpen(true)
+      setDayDialogOpen(true)
     }
   }
 
-  const handleDialogClose = (created: boolean) => {
-    setDialogOpen(false)
+  const handleDayDialogClose = (updated: boolean) => {
+    setDayDialogOpen(false)
     setSelectedDate(null)
-    if (created) {
-      // 새로 생성되었으면 데이터 다시 불러오기
-      fetchApplications()
-    }
-  }
-
-  const handleApplicationClick = (app: LeaveApplication, date: Date) => {
-    // 로컬 타임존을 유지하면서 YYYY-MM-DD 형식으로 변환
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const dateString = `${year}-${month}-${day}`
-
-    setSelectedApplication({
-      ...app,
-      date: dateString
-    })
-    setDetailDialogOpen(true)
-  }
-
-  const handleDetailDialogClose = (updated: boolean) => {
-    setDetailDialogOpen(false)
-    setSelectedApplication(null)
     if (updated) {
       fetchApplications()
     }
@@ -155,17 +141,24 @@ export function CalendarView() {
 
   const calendarDates = getCalendarGridDates(currentYear, currentMonth)
 
-  // 날짜별 신청 건수 계산
+  // 날짜별 신청 가져오기
   const getApplicationsForDate = (date: Date): LeaveApplication[] => {
     const dateKey = formatDate(date)
     return applications[dateKey] || []
+  }
+
+  // 날짜별 의사 스케줄 가져오기
+  const getDoctorSchedulesForDate = (date: Date): DoctorSchedule[] => {
+    const dateKey = formatDate(date)
+    return doctorSchedules[dateKey] || []
   }
 
   // 상태별 통계
   const totalApplications = Object.values(applications).flat()
   const pendingCount = totalApplications.filter((a) => a.status === 'PENDING').length
   const confirmedCount = totalApplications.filter((a) => a.status === 'CONFIRMED').length
-  const cancelledCount = totalApplications.filter((a) => a.status === 'CANCELLED').length
+  const onHoldCount = totalApplications.filter((a) => a.status === 'ON_HOLD').length
+  const rejectedCount = totalApplications.filter((a) => a.status === 'REJECTED').length
 
   return (
     <div className="space-y-4">
@@ -198,7 +191,7 @@ export function CalendarView() {
         </div>
 
         {/* 통계 */}
-        <div className="flex gap-4 mt-4 pt-4 border-t">
+        <div className="flex gap-4 mt-4 pt-4 border-t flex-wrap">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
             <span className="text-sm text-gray-600">대기: {pendingCount}건</span>
@@ -208,8 +201,12 @@ export function CalendarView() {
             <span className="text-sm text-gray-600">승인: {confirmedCount}건</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gray-400"></div>
-            <span className="text-sm text-gray-600">취소: {cancelledCount}건</span>
+            <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+            <span className="text-sm text-gray-600">보류: {onHoldCount}건</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-red-500"></div>
+            <span className="text-sm text-gray-600">반려: {rejectedCount}건</span>
           </div>
         </div>
       </Card>
@@ -232,10 +229,20 @@ export function CalendarView() {
           {/* 날짜 셀 */}
           {calendarDates.map((date, index) => {
             const dateApplications = getApplicationsForDate(date)
+            const dateDoctorSchedules = getDoctorSchedulesForDate(date)
             const isCurrentMonth = isInMonth(date, currentYear, currentMonth)
             const isTodayDate = isToday(date)
             const isSundayDate = isSunday(date)
             const isSaturdayDate = isSaturday(date)
+
+            // 상태별 건수 계산 (CANCELLED 제외)
+            const pendingApps = dateApplications.filter((a) => a.status === 'PENDING')
+            const confirmedApps = dateApplications.filter((a) => a.status === 'CONFIRMED')
+            const onHoldApps = dateApplications.filter((a) => a.status === 'ON_HOLD')
+            const rejectedApps = dateApplications.filter((a) => a.status === 'REJECTED')
+
+            const hasNightShift = dateDoctorSchedules.some((ds) => ds.hasNightShift)
+            const doctorShortNames = dateDoctorSchedules.map((ds) => ds.doctorShortName).join(',')
 
             return (
               <div
@@ -245,42 +252,54 @@ export function CalendarView() {
                   isCurrentMonth ? 'bg-white hover:bg-blue-50 cursor-pointer' : 'bg-gray-50'
                 } ${isTodayDate ? 'ring-2 ring-blue-500' : ''}`}
               >
-                {/* 날짜 숫자 */}
-                <div
-                  className={`text-sm font-medium mb-1 ${
-                    !isCurrentMonth
-                      ? 'text-gray-400'
-                      : isSundayDate
-                      ? 'text-red-600'
-                      : isSaturdayDate
-                      ? 'text-blue-600'
-                      : 'text-gray-900'
-                  }`}
-                >
-                  {date.getDate()}
+                {/* 날짜 숫자 및 의사 정보 */}
+                <div className="flex items-start justify-between mb-2">
+                  <div
+                    className={`text-sm font-medium ${
+                      !isCurrentMonth
+                        ? 'text-gray-400'
+                        : isSundayDate
+                        ? 'text-red-600'
+                        : isSaturdayDate
+                        ? 'text-blue-600'
+                        : 'text-gray-900'
+                    }`}
+                  >
+                    {date.getDate()}
+                  </div>
+                  {isCurrentMonth && doctorShortNames && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-gray-500">{doctorShortNames}</span>
+                      {hasNightShift && <Moon className="w-3 h-3 text-blue-500" />}
+                    </div>
+                  )}
                 </div>
 
-                {/* 연차 신청 목록 */}
-                {dateApplications.length > 0 ? (
+                {/* 상태별 건수 표시 */}
+                {isCurrentMonth && dateApplications.length > 0 ? (
                   <div className="space-y-1">
-                    {dateApplications.slice(0, 3).map((app) => (
-                      <div
-                        key={app.id}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleApplicationClick(app, date)
-                        }}
-                        className={`text-xs px-2 py-1 rounded border cursor-pointer hover:opacity-70 transition-opacity ${STATUS_COLORS[app.status]}`}
-                      >
-                        <div className="font-medium truncate">{app.staff.name}</div>
-                        <div className="text-[10px] opacity-80">
-                          {app.leaveType === 'ANNUAL' ? '연차' : '오프'}
-                        </div>
+                    {pendingApps.length > 0 && (
+                      <div className="text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 flex items-center justify-between">
+                        <span>대기</span>
+                        <span className="font-semibold">{pendingApps.length}</span>
                       </div>
-                    ))}
-                    {dateApplications.length > 3 && (
-                      <div className="text-xs text-gray-500 text-center">
-                        +{dateApplications.length - 3}건 더
+                    )}
+                    {confirmedApps.length > 0 && (
+                      <div className="text-xs px-2 py-1 rounded bg-green-100 text-green-800 border border-green-300 flex items-center justify-between">
+                        <span>승인</span>
+                        <span className="font-semibold">{confirmedApps.length}</span>
+                      </div>
+                    )}
+                    {onHoldApps.length > 0 && (
+                      <div className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 flex items-center justify-between">
+                        <span>보류</span>
+                        <span className="font-semibold">{onHoldApps.length}</span>
+                      </div>
+                    )}
+                    {rejectedApps.length > 0 && (
+                      <div className="text-xs px-2 py-1 rounded bg-red-100 text-red-800 border border-red-300 flex items-center justify-between">
+                        <span>반려</span>
+                        <span className="font-semibold">{rejectedApps.length}</span>
                       </div>
                     )}
                   </div>
@@ -304,37 +323,13 @@ export function CalendarView() {
         )}
       </Card>
 
-      {/* 범례 */}
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold mb-3">범례</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="flex items-center gap-2">
-            <Badge className={STATUS_COLORS.PENDING}>대기중</Badge>
-            <span className="text-sm text-gray-600">승인 대기 중인 신청</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge className={STATUS_COLORS.CONFIRMED}>승인</Badge>
-            <span className="text-sm text-gray-600">승인된 연차</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge className={STATUS_COLORS.CANCELLED}>취소</Badge>
-            <span className="text-sm text-gray-600">취소된 신청</span>
-          </div>
-        </div>
-      </Card>
-
-      {/* 관리자 수동 입력 다이얼로그 */}
-      <AdminLeaveDialog
-        open={dialogOpen}
-        onClose={handleDialogClose}
-        selectedDate={selectedDate}
-      />
-
-      {/* 연차/오프 상세 다이얼로그 */}
-      <LeaveDetailDialog
-        open={detailDialogOpen}
-        onClose={handleDetailDialogClose}
-        application={selectedApplication}
+      {/* 일별 신청 관리 다이얼로그 */}
+      <DayApplicationsDialog
+        open={dayDialogOpen}
+        onClose={handleDayDialogClose}
+        date={selectedDate}
+        applications={selectedDate ? getApplicationsForDate(selectedDate) : []}
+        doctorSchedules={selectedDate ? getDoctorSchedulesForDate(selectedDate) : []}
       />
     </div>
   )
