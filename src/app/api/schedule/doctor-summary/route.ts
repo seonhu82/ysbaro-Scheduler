@@ -354,9 +354,12 @@ export async function GET(request: NextRequest) {
     // 날짜순으로 정렬
     slots.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
+    // 실제 원장 스케줄 데이터가 있는지 확인
+    const hasActualSchedule = currentMonthDoctorSchedules.length > 0
+
     return NextResponse.json({
       success: true,
-      hasSchedule: true,
+      hasSchedule: hasActualSchedule,
       doctorSchedules: Object.values(doctorStats),
       slots,
       weekPatterns: schedule.weekPatterns || null, // 주차별 패턴 정보 추가

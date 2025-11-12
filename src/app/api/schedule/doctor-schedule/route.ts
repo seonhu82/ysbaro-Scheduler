@@ -57,6 +57,12 @@ export async function DELETE(request: NextRequest) {
       }
     })
 
+    // Schedule의 weekPatterns도 초기화
+    await prisma.schedule.update({
+      where: { id: schedule.id },
+      data: { weekPatterns: null }
+    })
+
     console.log(`✅ ${year}년 ${month}월 원장 스케줄 ${deleteResult.count}건 삭제 완료`)
 
     return NextResponse.json({
