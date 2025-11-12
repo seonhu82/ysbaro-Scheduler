@@ -301,17 +301,20 @@ async function checkCategoryRequirement(
 
   // 원장 조합으로 필요 직원 수 찾기
   const doctorNames = scheduleDoctors.map(sd => sd.doctor.shortName).sort()
+  const hasNightShift = scheduleDoctors.some(sd => sd.hasNightShift)
+
   const doctorCombination = await prisma.doctorCombination.findFirst({
     where: {
       clinicId,
-      doctors: { equals: doctorNames }
+      doctors: { equals: doctorNames },
+      hasNightShift
     }
   })
 
   if (!doctorCombination) {
     return {
       allowed: false,
-      message: `원장 조합 [${doctorNames.join(', ')}]에 대한 필요 직원 설정을 찾을 수 없습니다.`,
+      message: `원장 조합 [${doctorNames.join(', ')}]${hasNightShift ? ' (야간근무 있음)' : ''}에 대한 필요 직원 설정을 찾을 수 없습니다.`,
     }
   }
 
@@ -350,14 +353,35 @@ async function checkCategoryRequirement(
 
   // 신청 가능 슬롯이 0이면 거부
   if (myCategorySlot.available <= 0) {
+    // departmentCategoryStaff에서 실제 정보 추출
+    const deptCategoryStaff = doctorCombination.departmentCategoryStaff as any
+    const categoryInfo = deptCategoryStaff?.[staff.departmentName]?.[staff.categoryName]
+
+    // 해당 구분의 총 직원 수 조회
+    const totalStaffCount = await prisma.staff.count({
+      where: {
+        clinicId,
+        departmentName: staff.departmentName,
+        categoryName: staff.categoryName,
+        isActive: true
+      }
+    })
+
+    // 휴무 가능 인원 = 총 인원 - 필요 인원
+    const maxOffAllowed = categoryInfo
+      ? totalStaffCount - (categoryInfo.count || 0)
+      : 0
+
     return {
       allowed: false,
-      message: `${staff.categoryName} 구분의 신청 가능 슬롯이 부족합니다. (필요: ${myCategorySlot.required}명, 이미 신청: ${myCategorySlot.approved}명)`,
+      message: `${staff.categoryName} 구분의 신청 가능 슬롯이 부족합니다. (휴무 가능: ${maxOffAllowed}명, 이미 신청: ${myCategorySlot.approved}명)`,
       details: {
         category: staff.categoryName,
         required: myCategorySlot.required,
+        maxOffAllowed,
         available: myCategorySlot.available,
         approved: myCategorySlot.approved,
+        onHold: myCategorySlot.onHold,
       }
     }
   }

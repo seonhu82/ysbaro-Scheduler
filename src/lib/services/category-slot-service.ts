@@ -118,6 +118,7 @@ export async function calculateCategorySlotsFromCombination(
     const totalStaffCount = await prisma.staff.count({
       where: {
         clinicId,
+        departmentName,
         categoryName,
         isActive: true
       }
