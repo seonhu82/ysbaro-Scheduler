@@ -158,7 +158,8 @@ export function DateSelector({
     const selection = selections.get(dateStr)
     if (selection) {
       const label = selection === 'ANNUAL' ? '연차' : '오프'
-      return <Badge variant="default" className="text-[10px] px-1.5 py-0.5 bg-blue-600 font-semibold">{label}</Badge>
+      const bgColor = selection === 'ANNUAL' ? 'bg-blue-600' : 'bg-green-600'
+      return <Badge variant="default" className={`text-[10px] px-1.5 py-0.5 ${bgColor} font-semibold`}>{label}</Badge>
     }
 
     // 공휴일 표시
@@ -314,7 +315,7 @@ export function DateSelector({
           <span className="text-gray-600">선택된 연차</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <Badge variant="default" className="bg-blue-600">오프</Badge>
+          <Badge variant="default" className="bg-green-600">오프</Badge>
           <span className="text-gray-600">선택된 오프</span>
         </div>
         <div className="flex items-center gap-2 text-sm">

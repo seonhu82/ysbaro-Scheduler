@@ -106,7 +106,7 @@ export function DayApplicationsDialog({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
     })
   )
@@ -225,38 +225,38 @@ export function DayApplicationsDialog({
   const doctorNames = doctorSchedules.map((ds) => ds.doctorName).join(', ')
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose(false)}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <span>
-              {date.getMonth() + 1}월 {date.getDate()}일
-            </span>
-            {doctorNames && (
-              <>
-                <span className="text-gray-400">|</span>
-                <span className="text-sm font-normal text-gray-600">
-                  원장: {doctorNames}
-                </span>
-                {hasNightShift && (
-                  <Badge variant="outline" className="gap-1">
-                    <Moon className="w-3 h-3" />
-                    야간
-                  </Badge>
-                )}
-              </>
-            )}
-          </DialogTitle>
-          <DialogDescription>
-            드래그 앤 드롭으로 신청 상태를 변경할 수 있습니다
-          </DialogDescription>
-        </DialogHeader>
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose(false)}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <span>
+                {date.getMonth() + 1}월 {date.getDate()}일
+              </span>
+              {doctorNames && (
+                <>
+                  <span className="text-gray-400">|</span>
+                  <span className="text-sm font-normal text-gray-600">
+                    원장: {doctorNames}
+                  </span>
+                  {hasNightShift && (
+                    <Badge variant="outline" className="gap-1">
+                      <Moon className="w-3 h-3" />
+                      야간
+                    </Badge>
+                  )}
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              드래그 앤 드롭으로 신청 상태를 변경할 수 있습니다
+            </DialogDescription>
+          </DialogHeader>
 
-        <DndContext
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
           <div className="flex-1 overflow-y-auto">
             <div className="grid grid-cols-4 gap-4 h-full">
               {(['PENDING', 'CONFIRMED', 'ON_HOLD', 'REJECTED'] as StatusColumn[]).map(
@@ -273,29 +273,31 @@ export function DayApplicationsDialog({
             </div>
           </div>
 
-          <DragOverlay>
-            {activeApplication ? (
-              <ApplicationCard application={activeApplication} isDragging />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-
-        <div className="flex justify-between items-center pt-4 border-t">
-          <div className="text-sm text-gray-600">
-            총 {Object.values(groupedApps).flat().length}건
+          <div className="flex justify-between items-center pt-4 border-t">
+            <div className="text-sm text-gray-600">
+              총 {Object.values(groupedApps).flat().length}건
+            </div>
+            <Button variant="outline" onClick={() => onClose(true)}>
+              닫기
+            </Button>
           </div>
-          <Button variant="outline" onClick={() => onClose(true)}>
-            닫기
-          </Button>
-        </div>
 
-        {updating && (
-          <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
-            <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
+          {updating && (
+            <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+              <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <DragOverlay dropAnimation={null}>
+        {activeApplication ? (
+          <div style={{ cursor: 'grabbing', width: '280px' }}>
+            <ApplicationCard application={activeApplication} isDragging />
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   )
 }
 
@@ -355,7 +357,7 @@ function DraggableApplication({ application }: { application: LeaveApplication }
       style={style}
       {...listeners}
       {...attributes}
-      className={isDragging ? 'opacity-50' : ''}
+      className={isDragging ? 'opacity-0' : ''}
     >
       <ApplicationCard application={application} />
     </div>
@@ -372,9 +374,7 @@ function ApplicationCard({
 }) {
   return (
     <div
-      className={`bg-white border rounded-lg p-3 cursor-move hover:shadow-md transition-shadow ${
-        isDragging ? 'shadow-lg rotate-3' : ''
-      }`}
+      className={`bg-white border rounded-lg p-3 ${isDragging ? 'cursor-grabbing shadow-2xl scale-105' : 'cursor-grab hover:shadow-md'} transition-shadow`}
     >
       <div className="flex items-start justify-between mb-2">
         <div className="font-medium">{application.staff.name}</div>
