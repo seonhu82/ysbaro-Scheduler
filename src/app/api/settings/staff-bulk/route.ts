@@ -46,11 +46,43 @@ export async function POST(request: NextRequest) {
       const mm = parseInt(s.birthDate.slice(2, 4))
       const dd = parseInt(s.birthDate.slice(4, 6))
 
+      // 유효성 검사
+      if (isNaN(yy) || isNaN(mm) || isNaN(dd)) {
+        return NextResponse.json(
+          { success: false, error: `${s.name}: 생년월일 형식이 올바르지 않습니다 (YYMMDD 형식으로 입력하세요)` },
+          { status: 400 }
+        )
+      }
+
+      if (mm < 1 || mm > 12) {
+        return NextResponse.json(
+          { success: false, error: `${s.name}: 월은 01-12 사이여야 합니다 (입력: ${mm})` },
+          { status: 400 }
+        )
+      }
+
+      if (dd < 1 || dd > 31) {
+        return NextResponse.json(
+          { success: false, error: `${s.name}: 일은 01-31 사이여야 합니다 (입력: ${dd})` },
+          { status: 400 }
+        )
+      }
+
       // 2000년대/1900년대 판단 (00-49는 2000년대, 50-99는 1900년대)
       const yyyy = yy >= 50 ? 1900 + yy : 2000 + yy
 
       // UTC 기준으로 Date 생성 (타임존 문제 방지)
       const birthDate = new Date(Date.UTC(yyyy, mm - 1, dd, 0, 0, 0, 0))
+
+      // Date 객체가 올바르게 생성되었는지 확인 (예: 2월 33일 같은 유효하지 않은 날짜 방지)
+      if (birthDate.getUTCFullYear() !== yyyy ||
+          birthDate.getUTCMonth() !== mm - 1 ||
+          birthDate.getUTCDate() !== dd) {
+        return NextResponse.json(
+          { success: false, error: `${s.name}: 유효하지 않은 날짜입니다 (${yyyy}년 ${mm}월 ${dd}일)` },
+          { status: 400 }
+        )
+      }
 
       // PIN 생성 (생년월일)
       const pin = s.birthDate
