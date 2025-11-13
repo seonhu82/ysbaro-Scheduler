@@ -102,7 +102,8 @@ export async function GET(
         schedule: {
           clinicId,
           year,
-          month
+          month,
+          status: 'DEPLOYED'
         }
       },
       include: {

@@ -36,12 +36,11 @@ export function CalendarCell({
     <div
       onClick={onClick}
       className={cn(
-        'min-h-[120px] p-2 border border-gray-200 cursor-pointer transition-colors',
-        'hover:bg-gray-50',
+        'min-h-[120px] p-2 border border-gray-200 transition-colors',
+        onClick && 'cursor-pointer hover:bg-gray-50',
         !isCurrentMonth && 'bg-gray-50/50 text-gray-400',
         today && 'bg-blue-50 border-blue-300',
-        weekend && 'bg-gray-50',
-        onClick && 'cursor-pointer'
+        weekend && 'bg-gray-50'
       )}
     >
       <div className="flex items-center justify-between mb-2">

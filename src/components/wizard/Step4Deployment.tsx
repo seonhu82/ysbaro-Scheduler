@@ -432,10 +432,6 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                     <CheckCircle className="w-4 h-4 text-green-500" />
                     승인 가능한 항목은 자동으로 승인됩니다
                   </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    직원들에게 배포 알림이 전송됩니다
-                  </li>
                 </ul>
               </div>
             </div>

@@ -118,7 +118,8 @@
       "Bash(PGPASSWORD=postgres \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -U postgres -d dental_scheduler -c:*)",
       "Bash(PGPASSWORD=postgres \"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -U postgres -d dental_scheduler -c \"UPDATE \"\"Schedule\"\" SET \"\"monthlyFairness\"\" = NULL WHERE id = ''cmhmu1ypv025u9uoao6y3y0h7'';\")",
       "Bash(bc)",
-      "Bash(git ls-tree:*)"
+      "Bash(git ls-tree:*)",
+      "Bash(PGPASSWORD=postgres \"/cProgram Files/PostgreSQL/18/bin/psql.exe\":*)"
     ],
     "deny": [],
     "ask": []

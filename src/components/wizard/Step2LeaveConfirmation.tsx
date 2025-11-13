@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Calendar } from 'lucide-react'
+import { CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Calendar, Check, X } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -33,6 +33,10 @@ interface LeaveApplication {
 export default function Step2LeaveConfirmation({ wizardState, updateWizardState, onNext, onBack }: Props) {
   const { toast } = useToast()
   const [applications, setApplications] = useState<LeaveApplication[]>([])
+  const [pendingApps, setPendingApps] = useState<LeaveApplication[]>([])
+  const [onHoldApps, setOnHoldApps] = useState<LeaveApplication[]>([])
+  const [confirmedCount, setConfirmedCount] = useState(0)
+  const [cancelledCount, setCancelledCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
 
@@ -43,13 +47,35 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
   const fetchLeaveApplications = async () => {
     try {
       setLoading(true)
+
+      console.log('Fetching applications for:', wizardState.year, wizardState.month)
+
+      // 모든 상태의 신청을 가져옴
       const response = await fetch(
-        `/api/leave-management/list?year=${wizardState.year}&month=${wizardState.month}&status=PENDING`
+        `/api/leave-management/list?year=${wizardState.year}&month=${wizardState.month}`
       )
       const data = await response.json()
 
+      console.log('API Response:', data)
+
       if (data.success) {
-        setApplications(data.applications || [])
+        const allApps = data.applications || []
+        console.log('All applications:', allApps)
+
+        setApplications(allApps)
+
+        // 상태별로 분류
+        const pending = allApps.filter((app: LeaveApplication) => app.status === 'PENDING')
+        const onHold = allApps.filter((app: LeaveApplication) => app.status === 'ON_HOLD')
+        const confirmed = allApps.filter((app: LeaveApplication) => app.status === 'CONFIRMED')
+        const cancelled = allApps.filter((app: LeaveApplication) => app.status === 'CANCELLED')
+
+        console.log('Pending:', pending.length, 'OnHold:', onHold.length, 'Confirmed:', confirmed.length, 'Cancelled:', cancelled.length)
+
+        setPendingApps(pending)
+        setOnHoldApps(onHold)
+        setConfirmedCount(confirmed.length)
+        setCancelledCount(cancelled.length)
       }
     } catch (error) {
       console.error('Failed to fetch applications:', error)
@@ -59,6 +85,42 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleStatusChange = async (applicationId: string, newStatus: 'CONFIRMED' | 'CANCELLED') => {
+    try {
+      const response = await fetch(`/api/leave-management/${applicationId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        const statusLabel = newStatus === 'CONFIRMED' ? '승인' : '반려'
+        toast({
+          title: `${statusLabel} 완료`,
+          description: `연차 신청이 ${statusLabel}되었습니다.`,
+        })
+        fetchLeaveApplications()
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '처리 실패',
+          description: result.error || '상태 변경에 실패했습니다.',
+        })
+      }
+    } catch (error) {
+      console.error('Failed to change status:', error)
+      toast({
+        variant: 'destructive',
+        title: '오류 발생',
+        description: '서버 오류가 발생했습니다.',
+      })
     }
   }
 
@@ -143,31 +205,35 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
               <div className="text-sm text-blue-700">
                 <p className="font-medium mb-1">자동 검토 프로세스</p>
                 <ul className="list-disc list-inside space-y-1 mt-2">
-                  <li>1단계: 동적 제한 시뮬레이션 (주4일제, 구분별 인원, 편차 등) - 실패 시 즉시 거절</li>
-                  <li>2단계: 형평성 편차 검증 (월별 최소 요구 + 연간 누적) - 미달 시 ON_HOLD</li>
-                  <li>3단계: 구분별 슬롯 가용성 확인 - 부족 시 ON_HOLD</li>
-                  <li>✅ 모두 통과 시 자동 승인 (PENDING), ON_HOLD는 Step 3 스케줄 확정 후 재검토</li>
+                  <li>신청 시 이미 편차 검증이 완료되었습니다</li>
+                  <li>대기중(PENDING) 신청은 모두 자동 승인됩니다</li>
+                  <li>보류(ON_HOLD) 항목은 수동으로 검토하여 승인/반려할 수 있습니다</li>
+                  <li>개별 신청은 승인/반려 버튼으로 직접 처리 가능합니다</li>
                 </ul>
               </div>
             </div>
           </div>
 
-          {/* 신청 목록 */}
-          {applications.length === 0 ? (
-            <div className="text-center py-12">
-              <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <p className="text-gray-500">대기 중인 연차/오프 신청이 없습니다</p>
-              <p className="text-sm text-gray-400 mt-2">다음 단계로 진행하세요</p>
+          {/* 승인/반려 통계 - 해당 월 기준 */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-center">
+              <div className="text-2xl font-bold text-green-700">{confirmedCount}</div>
+              <div className="text-sm text-green-600">승인 완료 ({wizardState.year}년 {wizardState.month}월)</div>
             </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-gray-600">
-                  총 {applications.length}건의 신청이 검토 대기 중입니다
-                </p>
-              </div>
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-center">
+              <div className="text-2xl font-bold text-red-700">{cancelledCount}</div>
+              <div className="text-sm text-red-600">반려 완료 ({wizardState.year}년 {wizardState.month}월)</div>
+            </div>
+          </div>
 
-              {applications.map((app) => {
+          {/* 대기 중인 신청 목록 */}
+          {pendingApps.length > 0 && (
+            <div className="space-y-3 mb-6">
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                <Badge className="bg-yellow-500">대기중</Badge>
+                <span>{pendingApps.length}건</span>
+              </h3>
+              {pendingApps.map((app) => {
                 const appDate = new Date(app.date)
                 const isPrevMonth = isInPreviousMonth(appDate, wizardState.year, wizardState.month)
                 const isNextMonth = isInNextMonth(appDate, wizardState.year, wizardState.month)
@@ -176,7 +242,7 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
                 return (
                   <div
                     key={app.id}
-                    className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 ${
+                    className={`flex items-center justify-between p-4 border rounded-lg ${
                       isOtherMonth ? 'bg-blue-50 border-blue-300' : ''
                     }`}
                   >
@@ -186,7 +252,6 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
                         <Badge variant={app.leaveType === 'ANNUAL' ? 'default' : 'secondary'}>
                           {app.leaveType === 'ANNUAL' ? '연차' : '오프'}
                         </Badge>
-                        {getStatusBadge(app.status)}
                         {isOtherMonth && (
                           <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
                             {isPrevMonth ? '이전달' : '다음달'}
@@ -197,21 +262,140 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
                         {format(new Date(app.date), 'yyyy년 M월 d일 (E)', { locale: ko })}
                       </div>
                     </div>
-                    {app.fairnessScore !== undefined && (
-                      <div className="text-right">
-                        <div className="text-sm text-gray-500">형평성 점수</div>
-                        <div className={`text-lg font-bold ${
-                          app.fairnessScore >= 75 ? 'text-green-600' :
-                          app.fairnessScore >= 60 ? 'text-yellow-600' :
-                          'text-red-600'
-                        }`}>
-                          {app.fairnessScore}점
+                    <div className="flex items-center gap-4">
+                      {app.fairnessScore !== undefined && (
+                        <div className="text-right">
+                          <div className="text-sm text-gray-500">형평성 점수</div>
+                          <div className={`text-lg font-bold ${
+                            app.fairnessScore >= 75 ? 'text-green-600' :
+                            app.fairnessScore >= 60 ? 'text-yellow-600' :
+                            'text-red-600'
+                          }`}>
+                            {app.fairnessScore}점
+                          </div>
                         </div>
+                      )}
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStatusChange(app.id, 'CONFIRMED')
+                          }}
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                        >
+                          <Check className="w-4 h-4 mr-1" />
+                          승인
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStatusChange(app.id, 'CANCELLED')
+                          }}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="w-4 h-4 mr-1" />
+                          반려
+                        </Button>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )
               })}
+            </div>
+          )}
+
+          {/* 보류 중인 신청 목록 */}
+          {onHoldApps.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                <Badge className="bg-orange-500">보류</Badge>
+                <span>{onHoldApps.length}건</span>
+              </h3>
+              {onHoldApps.map((app) => {
+                const appDate = new Date(app.date)
+                const isPrevMonth = isInPreviousMonth(appDate, wizardState.year, wizardState.month)
+                const isNextMonth = isInNextMonth(appDate, wizardState.year, wizardState.month)
+                const isOtherMonth = isPrevMonth || isNextMonth
+
+                return (
+                  <div
+                    key={app.id}
+                    className={`flex items-center justify-between p-4 border rounded-lg ${
+                      isOtherMonth ? 'bg-blue-50 border-blue-300' : ''
+                    }`}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium">{app.staffName}</span>
+                        <Badge variant={app.leaveType === 'ANNUAL' ? 'default' : 'secondary'}>
+                          {app.leaveType === 'ANNUAL' ? '연차' : '오프'}
+                        </Badge>
+                        {isOtherMonth && (
+                          <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
+                            {isPrevMonth ? '이전달' : '다음달'}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        {format(new Date(app.date), 'yyyy년 M월 d일 (E)', { locale: ko })}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {app.fairnessScore !== undefined && (
+                        <div className="text-right">
+                          <div className="text-sm text-gray-500">형평성 점수</div>
+                          <div className={`text-lg font-bold ${
+                            app.fairnessScore >= 75 ? 'text-green-600' :
+                            app.fairnessScore >= 60 ? 'text-yellow-600' :
+                            'text-red-600'
+                          }`}>
+                            {app.fairnessScore}점
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStatusChange(app.id, 'CONFIRMED')
+                          }}
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                        >
+                          <Check className="w-4 h-4 mr-1" />
+                          승인
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStatusChange(app.id, 'CANCELLED')
+                          }}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="w-4 h-4 mr-1" />
+                          반려
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 신청이 하나도 없을 때 */}
+          {applications.length === 0 && (
+            <div className="text-center py-12">
+              <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+              <p className="text-gray-500">연차/오프 신청이 없습니다</p>
+              <p className="text-sm text-gray-400 mt-2">다음 단계로 진행하세요</p>
             </div>
           )}
         </CardContent>
@@ -224,7 +408,7 @@ export default function Step2LeaveConfirmation({ wizardState, updateWizardState,
           이전 단계
         </Button>
         <Button onClick={handleReview} size="lg" disabled={processing}>
-          {processing ? '검토 중...' : applications.length > 0 ? '자동 검토 시작' : '다음 단계'}
+          {processing ? '검토 중...' : pendingApps.length > 0 ? '자동 검토 시작' : '다음 단계'}
           <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
       </div>

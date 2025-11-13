@@ -11,13 +11,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Check, X, RefreshCw } from 'lucide-react'
+import { Check, X, RefreshCw, Pause } from 'lucide-react'
 
 type LeaveApplication = {
   id: string
   date: string
   leaveType: 'ANNUAL' | 'OFF'
-  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED'
+  status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'ON_HOLD'
   year: number
   month: number
 }
@@ -33,12 +33,14 @@ const STATUS_LABELS = {
   PENDING: '대기중',
   CONFIRMED: '승인',
   CANCELLED: '취소',
+  ON_HOLD: '보류',
 }
 
 const STATUS_COLORS = {
   PENDING: 'bg-yellow-100 text-yellow-800',
   CONFIRMED: 'bg-green-100 text-green-800',
   CANCELLED: 'bg-gray-100 text-gray-800',
+  ON_HOLD: 'bg-orange-100 text-orange-800',
 }
 
 const LEAVE_TYPE_LABELS = {
@@ -91,7 +93,7 @@ export function StaffApplicationsDialog({
     }
   }
 
-  const handleStatusChange = async (applicationId: string, newStatus: 'CONFIRMED' | 'CANCELLED' | 'PENDING') => {
+  const handleStatusChange = async (applicationId: string, newStatus: 'CONFIRMED' | 'CANCELLED' | 'PENDING' | 'ON_HOLD') => {
     try {
       const response = await fetch(`/api/leave-management/${applicationId}`, {
         method: 'PATCH',
@@ -104,7 +106,7 @@ export function StaffApplicationsDialog({
       const result = await response.json()
 
       if (result.success) {
-        const statusLabel = newStatus === 'CONFIRMED' ? '승인' : newStatus === 'CANCELLED' ? '취소' : '대기중'
+        const statusLabel = newStatus === 'CONFIRMED' ? '승인' : newStatus === 'CANCELLED' ? '취소' : newStatus === 'ON_HOLD' ? '보류' : '대기중'
         toast({
           title: `${statusLabel} 완료`,
           description: `연차 신청이 ${statusLabel}되었습니다.`,
@@ -209,22 +211,63 @@ export function StaffApplicationsDialog({
                               <Button
                                 size="sm"
                                 variant="outline"
+                                onClick={() => handleStatusChange(app.id, 'ON_HOLD')}
+                                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                              >
+                                <Pause className="w-4 h-4 mr-1" />
+                                보류
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
                                 onClick={() => handleStatusChange(app.id, 'CANCELLED')}
                                 className="text-red-600 hover:text-red-700 hover:bg-red-50"
                               >
                                 <X className="w-4 h-4 mr-1" />
-                                취소
+                                반려
                               </Button>
                             </>
                           ) : app.status === 'CONFIRMED' ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleStatusChange(app.id, 'PENDING')}
-                              className="text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50"
-                            >
-                              대기로 변경
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleStatusChange(app.id, 'ON_HOLD')}
+                                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                              >
+                                <Pause className="w-4 h-4 mr-1" />
+                                보류
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleStatusChange(app.id, 'PENDING')}
+                                className="text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50"
+                              >
+                                대기로 변경
+                              </Button>
+                            </>
+                          ) : app.status === 'ON_HOLD' ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleStatusChange(app.id, 'CONFIRMED')}
+                                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                              >
+                                <Check className="w-4 h-4 mr-1" />
+                                승인
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleStatusChange(app.id, 'CANCELLED')}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <X className="w-4 h-4 mr-1" />
+                                반려
+                              </Button>
+                            </>
                           ) : app.status === 'CANCELLED' ? (
                             <Button
                               size="sm"
@@ -260,6 +303,12 @@ export function StaffApplicationsDialog({
                     승인:{' '}
                     <span className="font-semibold text-green-600">
                       {applications.filter((a) => a.status === 'CONFIRMED').length}
+                    </span>
+                  </span>
+                  <span>
+                    보류:{' '}
+                    <span className="font-semibold text-orange-600">
+                      {applications.filter((a) => a.status === 'ON_HOLD').length}
                     </span>
                   </span>
                   <span>

@@ -120,6 +120,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // 3. 인증 체크 (보호된 라우트)
+  // 공개 경로 먼저 체크
+  const publicPaths = [
+    '/schedule-view',
+    '/leave-apply',
+  ]
+
+  const isPublic = publicPaths.some(path => pathname.startsWith(path))
+
   const protectedPaths = [
     '/schedule',
     '/leave-management',
@@ -133,7 +141,7 @@ export async function middleware(request: NextRequest) {
     '/fairness',
   ]
 
-  const isProtected = protectedPaths.some(path => pathname.startsWith(path))
+  const isProtected = !isPublic && protectedPaths.some(path => pathname.startsWith(path))
 
   if (isProtected) {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })

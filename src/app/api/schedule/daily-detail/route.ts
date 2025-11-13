@@ -16,154 +16,192 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const dateStr = searchParams.get('date')
+    const statusParam = searchParams.get('status') // 'DRAFT', 'CONFIRMED', 'DEPLOYED'
 
     if (!dateStr) {
       return NextResponse.json({ success: false, error: 'Date required' }, { status: 400 })
     }
 
     const date = new Date(dateStr)
-    const year = date.getFullYear()
-    const month = date.getMonth() + 1
+    const dateYear = date.getFullYear()
+    const dateMonth = date.getMonth() + 1
     const clinicId = (session.user as any).clinicId
 
-    // 스케줄 조회
-    const schedule = await prisma.schedule.findFirst({
-      where: {
-        clinicId,
-        year,
-        month,
-        status: { in: ['DRAFT', 'DEPLOYED'] }
-      },
-      include: {
-        weeks: {
-          include: {
-            days: {
-              where: {
-                date: {
-                  gte: new Date(date.setHours(0, 0, 0, 0)),
-                  lt: new Date(date.setHours(23, 59, 59, 999))
-                }
-              },
-              include: {
-                doctorCombination: {
-                  include: {
-                    doctors: true
-                  }
-                },
-                slots: {
-                  include: {
-                    category: true,
-                    assignments: {
-                      include: {
-                        staff: true
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+    // 스케줄 조회: date의 year/month를 기준으로 조회 (파라미터 무시)
+    let schedule = null
+    if (statusParam) {
+      // status 파라미터가 있으면 해당 status만 조회
+      schedule = await prisma.schedule.findFirst({
+        where: {
+          clinicId,
+          year: dateYear,
+          month: dateMonth,
+          status: statusParam as any
         }
-      }
-    })
+      })
+    } else {
+      // status 파라미터가 없으면 DEPLOYED 우선, 없으면 DRAFT
+      const deployedSchedule = await prisma.schedule.findFirst({
+        where: {
+          clinicId,
+          year: dateYear,
+          month: dateMonth,
+          status: 'DEPLOYED'
+        }
+      })
+
+      schedule = deployedSchedule || await prisma.schedule.findFirst({
+        where: {
+          clinicId,
+          year: dateYear,
+          month: dateMonth,
+          status: 'DRAFT'
+        }
+      })
+    }
 
     // 공휴일 확인
     const holiday = await prisma.holiday.findFirst({
       where: {
         clinicId,
-        date: {
-          gte: new Date(dateStr + 'T00:00:00Z'),
-          lt: new Date(dateStr + 'T23:59:59Z')
-        }
+        date: new Date(dateStr)
       }
     })
+
+    // 원장 스케줄 조회
+    const doctors = schedule ? await prisma.scheduleDoctor.findMany({
+      where: {
+        scheduleId: schedule.id,
+        date: new Date(dateStr)
+      },
+      include: {
+        doctor: true
+      }
+    }) : []
+
+    // 직원 배정 조회
+    const staffAssignments = schedule ? await prisma.staffAssignment.findMany({
+      where: {
+        scheduleId: schedule.id,
+        date: new Date(dateStr)
+      },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            departmentName: true,
+            rank: true
+          }
+        }
+      }
+    }) : []
 
     // 연차/오프 신청 조회
     const leaves = await prisma.leaveApplication.findMany({
       where: {
         clinicId,
-        leaveDate: {
-          gte: new Date(dateStr + 'T00:00:00Z'),
-          lt: new Date(dateStr + 'T23:59:59Z')
-        }
+        date: new Date(dateStr)
       },
       include: {
-        staff: true
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            departmentName: true,
+            rank: true
+          }
+        }
       }
     })
 
-    // 해당 날짜 데이터 찾기
-    let dayData = null
-    if (schedule) {
-      for (const week of schedule.weeks) {
-        if (week.days.length > 0) {
-          dayData = week.days[0]
-          break
-        }
-      }
-    }
+    // 의사 조합 정보
+    const doctorList = doctors.map(d => ({
+      id: d.doctor.id,
+      name: d.doctor.name,
+      hasNightShift: d.hasNightShift
+    }))
 
-    if (!dayData) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          date: dateStr,
-          doctors: [],
-          staff: [],
-          leaves: [],
-          isHoliday: !!holiday,
-          holidayName: holiday?.name
-        }
-      })
-    }
-
-    // 원장 목록
-    const doctors = dayData.doctorCombination?.doctors.map(d => ({
-      id: d.id,
-      name: d.name,
-      hasNightShift: dayData.slots.some(s => s.isNightShift)
-    })) || []
-
-    // 직원 목록 (카테고리별)
+    // 직원 목록 생성 (StaffAssignment 기준)
     const staffList: Array<{
       id: string
       name: string
       category: string
       isAssigned: boolean
-      leaveType?: 'ANNUAL' | 'OFF'
-      leaveStatus?: string
+      leaveType?: 'ANNUAL' | 'OFF' | null
+      leaveStatus?: string | null
     }> = []
 
-    for (const slot of dayData.slots) {
-      for (const assignment of slot.assignments) {
-        // 연차/오프 확인
-        const staffLeave = leaves.find(l => l.staffId === assignment.staffId)
+    // StaffAssignment를 LeaveApplication과 매핑
+    const assignedStaffIds = new Set<string>()
+    staffAssignments.forEach(assignment => {
+      assignedStaffIds.add(assignment.staffId)
+      const leaveInfo = leaves.find(l =>
+        l.staffId === assignment.staffId &&
+        (l.status === 'CONFIRMED' || l.status === 'ON_HOLD')
+      )
 
+      // 연차/오프 타입 결정 (LeaveApplication 우선)
+      let leaveType: 'ANNUAL' | 'OFF' | null = null
+      if (leaveInfo && (leaveInfo.status === 'CONFIRMED' || leaveInfo.status === 'ON_HOLD')) {
+        // LeaveApplication이 있으면 우선 적용 (데이터 불일치 대응)
+        leaveType = leaveInfo.leaveType as 'ANNUAL' | 'OFF'
+      } else if (assignment.shiftType === 'OFF') {
+        // LeaveApplication 없는 OFF
+        leaveType = 'OFF'
+      }
+
+      staffList.push({
+        id: assignment.staff.id,
+        name: assignment.staff.name,
+        category: assignment.staff.departmentName || '미분류',
+        isAssigned: true,
+        leaveType,
+        leaveStatus: leaveInfo?.status || null
+      })
+    })
+
+    // ANNUAL은 StaffAssignment에 없을 수 있으므로 LeaveApplication에서 직접 추가
+    leaves.forEach(leave => {
+      if (
+        leave.leaveType === 'ANNUAL' &&
+        (leave.status === 'CONFIRMED' || leave.status === 'ON_HOLD') &&
+        !assignedStaffIds.has(leave.staffId)
+      ) {
         staffList.push({
-          id: assignment.staff.id,
-          name: assignment.staff.name || '직원',
-          category: slot.category?.name || '미분류',
+          id: leave.staff.id,
+          name: leave.staff.name,
+          category: leave.staff.departmentName || '미분류',
           isAssigned: true,
-          leaveType: staffLeave?.leaveType,
-          leaveStatus: staffLeave?.status
+          leaveType: 'ANNUAL',
+          leaveStatus: leave.status
         })
       }
-    }
+    })
+
+    // 근무/연차/오프 분리
+    const workingStaff = staffList.filter(s => !s.leaveType)
+    const annualLeaveStaff = staffList.filter(s => s.leaveType === 'ANNUAL')
+    const offDaysStaff = staffList.filter(s => s.leaveType === 'OFF')
 
     // 연차/오프 목록
-    const leavesList = leaves.map(l => ({
-      staffId: l.staff.id,
-      staffName: l.staff.name || '직원',
-      type: l.leaveType,
-      status: l.status
-    }))
+    const leavesList = staffList
+      .filter(s => s.leaveType && (s.leaveStatus === 'CONFIRMED' || s.leaveStatus === 'ON_HOLD'))
+      .map(s => ({
+        staffId: s.id,
+        staffName: s.name,
+        type: s.leaveType!,
+        status: s.leaveStatus!
+      }))
 
     return NextResponse.json({
       success: true,
       data: {
         date: dateStr,
-        doctors,
-        staff: staffList,
+        doctors: doctorList,
+        staff: workingStaff,
+        annualLeave: annualLeaveStaff,
+        offDays: offDaysStaff,
         leaves: leavesList,
         isHoliday: !!holiday,
         holidayName: holiday?.name

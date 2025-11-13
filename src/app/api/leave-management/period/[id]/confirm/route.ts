@@ -70,11 +70,11 @@ export async function POST(
       )
     }
 
-    // 확정 처리
+    // 확정 처리 (CLOSED로 변경)
     const updated = await prisma.applicationLink.update({
       where: { id },
       data: {
-        status: 'CONFIRMED'
+        status: 'CLOSED'
       }
     })
 

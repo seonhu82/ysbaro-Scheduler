@@ -43,11 +43,14 @@ export async function GET(
       )
     }
 
-    // 실제로 생성된 직원 배치 확인
+    // 실제로 생성된 직원 배치 확인 (해당 월의 DEPLOYED 상태만)
     const lastStaffAssignment = await prisma.staffAssignment.findFirst({
       where: {
         schedule: {
           clinicId: link.clinicId,
+          year: link.year,
+          month: link.month,
+          status: 'DEPLOYED',
         },
       },
       orderBy: {
@@ -58,11 +61,14 @@ export async function GET(
       },
     })
 
-    // 실제로 생성된 원장 스케줄 확인
+    // 실제로 생성된 원장 스케줄 확인 (해당 월의 DEPLOYED 상태만)
     const lastDoctorSchedule = await prisma.scheduleDoctor.findFirst({
       where: {
         schedule: {
           clinicId: link.clinicId,
+          year: link.year,
+          month: link.month,
+          status: 'DEPLOYED',
         },
       },
       orderBy: {

@@ -248,8 +248,8 @@ export function DayDetailPopup({
         const localDay = String(date.getDate()).padStart(2, '0')
         const dateStr = `${localYear}-${localMonth}-${localDay}`
 
-        // API URL 구성
-        let apiUrl = `/api/schedule/day?date=${dateStr}`
+        // API URL 구성 - daily-detail API 사용 (monthly-view와 동일한 데이터 소스)
+        let apiUrl = `/api/schedule/daily-detail?date=${dateStr}`
         if (year && month) {
           apiUrl += `&year=${year}&month=${month}`
         }

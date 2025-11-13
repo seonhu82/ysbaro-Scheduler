@@ -252,6 +252,13 @@ export async function GET(request: NextRequest) {
       categoryOrder: categoryOrderMap[staff.categoryName || ''] ?? 999
     })
 
+    // LeaveApplication이 있는 직원 ID 수집 (OFF나 ANNUAL이 확정된 직원)
+    const leaveStaffIds = new Set(
+      leaveApplications
+        .filter(la => la.status === 'CONFIRMED')
+        .map(la => la.staff.id)
+    )
+
     // 응답 데이터 구성
     const responseData = {
       date: dateParam,
@@ -260,7 +267,10 @@ export async function GET(request: NextRequest) {
         name: ds.doctor.name
       })),
       staff: staffAssignments
-        .filter(sa => sa.shiftType !== 'OFF') // OFF 제외
+        .filter(sa =>
+          sa.shiftType !== 'OFF' && // OFF 제외
+          !leaveStaffIds.has(sa.staff.id) // LeaveApplication이 확정된 직원 제외 (데이터 불일치 대응)
+        )
         .map(sa => addOrderInfo({
           id: sa.staff.id,
           name: sa.staff.name,

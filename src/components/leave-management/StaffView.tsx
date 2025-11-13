@@ -27,6 +27,7 @@ type StaffMember = {
     pending: number
     confirmed: number
     cancelled: number
+    onHold: number
     annual: number
     off: number
   }
@@ -34,7 +35,7 @@ type StaffMember = {
     id: string
     date: string
     leaveType: 'ANNUAL' | 'OFF'
-    status: 'PENDING' | 'CONFIRMED' | 'CANCELLED'
+    status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'ON_HOLD'
     year: number
     month: number
   }>
@@ -44,12 +45,14 @@ const STATUS_LABELS = {
   PENDING: '대기중',
   CONFIRMED: '승인',
   CANCELLED: '취소',
+  ON_HOLD: '보류',
 }
 
 const STATUS_COLORS = {
   PENDING: 'bg-yellow-100 text-yellow-800',
   CONFIRMED: 'bg-green-100 text-green-800',
   CANCELLED: 'bg-gray-100 text-gray-800',
+  ON_HOLD: 'bg-orange-100 text-orange-800',
 }
 
 const LEAVE_TYPE_LABELS = {
@@ -311,27 +314,39 @@ export function StaffView() {
               </div>
 
               {/* 통계 */}
-              <div className="grid grid-cols-3 gap-2 p-2 bg-gray-50 rounded-lg">
+              <div className="grid grid-cols-5 gap-1 p-2 bg-gray-50 rounded-lg">
                 <div className="text-center">
-                  <div className="text-base font-semibold text-blue-600">
+                  <div className="text-sm font-semibold text-blue-600">
                     {member.statistics.total}
                     {member.statistics.annual > 0 && (
-                      <span className="text-xs text-gray-500 ml-1">({member.statistics.annual})</span>
+                      <span className="text-[10px] text-gray-500 ml-0.5">({member.statistics.annual})</span>
                     )}
                   </div>
-                  <div className="text-[10px] text-gray-600">총 신청(연차)</div>
+                  <div className="text-[9px] text-gray-600">총(연차)</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-base font-semibold text-green-600">
+                  <div className="text-sm font-semibold text-green-600">
                     {member.statistics.confirmed}
                   </div>
-                  <div className="text-[10px] text-gray-600">승인</div>
+                  <div className="text-[9px] text-gray-600">승인</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-base font-semibold text-yellow-600">
+                  <div className="text-sm font-semibold text-yellow-600">
                     {member.statistics.pending}
                   </div>
-                  <div className="text-[10px] text-gray-600">대기</div>
+                  <div className="text-[9px] text-gray-600">대기</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-orange-600">
+                    {member.statistics.onHold || 0}
+                  </div>
+                  <div className="text-[9px] text-gray-600">보류</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-red-600">
+                    {member.statistics.cancelled}
+                  </div>
+                  <div className="text-[9px] text-gray-600">반려</div>
                 </div>
               </div>
             </Card>

@@ -145,13 +145,13 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 연차/오프 신청 조회
+    // 연차/오프 신청 조회 (캘린더 전체 범위)
     const leaves = await prisma.leaveApplication.findMany({
       where: {
         clinicId,
         date: {
-          gte: new Date(year, month - 1, 1),
-          lte: new Date(year, month, 0)
+          gte: calendarStart,
+          lte: calendarEnd
         }
       },
       include: {
@@ -257,20 +257,53 @@ export async function GET(request: NextRequest) {
 
       const requiredStaff = (combination?.requiredStaff as number) || 0
 
-      // 실제 근무 직원만 카운트 (DAY/NIGHT, OFF 제외)
+      // StaffAssignment 기반 카운팅
       const dayStaff = staffByDate.get(dateKey) || []
-      const assignedStaff = dayStaff.filter(s => s.shiftType !== 'OFF').length
 
-      // 연차 신청 카운트 (CONFIRMED 또는 ON_HOLD 포함)
+      // 연차 신청 정보 로드
       const dayLeaves = leaves.filter(
         l => new Date(l.date).toISOString().split('T')[0] === dateKey
       )
-      const annualLeaveCount = dayLeaves.filter(l =>
-        (l.status === 'CONFIRMED' || l.status === 'ON_HOLD') && l.leaveType === 'ANNUAL'
-      ).length
 
-      // 실제 OFF 배정 카운트 (StaffAssignment의 shiftType='OFF')
-      const offCount = dayStaff.filter(s => s.shiftType === 'OFF').length
+      // StaffAssignment를 LeaveApplication과 매핑
+      const staffMap = new Map()
+      dayStaff.forEach(assignment => {
+        const leave = dayLeaves.find(l =>
+          l.staffId === assignment.staffId &&
+          (l.status === 'CONFIRMED' || l.status === 'ON_HOLD')
+        )
+        staffMap.set(assignment.staffId, {
+          assignment,
+          leave
+        })
+      })
+
+      // 카운트: StaffAssignment 기준으로 계산
+      let assignedStaff = 0
+      let annualLeaveCount = 0
+      let offCount = 0
+
+      staffMap.forEach(({ assignment, leave }) => {
+        if (assignment.shiftType === 'OFF') {
+          // OFF 중에서 연차인지 확인
+          if (leave && leave.leaveType === 'ANNUAL') {
+            annualLeaveCount++
+          } else {
+            offCount++
+          }
+        } else {
+          // DAY, NIGHT
+          assignedStaff++
+        }
+      })
+
+      // ANNUAL은 StaffAssignment에 없을 수 있으므로 LeaveApplication에서 직접 카운트
+      const annualOnlyStaff = dayLeaves.filter(leave =>
+        leave.leaveType === 'ANNUAL' &&
+        (leave.status === 'CONFIRMED' || leave.status === 'ON_HOLD') &&
+        !staffMap.has(leave.staffId)
+      )
+      annualLeaveCount += annualOnlyStaff.length
 
       scheduleData[dateKey] = {
         combinationName: combination?.name || '조합 미정',

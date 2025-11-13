@@ -83,6 +83,7 @@ export async function GET(request: NextRequest) {
           pending: applications.filter(a => a.status === 'PENDING').length,
           confirmed: applications.filter(a => a.status === 'CONFIRMED').length,
           cancelled: applications.filter(a => a.status === 'CANCELLED').length,
+          onHold: applications.filter(a => a.status === 'ON_HOLD').length,
           annual: applications.filter(a => a.leaveType === 'ANNUAL').length,
           off: applications.filter(a => a.leaveType === 'OFF').length
         }

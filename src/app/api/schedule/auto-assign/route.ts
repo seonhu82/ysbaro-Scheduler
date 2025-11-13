@@ -569,21 +569,58 @@ export async function POST(request: NextRequest) {
           gte: new Date(year, month - 1, 1),
           lte: new Date(year, month, 0)
         }
+      },
+      include: {
+        staff: { select: { name: true } }
       }
     })
-    console.log(`   ✅ 확정 연차/오프 ${confirmedLeaves.length}건 로드\n`)
+    const annualCount = confirmedLeaves.filter(l => l.leaveType === 'ANNUAL').length
+    const offCount = confirmedLeaves.filter(l => l.leaveType === 'OFF').length
+    console.log(`   ✅ 확정 연차/오프 ${confirmedLeaves.length}건 로드 (연차: ${annualCount}, 오프: ${offCount})`)
+
+    // OFF 상세 로그
+    const offLeaves = confirmedLeaves.filter(l => l.leaveType === 'OFF')
+    if (offLeaves.length > 0) {
+      console.log(`   📋 승인된 OFF 목록:`)
+      offLeaves.forEach(leave => {
+        console.log(`      - ${(leave.staff as any).name}: ${new Date(leave.date).toISOString().split('T')[0]}`)
+      })
+    }
+
+    // 보류된 연차/오프 조회 (후순위 배치용)
+    const onHoldLeaves = await prisma.leaveApplication.findMany({
+      where: {
+        clinicId,
+        status: 'ON_HOLD',
+        date: {
+          gte: new Date(year, month - 1, 1),
+          lte: new Date(year, month, 0)
+        }
+      }
+    })
+    console.log(`   ⏳ 보류 연차/오프 ${onHoldLeaves.length}건 로드 (후순위 배치)\n`)
 
     // ==================== 날짜별 배치 시작 ====================
     const warnings: string[] = []
     const leavesByDate = new Map<string, Set<string>>()
+    const onHoldByDate = new Map<string, Set<string>>()
 
-    // 날짜별 연차/오프 직원 맵 생성
+    // 날짜별 확정 연차/오프 직원 맵 생성 (배치 제외)
     for (const leave of confirmedLeaves) {
       const dateKey = new Date(leave.date).toISOString().split('T')[0]
       if (!leavesByDate.has(dateKey)) {
         leavesByDate.set(dateKey, new Set())
       }
       leavesByDate.get(dateKey)!.add(leave.staffId)
+    }
+
+    // 날짜별 보류 연차/오프 직원 맵 생성 (후순위 배치)
+    for (const leave of onHoldLeaves) {
+      const dateKey = new Date(leave.date).toISOString().split('T')[0]
+      if (!onHoldByDate.has(dateKey)) {
+        onHoldByDate.set(dateKey, new Set())
+      }
+      onHoldByDate.get(dateKey)!.add(leave.staffId)
     }
 
     // 이번 배정 사이클에서 배정된 직원 추적 (주간 4일 제한 체크용)
@@ -719,18 +756,36 @@ export async function POST(request: NextRequest) {
       console.log(`📅 ${dateKey} 배정 (${dayType} 유형):`)
       console.log(`   - 원장: ${doctorShortNames.join(', ')}`)
       console.log(`   - 야간진료: ${hasNightShift ? '예' : '아니오'}`)
+      if (unavailableStaffIds.size > 0) {
+        const unavailableNames = confirmedLeaves
+          .filter(l => new Date(l.date).toISOString().split('T')[0] === dateKey)
+          .map(l => `${(l.staff as any).name}(${l.leaveType})`)
+        console.log(`   - 배치 제외 (연차/오프): ${unavailableNames.join(', ')}`)
+      }
 
       // 이 날짜가 속한 주차 계산
       const currentWeekKey = getWeekKey(currentDate)
       console.log(`   - 주차: ${currentWeekKey}`)
 
-      // 자동 배치 대상 부서 직원만 필터링 (연차/오프 제외한 가용 직원)
+      // 자동 배치 대상 부서 직원만 필터링 (확정 연차/오프 제외한 가용 직원)
+      const onHoldStaffIds = onHoldByDate.get(dateKey) || new Set()
       const allAutoAssignDeptStaff = allStaff.filter(s =>
         autoAssignDepartments.includes(s.departmentName ?? '') &&
         !unavailableStaffIds.has(s.id)
-      )
+      ).sort((a, b) => {
+        // 보류 직원을 후순위로 정렬
+        const aIsOnHold = onHoldStaffIds.has(a.id)
+        const bIsOnHold = onHoldStaffIds.has(b.id)
+        if (aIsOnHold && !bIsOnHold) return 1  // a가 보류면 뒤로
+        if (!aIsOnHold && bIsOnHold) return -1 // b가 보류면 뒤로
+        return 0 // 둘 다 보류거나 둘 다 일반이면 순서 유지
+      })
 
-      console.log(`   - 초기 가용 직원: ${allAutoAssignDeptStaff.length}명 (${autoAssignDepartments.join(', ')})`)
+      const onHoldCount = Array.from(onHoldStaffIds).filter(id =>
+        allAutoAssignDeptStaff.some(s => s.id === id)
+      ).length
+
+      console.log(`   - 초기 가용 직원: ${allAutoAssignDeptStaff.length}명 (${autoAssignDepartments.join(', ')})${onHoldCount > 0 ? ` [보류 ${onHoldCount}명 후순위]` : ''}`)
 
       let availableTreatmentStaff = [...allAutoAssignDeptStaff]
 
@@ -893,12 +948,18 @@ export async function POST(request: NextRequest) {
               })))
             }
 
-            // 여전히 부족하면 경고
-            if (toAssignFromCategory.length + (flexibleStaff.length > 0 ? Math.min(shortage, flexibleStaff.length) : 0) < required) {
-              warnings.push(
-                `${dateKey}: ${category} 카테고리 인원 부족 (${assignedStaff.filter((s: any) => s.categoryName === category || s.flexibleForCategories?.includes(category)).length}/${required})`
-              )
-            }
+            // 1차 배치 시점 경고는 skip (2차 배치 후 최종 검증에서 확인)
+            // const actualAssigned = assignedStaff.filter((s: any) =>
+            //   s.categoryName === category ||
+            //   s._assignedCategory === category ||
+            //   s.flexibleForCategories?.includes(category)
+            // ).length
+
+            // if (actualAssigned < required) {
+            //   warnings.push(
+            //     `${dateKey}: ${category} 카테고리 인원 부족 (${actualAssigned}/${required})`
+            //   )
+            // }
           }
         }
       } else {
@@ -1435,6 +1496,152 @@ export async function POST(request: NextRequest) {
     console.log(`\n✅ 2차 배치 완료: ${phase2Adjustments}건 조정`)
     console.log(`========== 2차 배치 완료 ==========\n`)
 
+    // ==================== 최종 검증: 2차 배치 완료 후 실제 배치 결과 확인 ====================
+    console.log(`\n========== 최종 검증 시작 (2차 배치 완료 기준) ==========`)
+
+    // 공휴일 목록 조회 (주4일/오프 검증에서 제외용)
+    const holidaysForValidation = await prisma.holiday.findMany({
+      where: {
+        clinicId,
+        date: {
+          gte: actualDateRange.min,
+          lte: actualDateRange.max
+        }
+      }
+    })
+    const holidayDatesSet = new Set(
+      holidaysForValidation.map(h => h.date.toISOString().split('T')[0])
+    )
+
+    // 주별 주4일 근무 및 오프 검증
+    const weeklyValidation = new Map<string, { staffId: string, workDays: number, offDays: number, dates: string[] }>()
+
+    // 모든 직원의 배치 조회
+    const allAssignments = await prisma.staffAssignment.findMany({
+      where: {
+        scheduleId: schedule.id
+      },
+      orderBy: {
+        date: 'asc'
+      }
+    })
+
+    // 주별로 그룹화
+    for (const assignment of allAssignments) {
+      const dateStr = assignment.date.toISOString().split('T')[0]
+      const weekKeyStr = getWeekKey(assignment.date)
+      const weekKey = `${assignment.staffId}-${weekKeyStr}`
+
+      if (!weeklyValidation.has(weekKey)) {
+        weeklyValidation.set(weekKey, {
+          staffId: assignment.staffId,
+          workDays: 0,
+          offDays: 0,
+          dates: []
+        })
+      }
+
+      const weekData = weeklyValidation.get(weekKey)!
+      weekData.dates.push(dateStr)
+
+      if (assignment.shiftType === 'DAY' || assignment.shiftType === 'NIGHT') {
+        weekData.workDays++
+      } else if (assignment.shiftType === 'OFF') {
+        weekData.offDays++
+      }
+    }
+
+    // 주4일 및 오프 검증 (공휴일 있는 주는 제외)
+    for (const [weekKey, data] of weeklyValidation.entries()) {
+      // 해당 주에 공휴일이 있는지 확인
+      const hasHoliday = data.dates.some(dateStr => holidayDatesSet.has(dateStr))
+
+      if (hasHoliday) {
+        continue // 공휴일 있는 주는 검증 제외
+      }
+
+      const staff = autoAssignStaff.find(s => s.id === data.staffId)
+      if (!staff) continue
+
+      // ruleSettings의 defaultWorkDays를 우선 사용 (전체 규칙이 개별 설정보다 우선)
+      const expectedWorkDays = defaultWorkDays
+      const expectedOffDays = weekBusinessDays - expectedWorkDays
+
+      // 주4일 미달 검증
+      if (data.workDays < expectedWorkDays) {
+        const weekStartStr = weekKey.split('-').slice(1).join('-')
+        warnings.push(
+          `${staff.name} (${weekStartStr} 주): 주${expectedWorkDays}일 근무 미달 (실제: ${data.workDays}일) - 검토 요망`
+        )
+      }
+
+      // 오프 미달 검증 (100% 미충족)
+      if (data.offDays < expectedOffDays) {
+        const weekStartStr = weekKey.split('-').slice(1).join('-')
+        warnings.push(
+          `${staff.name} (${weekStartStr} 주): 오프 ${expectedOffDays}일 미달 (실제: ${data.offDays}일) - 검토 요망`
+        )
+      }
+    }
+
+    // 날짜별 필요 인원 vs 배치 인원 검증
+    const dateStaffCount = new Map<string, number>()
+    for (const assignment of allAssignments) {
+      if (assignment.shiftType === 'DAY' || assignment.shiftType === 'NIGHT') {
+        const dateStr = assignment.date.toISOString().split('T')[0]
+        dateStaffCount.set(dateStr, (dateStaffCount.get(dateStr) || 0) + 1)
+      }
+    }
+
+    // 각 날짜의 필요 인원 확인
+    const scheduleDoctorsForValidation = await prisma.scheduleDoctor.findMany({
+      where: {
+        scheduleId: schedule.id
+      }
+    })
+
+    const doctorsByDate = new Map<string, typeof scheduleDoctorsForValidation>()
+    for (const sd of scheduleDoctorsForValidation) {
+      const dateStr = sd.date.toISOString().split('T')[0]
+      if (!doctorsByDate.has(dateStr)) {
+        doctorsByDate.set(dateStr, [])
+      }
+      doctorsByDate.get(dateStr)!.push(sd)
+    }
+
+    for (const [dateStr, doctors] of doctorsByDate.entries()) {
+      const doctorNames = Array.from(new Set(doctors.map(d => d.doctorId))).sort()
+      const hasNightShift = doctors.some(d => d.hasNightShift)
+
+      // 필요 인원 조회
+      const doctorCombination = await prisma.doctorCombination.findFirst({
+        where: {
+          clinicId,
+          doctors: { equals: doctorNames },
+          hasNightShift
+        }
+      })
+
+      if (doctorCombination) {
+        const requiredStaff = doctorCombination.requiredStaff
+        const assignedStaff = dateStaffCount.get(dateStr) || 0
+
+        if (assignedStaff < requiredStaff) {
+          warnings.push(
+            `${dateStr}: 필요 인원 부족 (배치: ${assignedStaff}명 / 필요: ${requiredStaff}명) - 검토 요망`
+          )
+        }
+      }
+    }
+
+    // 1차 배치 경고를 최종 경고로 교체
+    console.log(`\n✅ 최종 검증 완료: ${warnings.length}건의 경고`)
+    if (warnings.length > 0) {
+      console.log(`⚠️  경고 목록:`)
+      warnings.forEach(w => console.log(`   - ${w}`))
+    }
+    console.log(`========== 최종 검증 완료 ==========\n`)
+
     // ==================== 3차 공휴일 처리: 모든 공휴일 근무 → OFF 변경 ====================
     console.log(`\n========== 3차 공휴일 처리 시작 ==========`)
 
@@ -1500,6 +1707,86 @@ export async function POST(request: NextRequest) {
 
   } // 메인 try 블록 종료
 
+    // 배치 완료 후 충돌하는 연차/오프 신청 자동 반려 처리
+    console.log(`\n========== 4차 연차/오프 충돌 처리 시작 ==========`)
+    try {
+      // 해당 월의 모든 근무 배정 조회 (DAY, NIGHT)
+      const workAssignments = await prisma.staffAssignment.findMany({
+        where: {
+          scheduleId: schedule.id,
+          shiftType: { in: ['DAY', 'NIGHT'] }
+        },
+        select: {
+          staffId: true,
+          date: true
+        }
+      })
+
+      // staffId + date 조합으로 맵 생성
+      const workMap = new Map<string, boolean>()
+      workAssignments.forEach(assignment => {
+        const key = `${assignment.staffId}_${assignment.date.toISOString().split('T')[0]}`
+        workMap.set(key, true)
+      })
+
+      // 충돌하는 CONFIRMED LeaveApplication 조회
+      const monthStart = new Date(year, month - 1, 1)
+      const monthEnd = new Date(year, month, 0)
+
+      const conflictingLeaves = await prisma.leaveApplication.findMany({
+        where: {
+          clinicId,
+          status: 'CONFIRMED',
+          date: {
+            gte: monthStart,
+            lte: monthEnd
+          }
+        },
+        include: {
+          staff: {
+            select: { name: true }
+          }
+        }
+      })
+
+      // 충돌 검사 및 반려 처리
+      let cancelledCount = 0
+      for (const leave of conflictingLeaves) {
+        const key = `${leave.staffId}_${leave.date.toISOString().split('T')[0]}`
+        if (workMap.has(key)) {
+          // 근무 배정과 충돌 발견 → 반려 처리
+          await prisma.leaveApplication.update({
+            where: { id: leave.id },
+            data: { status: 'CANCELLED' }
+          })
+
+          // 알림 생성
+          await prisma.notification.create({
+            data: {
+              clinicId,
+              staffId: leave.staffId,
+              type: 'LEAVE_CANCELLED',
+              title: '연차/오프 신청 자동 취소',
+              message: `자동 배치로 인해 ${leave.date.toISOString().split('T')[0]} ${leave.leaveType === 'ANNUAL' ? '연차' : '오프'} 신청이 취소되었습니다.`,
+              isRead: false
+            }
+          })
+
+          cancelledCount++
+          console.log(`   ❌ ${leave.staff.name} (${leave.date.toISOString().split('T')[0]}): ${leave.leaveType} 신청 취소`)
+        }
+      }
+
+      if (cancelledCount > 0) {
+        console.log(`\n✅ 4차 충돌 처리 완료: ${cancelledCount}건 연차/오프 신청 취소`)
+      } else {
+        console.log(`\n✅ 4차 충돌 처리 완료: 충돌 없음`)
+      }
+    } catch (conflictError) {
+      console.error('❌ 연차/오프 충돌 처리 실패 (무시):', conflictError)
+    }
+    console.log(`========== 4차 연차/오프 충돌 처리 완료 ==========\n`)
+
     // 배치 완료 후 최종 형평성 재계산 & 스냅샷 저장
     try {
       await recalculateFinalFairness(schedule.id, clinicId, year, month)
@@ -1520,9 +1807,9 @@ export async function POST(request: NextRequest) {
         scheduleId: schedule.id,
         totalAssignments,
         averageFairness,
-        warnings
+        warnings: warnings
       },
-      warnings
+      warnings: warnings
     })
   } catch (error) {
     console.error('Auto-assign error:', error)
