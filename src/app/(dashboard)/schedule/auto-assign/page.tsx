@@ -28,10 +28,13 @@ export default function AutoAssignPage() {
         )
         const data = await response.json()
 
-        if (data.success && data.hasSchedule) {
+        if (data.success && (data.hasSchedule || data.hasDataFromPreviousMonth)) {
           // 스케줄이 있으면 result에 요약 정보 채우기
           setResult({
             success: true,
+            hasSchedule: data.hasSchedule,
+            hasDataFromPreviousMonth: data.hasDataFromPreviousMonth,
+            isCurrentMonthDeployed: data.isCurrentMonthDeployed,
             doctorSchedules: data.doctorSchedules,
             slots: data.slots,
             weekPatterns: data.weekPatterns
@@ -320,7 +323,13 @@ export default function AutoAssignPage() {
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-green-700">
                   <CheckCircle2 className="w-5 h-5" />
-                  <span className="font-semibold">스케줄 있음</span>
+                  <span className="font-semibold">
+                    {result.hasSchedule && result.isCurrentMonthDeployed
+                      ? '원장 배치 완료'
+                      : result.hasDataFromPreviousMonth
+                      ? '전달 배치된 스케줄 있음'
+                      : '스케줄 있음'}
+                  </span>
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">

@@ -486,12 +486,15 @@ export default function LeaveApplyPage({
       let successCount = 0
       let failCount = 0
       const errors: string[] = []
+      const successfulDates: string[] = [] // 성공한 날짜 추적
 
       // 각 신청을 순차적으로 처리
       for (const app of applications) {
         try {
-          // 현재 날짜를 제외한 다른 선택된 날짜들을 otherSelectedDates로 전달
-          const otherSelectedDates = allSelectedDates.filter(d => d !== app.date)
+          // 현재 날짜를 제외한 다른 선택된 날짜들 중 아직 성공하지 않은 날짜만 전달
+          const otherSelectedDates = allSelectedDates.filter(d =>
+            d !== app.date && !successfulDates.includes(d)
+          )
 
           const response = await fetch(`/api/leave-apply/${params.token}/submit-v3`, {
             method: 'POST',
@@ -506,18 +509,27 @@ export default function LeaveApplyPage({
 
           if (result.success) {
             successCount++
+            successfulDates.push(app.date) // 성공한 날짜 기록
           } else {
             failCount++
             // 동적 제한 시스템의 상세 에러 메시지 사용
             const errorMsg = result.userMessage
-              ? `${result.userMessage.title}\n${result.userMessage.message}\n💡 ${result.userMessage.suggestion}`
+              ? `${result.userMessage.title}: ${result.userMessage.message}`
               : result.error || '실패'
-            errors.push(`${app.date}: ${errorMsg}`)
+            errors.push(`${app.date} (${app.type === 'ANNUAL' ? '연차' : '오프'}): ${errorMsg}`)
+            console.log(`❌ ${app.date} 신청 실패:`, errorMsg)
           }
         } catch (error: any) {
           failCount++
           errors.push(`${app.date}: ${error.message || '오류'}`)
         }
+      }
+
+      // 성공한 항목은 선택 목록에서 제거
+      if (successfulDates.length > 0) {
+        const newSelections = new Map(selections)
+        successfulDates.forEach(date => newSelections.delete(date))
+        setSelections(newSelections)
       }
 
       // 결과 토스트
@@ -526,7 +538,6 @@ export default function LeaveApplyPage({
           title: '신청 완료',
           description: `${successCount}건의 연차/오프 신청이 완료되었습니다.`,
         })
-        setSelections(new Map())
         loadSlotStatus() // 슬롯 상태 새로고침
         if (authData?.staffId) {
           loadStatistics(authData.staffId) // 통계 새로고침
@@ -1241,7 +1252,9 @@ export default function LeaveApplyPage({
                         <Calendar className="w-4 h-4 text-gray-500" />
                         <div>
                           <span className="font-medium">{formatDateWithDay(new Date(dateStr))}</span>
-                          <span className="ml-2 text-sm px-2 py-1 rounded bg-blue-100 text-blue-700">
+                          <span className={`ml-2 text-sm px-2 py-1 rounded ${
+                            type === 'ANNUAL' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                          }`}>
                             {type === 'ANNUAL' ? '연차' : '오프'}
                           </span>
                         </div>

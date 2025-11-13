@@ -34,12 +34,15 @@ export async function POST(request: NextRequest) {
 
     const clinicId = session.user.clinicId
 
-    // 기존 직원 삭제 후 재생성 (위험! 실제로는 update/create 방식 권장)
-    await prisma.staff.deleteMany({
-      where: { clinicId }
+    // 기존 직원 목록 조회 (이름으로 매칭)
+    const existingStaff = await prisma.staff.findMany({
+      where: { clinicId },
+      select: { id: true, name: true }
     })
 
-    // 직원 데이터 생성
+    const existingStaffMap = new Map(existingStaff.map(s => [s.name, s.id]))
+
+    // 직원 데이터 업데이트 또는 생성
     for (const s of staff) {
       // 생년월일 변환 (YYMMDD -> Date)
       const yy = parseInt(s.birthDate.slice(0, 2))
@@ -93,26 +96,37 @@ export async function POST(request: NextRequest) {
         hireDate = new Date(s.hireDate)
       }
 
-      await prisma.staff.create({
-        data: {
-          clinicId,
-          name: s.name,
-          birthDate,
-          birthDateStr: s.birthDate,
-          hireDate,
-          departmentName: s.departmentName,
-          categoryName: s.categoryName || null,
-          position: s.position,
-          workType: s.workType,
-          workDays: s.workType === 'WEEK_4' ? 4 : 5,
-          flexibleForCategories: s.flexibleForCategories || [],
-          flexibilityPriority: s.flexibilityPriority || 0,
-          pin,
-          isActive: true,
-          totalAnnualDays: s.totalAnnualDays || 15,
-          usedAnnualDays: s.usedAnnualDays || 0,
-        }
-      })
+      const staffData = {
+        clinicId,
+        name: s.name,
+        birthDate,
+        birthDateStr: s.birthDate,
+        hireDate,
+        departmentName: s.departmentName,
+        categoryName: s.categoryName || null,
+        position: s.position,
+        workType: s.workType,
+        workDays: s.workType === 'WEEK_4' ? 4 : 5,
+        flexibleForCategories: s.flexibleForCategories || [],
+        flexibilityPriority: s.flexibilityPriority || 0,
+        pinCode: pin,
+        isActive: true,
+        totalAnnualDays: s.totalAnnualDays || 15,
+        usedAnnualDays: s.usedAnnualDays || 0,
+      }
+
+      // 기존 직원이 있으면 업데이트, 없으면 생성
+      const existingId = existingStaffMap.get(s.name)
+      if (existingId) {
+        await prisma.staff.update({
+          where: { id: existingId },
+          data: staffData
+        })
+      } else {
+        await prisma.staff.create({
+          data: staffData
+        })
+      }
     }
 
     return successResponse(null, 'Staff saved successfully')

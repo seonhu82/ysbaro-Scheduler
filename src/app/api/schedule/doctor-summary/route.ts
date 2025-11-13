@@ -357,9 +357,16 @@ export async function GET(request: NextRequest) {
     // 실제 원장 스케줄 데이터가 있는지 확인
     const hasActualSchedule = currentMonthDoctorSchedules.length > 0
 
+    // 전달 배포된 스케줄에서 데이터가 온 것인지 확인
+    const hasDataFromPreviousMonth = doctorSchedules.some(ds =>
+      ds.schedule.year !== year || ds.schedule.month !== month
+    )
+
     return NextResponse.json({
       success: true,
       hasSchedule: hasActualSchedule,
+      hasDataFromPreviousMonth, // 전달 배포 스케줄 데이터 여부
+      isCurrentMonthDeployed: schedule.status === 'DEPLOYED', // 현재 월 배포 여부
       doctorSchedules: Object.values(doctorStats),
       slots,
       weekPatterns: schedule.weekPatterns || null, // 주차별 패턴 정보 추가

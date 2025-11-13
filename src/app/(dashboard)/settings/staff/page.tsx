@@ -46,6 +46,7 @@ export default function StaffSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [staff, setStaff] = useState<Staff[]>([])
+  const [originalStaff, setOriginalStaff] = useState<Staff[]>([]) // 원본 데이터 저장
   const [departments, setDepartments] = useState<Department[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [positions, setPositions] = useState<Position[]>([])
@@ -88,6 +89,7 @@ export default function StaffSettingsPage() {
             usedAnnualDays: s.usedAnnualDays || 0,
           }))
           setStaff(formattedStaff)
+          setOriginalStaff(JSON.parse(JSON.stringify(formattedStaff))) // 원본 복사
         }
 
         console.log('Raw deptData:', deptData)
@@ -160,10 +162,27 @@ export default function StaffSettingsPage() {
   const handleSave = async () => {
     try {
       setSaving(true)
+
+      // 변경된 직원만 필터링
+      const modifiedStaff = staff.filter((s, index) => {
+        const original = originalStaff[index]
+        if (!original) return true // 새로 추가된 직원
+
+        return JSON.stringify(s) !== JSON.stringify(original)
+      })
+
+      if (modifiedStaff.length === 0) {
+        alert('변경된 내용이 없습니다.')
+        setSaving(false)
+        return
+      }
+
+      console.log(`📝 ${modifiedStaff.length}명의 직원 정보 업데이트`)
+
       const res = await fetch('/api/settings/staff-bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ staff })
+        body: JSON.stringify({ staff: modifiedStaff })
       })
 
       if (res.ok) {
