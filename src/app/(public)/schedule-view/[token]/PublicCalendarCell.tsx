@@ -84,7 +84,7 @@ export function PublicCalendarCell({
                 )}>
                   연차
                 </span>
-                {hasNightShift && <span className="text-sm" title="야간">🌙</span>}
+                {assignment.hasNightShift && <span className="text-sm" title="야간">🌙</span>}
               </div>
             )
           } else if (assignment.leaveType === 'OFF') {
@@ -96,7 +96,7 @@ export function PublicCalendarCell({
                 )}>
                   오프
                 </span>
-                {hasNightShift && <span className="text-sm" title="야간">🌙</span>}
+                {assignment.hasNightShift && <span className="text-sm" title="야간">🌙</span>}
               </div>
             )
           } else {
@@ -108,7 +108,7 @@ export function PublicCalendarCell({
                 )}>
                   근무
                 </span>
-                {hasNightShift && <span className="text-sm" title="야간">🌙</span>}
+                {assignment.hasNightShift && <span className="text-sm" title="야간">🌙</span>}
               </div>
             )
           }

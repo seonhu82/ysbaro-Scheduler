@@ -1570,9 +1570,19 @@ export async function POST(request: NextRequest) {
       // 주4일 미달 검증
       if (data.workDays < expectedWorkDays) {
         const weekStartStr = weekKey.split('-').slice(1).join('-')
-        warnings.push(
-          `${staff.name} (${weekStartStr} 주): 주${expectedWorkDays}일 근무 미달 (실제: ${data.workDays}일) - 검토 요망`
+
+        // 해당 주차의 연차 승인 건수 확인
+        const weekDates = data.dates
+        const annualLeavesInWeek = confirmedAnnualLeaves.filter(leave =>
+          weekDates.includes(leave.date.toISOString().split('T')[0])
         )
+        const annualCount = annualLeavesInWeek.length
+
+        const message = annualCount > 0
+          ? `${staff.name} (${weekStartStr} 주): 주${expectedWorkDays}일 근무 미달 (실제: ${data.workDays}일, 연차 승인: ${annualCount}건)`
+          : `${staff.name} (${weekStartStr} 주): 주${expectedWorkDays}일 근무 미달 (실제: ${data.workDays}일) - 검토 요망`
+
+        warnings.push(message)
       }
 
       // 오프 미달 검증 (100% 미충족)
@@ -1872,6 +1882,17 @@ export async function POST(request: NextRequest) {
       await recalculateFinalFairness(schedule.id, clinicId, year, month)
     } catch (fairnessError) {
       console.error('❌ 형평성 스냅샷 생성 실패 (무시):', fairnessError)
+    }
+
+    // warnings 저장
+    try {
+      await prisma.schedule.update({
+        where: { id: schedule.id },
+        data: { warnings: warnings }
+      })
+      console.log(`✅ Warnings 저장 완료: ${warnings.length}건`)
+    } catch (warningsError) {
+      console.error('❌ Warnings 저장 실패 (무시):', warningsError)
     }
 
     // 미리보기 데이터 생성

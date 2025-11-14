@@ -290,13 +290,16 @@ export async function GET(
           }
         }
 
+        // shiftType이 NIGHT이면 hasNightShift = true
+        const hasStaffNightShift = staff.shiftType === 'NIGHT'
+
         assignments.push({
           staff: {
             id: staff.staff.id,
             name: staff.staff.name,
             rank: staff.staff.rank || staff.staff.departmentName
           },
-          hasNightShift: staff.hasNightShift,
+          hasNightShift: hasStaffNightShift,
           leaveType,
           leaveStatus: leaveInfo?.status || null
         })
@@ -355,13 +358,31 @@ export async function GET(
 
     console.log(`📊 최종 날짜 데이터: ${daysArray.length}일`)
 
+    // 현재 월에 속하는 날짜만 필터링하여 통계 계산
+    const currentMonthStart = new Date(year, month - 1, 1).toISOString().split('T')[0]
+    const currentMonthEnd = new Date(year, month, 0).toISOString().split('T')[0]
+
+    const currentMonthDays = daysArray.filter(day =>
+      day.date >= currentMonthStart && day.date <= currentMonthEnd
+    )
+
     return NextResponse.json({
       success: true,
       data: {
         year,
         month,
         clinicName: link.clinic.name,
-        days: daysArray
+        days: daysArray,
+        statistics: {
+          totalDays: currentMonthDays.length,
+          staffCount: schedule ? await prisma.staff.count({
+            where: {
+              clinicId,
+              isActive: true,
+              departmentName: '진료실'
+            }
+          }) : 0
+        }
       }
     })
   } catch (error: any) {

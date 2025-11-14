@@ -15,6 +15,7 @@ interface WeekSummary {
   totalSlots: number
   assignedSlots: number
   issues: number
+  issuesDetail?: string
   status: string
   label: string
 }
@@ -26,6 +27,8 @@ export default function ScheduleManagementPage() {
   const [totalStaff, setTotalStaff] = useState(0)
   const [treatmentStaff, setTreatmentStaff] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [warningsSummary, setWarningsSummary] = useState('')
+  const [totalWarnings, setTotalWarnings] = useState(0)
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth() + 1
@@ -45,6 +48,8 @@ export default function ScheduleManagementPage() {
         if (!summaryResult.success) {
           console.error('❌ API Error:', summaryResult.error)
           setWeekSummaries([])
+          setTotalWarnings(0)
+          setWarningsSummary('')
         } else {
           // successResponse가 data를 감싸므로 data.data로 접근
           const weekData = summaryResult.data?.data
@@ -54,6 +59,17 @@ export default function ScheduleManagementPage() {
           } else {
             console.log('❌ No valid week data, setting empty array')
             setWeekSummaries([])
+          }
+
+          // 경고 정보 설정
+          const warnings = summaryResult.data?.warnings
+          if (warnings) {
+            setTotalWarnings(warnings.total || 0)
+            setWarningsSummary(warnings.summary || '')
+            console.log('⚠️ Warnings:', warnings)
+          } else {
+            setTotalWarnings(0)
+            setWarningsSummary('')
           }
         }
 
@@ -220,13 +236,16 @@ export default function ScheduleManagementPage() {
                         <div className="flex items-center gap-1">
                           <Users className="w-4 h-4 text-gray-500" />
                           <span>
-                            배치: {week.assignedSlots}/{week.totalSlots}
+                            배치: {week.assignedSlots}{week.totalSlots > 0 ? `/${week.totalSlots}` : '명'}
                           </span>
                         </div>
                         {week.issues > 0 && (
                           <div className="flex items-center gap-1 text-amber-600">
                             <AlertCircle className="w-4 h-4" />
-                            <span>문제: {week.issues}건</span>
+                            <span>
+                              경고 {week.issues}건
+                              {week.issuesDetail && ` (${week.issuesDetail})`}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -300,11 +319,16 @@ export default function ScheduleManagementPage() {
                 <p className="text-sm text-gray-600 mb-1">배치율</p>
                 <p className="text-2xl font-bold">
                   {weekSummaries && weekSummaries.length > 0
-                    ? Math.round(
-                        (weekSummaries.reduce((sum, w) => sum + w.assignedSlots, 0) /
-                          weekSummaries.reduce((sum, w) => sum + w.totalSlots, 0)) *
-                          100
-                      )
+                    ? (() => {
+                        // Only include weeks with doctor schedule (totalSlots > 0)
+                        const weeksWithSchedule = weekSummaries.filter(w => w.totalSlots > 0)
+                        if (weeksWithSchedule.length === 0) return 0
+
+                        const totalAssigned = weeksWithSchedule.reduce((sum, w) => sum + w.assignedSlots, 0)
+                        const totalSlots = weeksWithSchedule.reduce((sum, w) => sum + w.totalSlots, 0)
+
+                        return Math.round((totalAssigned / totalSlots) * 100)
+                      })()
                     : 0}
                   %
                 </p>
@@ -318,14 +342,19 @@ export default function ScheduleManagementPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">문제 발생</p>
+                <p className="text-sm text-gray-600 mb-1">경고 발생</p>
                 <p className="text-2xl font-bold">
-                  {weekSummaries ? weekSummaries.reduce((sum, w) => sum + w.issues, 0) : 0}건
+                  {totalWarnings}건
                 </p>
+                {warningsSummary && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {warningsSummary}
+                  </p>
+                )}
               </div>
               <AlertCircle
                 className={`w-8 h-8 ${
-                  weekSummaries && weekSummaries.reduce((sum, w) => sum + w.issues, 0) > 0
+                  totalWarnings > 0
                     ? 'text-amber-500'
                     : 'text-gray-400'
                 }`}

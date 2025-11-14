@@ -430,6 +430,9 @@ model Schedule {
   // 해당 월 배정 완료 후 스냅샷 (실제 근무일 + 편차)
   monthlyFairness Json? // { "staffId1": { "actual": { "total": 16, "night": 2, ... }, "deviation": { "total": -0.5, ... } }, ... }
 
+  // 자동배치 경고 목록
+  warnings Json? // ["주4일 미달: 직원A (연차 1건)", "오프 미달: 직원B", ...]
+
   // 관계
   doctors          ScheduleDoctor[]
   staffAssignments StaffAssignment[]
@@ -650,7 +653,6 @@ enum ApplicationStatus {
   ON_HOLD // 보류 (구분별 슬롯 부족, 스케줄 배치 후 결정)
   CONFIRMED // 확정
   REJECTED // 반려
-  CANCELLED // 취소됨
 }
 
 enum LeaveType {

@@ -29,7 +29,14 @@ export async function GET(request: NextRequest) {
         year,
         month
       },
-      include: {
+      select: {
+        id: true,
+        year: true,
+        month: true,
+        status: true,
+        deployedAt: true,
+        deployedEndDate: true,
+        warnings: true, // 경고 정보 포함
         staffAssignments: {
           include: {
             staff: {
@@ -48,7 +55,8 @@ export async function GET(request: NextRequest) {
             doctor: {
               select: {
                 id: true,
-                name: true
+                name: true,
+                shortName: true
               }
             }
           }
@@ -60,17 +68,72 @@ export async function GET(request: NextRequest) {
       return errorResponse('Schedule not found', 404)
     }
 
+    // 이전 달 스케줄도 조회 (배포 범위에 포함될 수 있음)
+    const prevMonth = month === 1 ? 12 : month - 1
+    const prevYear = month === 1 ? year - 1 : year
+    const prevSchedule = await prisma.schedule.findFirst({
+      where: {
+        clinicId: session.user.clinicId,
+        year: prevYear,
+        month: prevMonth,
+        status: 'DEPLOYED'
+      },
+      select: {
+        id: true,
+        year: true,
+        month: true,
+        status: true,
+        deployedAt: true,
+        deployedEndDate: true,
+        warnings: true,
+        staffAssignments: {
+          include: {
+            staff: {
+              select: {
+                id: true,
+                name: true,
+                rank: true,
+                departmentName: true,
+                categoryName: true
+              }
+            }
+          }
+        },
+        doctors: {
+          include: {
+            doctor: {
+              select: {
+                id: true,
+                name: true,
+                shortName: true
+              }
+            }
+          }
+        }
+      }
+    })
+
     // 월의 시작일과 종료일
     const startDate = new Date(year, month - 1, 1)
     const endDate = new Date(year, month, 0)
     const totalDays = endDate.getDate()
+
+    // 이전 달 배포 범위도 고려한 날짜 범위
+    let queryStartDate = startDate
+    if (prevSchedule?.deployedEndDate) {
+      const prevDeployedEnd = new Date(prevSchedule.deployedEndDate)
+      // 이전 달 배포가 현재 달로 넘어오는 경우, 이전 달 시작일부터 조회
+      if (prevDeployedEnd >= startDate) {
+        queryStartDate = new Date(prevYear, prevMonth - 1, 1)
+      }
+    }
 
     // 연차/오프 신청 통계
     const leaveApplications = await prisma.leaveApplication.findMany({
       where: {
         clinicId: session.user.clinicId,
         date: {
-          gte: startDate,
+          gte: queryStartDate,
           lte: endDate
         }
       },
@@ -84,13 +147,24 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 기본 통계
+    // 현재 달과 이전 달의 모든 배정 데이터 합치기
+    const allStaffAssignments = [
+      ...schedule.staffAssignments,
+      ...(prevSchedule?.staffAssignments || [])
+    ]
+
+    const allDoctors = [
+      ...schedule.doctors,
+      ...(prevSchedule?.doctors || [])
+    ]
+
+    // 기본 통계 (현재 달 기준)
     const totalAssignments = schedule.staffAssignments.length
     const dayShiftCount = schedule.staffAssignments.filter(a => a.shiftType === 'DAY').length
     const nightShiftCount = schedule.staffAssignments.filter(a => a.shiftType === 'NIGHT').length
     const offShiftCount = schedule.staffAssignments.filter(a => a.shiftType === 'OFF').length
 
-    // 직원별 근무일수 통계
+    // 직원별 근무일수 통계 (현재 달에 속한 날짜만 - 이전 달 배포 데이터 포함)
     const staffWorkDays = new Map<string, {
       id: string
       name: string
@@ -103,31 +177,39 @@ export async function GET(request: NextRequest) {
       totalDays: number
     }>()
 
-    schedule.staffAssignments.forEach(assignment => {
-      const staffId = assignment.staffId
-      if (!staffWorkDays.has(staffId)) {
-        staffWorkDays.set(staffId, {
-          id: assignment.staff.id,
-          name: assignment.staff.name,
-          rank: assignment.staff.rank,
-          departmentName: assignment.staff.departmentName,
-          categoryName: assignment.staff.categoryName,
-          dayShifts: 0,
-          nightShifts: 0,
-          offDays: 0,
-          totalDays: 0
-        })
-      }
+    // 현재 달의 날짜 범위
+    const currentMonthStart = new Date(year, month - 1, 1)
+    const currentMonthEnd = new Date(year, month, 0)
 
-      const stats = staffWorkDays.get(staffId)!
-      if (assignment.shiftType === 'DAY') {
-        stats.dayShifts++
-        stats.totalDays++
-      } else if (assignment.shiftType === 'NIGHT') {
-        stats.nightShifts++
-        stats.totalDays++
-      } else if (assignment.shiftType === 'OFF') {
-        stats.offDays++
+    allStaffAssignments.forEach(assignment => {
+      const assignmentDate = new Date(assignment.date)
+      // 현재 달에 속한 배정만 통계에 포함
+      if (assignmentDate >= currentMonthStart && assignmentDate <= currentMonthEnd) {
+        const staffId = assignment.staffId
+        if (!staffWorkDays.has(staffId)) {
+          staffWorkDays.set(staffId, {
+            id: assignment.staff.id,
+            name: assignment.staff.name,
+            rank: assignment.staff.rank,
+            departmentName: assignment.staff.departmentName,
+            categoryName: assignment.staff.categoryName,
+            dayShifts: 0,
+            nightShifts: 0,
+            offDays: 0,
+            totalDays: 0
+          })
+        }
+
+        const stats = staffWorkDays.get(staffId)!
+        if (assignment.shiftType === 'DAY') {
+          stats.dayShifts++
+          stats.totalDays++
+        } else if (assignment.shiftType === 'NIGHT') {
+          stats.nightShifts++
+          stats.totalDays++
+        } else if (assignment.shiftType === 'OFF') {
+          stats.offDays++
+        }
       }
     })
 
@@ -152,17 +234,17 @@ export async function GET(request: NextRequest) {
       const dateStr = date.toISOString().split('T')[0]
       const dayOfWeek = dayNames[date.getDay()]
 
-      const dayAssignments = schedule.staffAssignments.filter(a => {
+      const dayAssignments = allStaffAssignments.filter(a => {
         const assignmentDate = new Date(a.date).toISOString().split('T')[0]
         return assignmentDate === dateStr
       })
 
-      const doctorsOnDay = schedule.doctors
+      const doctorsOnDay = allDoctors
         .filter(d => {
           const doctorDate = new Date(d.date).toISOString().split('T')[0]
           return doctorDate === dateStr
         })
-        .map(d => d.doctor.name)
+        .map(d => d.doctor.shortName)
 
       dailyStats.push({
         date: dateStr,
@@ -188,7 +270,40 @@ export async function GET(request: NextRequest) {
       l => l.status === 'ON_HOLD'
     ).length
 
-    // 부서별 근무 통계
+    // 경고 정보 파싱
+    const warnings = schedule.warnings as string[] | null
+    let warningsSummary = ''
+    let totalWarnings = 0
+    let workDayWarnings = 0
+    let annualLeaveWarnings = 0
+
+    if (warnings && Array.isArray(warnings) && warnings.length > 0) {
+      totalWarnings = warnings.length
+
+      // 주4일/주5일 미달 경고 개수
+      workDayWarnings = warnings.filter(w =>
+        w.includes('근무 미달')
+      ).length
+
+      // 연차 승인 관련 경고 개수
+      annualLeaveWarnings = warnings.filter(w =>
+        w.includes('연차 승인')
+      ).length
+
+      // 요약 문자열 생성
+      const summaryParts: string[] = []
+      if (workDayWarnings > 0) {
+        summaryParts.push(`주4일 미만 근무 경고 ${workDayWarnings}건`)
+      }
+      if (annualLeaveWarnings > 0) {
+        summaryParts.push(`연차 승인 ${annualLeaveWarnings}건`)
+      }
+      warningsSummary = summaryParts.join(', ')
+
+      console.log(`⚠️ Warnings Summary: Total ${totalWarnings}건, 근무미달 ${workDayWarnings}건, 연차 ${annualLeaveWarnings}건`)
+    }
+
+    // 부서별 근무 통계 (현재 달에 속한 날짜만)
     const departmentStats = new Map<string, {
       dayShifts: number
       nightShifts: number
@@ -196,31 +311,38 @@ export async function GET(request: NextRequest) {
       staffCount: number
     }>()
 
-    schedule.staffAssignments.forEach(assignment => {
-      const dept = assignment.staff.departmentName || '미지정'
-      if (!departmentStats.has(dept)) {
-        departmentStats.set(dept, {
-          dayShifts: 0,
-          nightShifts: 0,
-          offDays: 0,
-          staffCount: 0
-        })
-      }
+    allStaffAssignments.forEach(assignment => {
+      const assignmentDate = new Date(assignment.date)
+      // 현재 달에 속한 배정만 통계에 포함
+      if (assignmentDate >= currentMonthStart && assignmentDate <= currentMonthEnd) {
+        const dept = assignment.staff.departmentName || '미지정'
+        if (!departmentStats.has(dept)) {
+          departmentStats.set(dept, {
+            dayShifts: 0,
+            nightShifts: 0,
+            offDays: 0,
+            staffCount: 0
+          })
+        }
 
-      const stats = departmentStats.get(dept)!
-      if (assignment.shiftType === 'DAY') stats.dayShifts++
-      if (assignment.shiftType === 'NIGHT') stats.nightShifts++
-      if (assignment.shiftType === 'OFF') stats.offDays++
+        const stats = departmentStats.get(dept)!
+        if (assignment.shiftType === 'DAY') stats.dayShifts++
+        if (assignment.shiftType === 'NIGHT') stats.nightShifts++
+        if (assignment.shiftType === 'OFF') stats.offDays++
+      }
     })
 
-    // 부서별 직원 수 계산
+    // 부서별 직원 수 계산 (현재 달에 속한 날짜만)
     const uniqueStaffPerDept = new Map<string, Set<string>>()
-    schedule.staffAssignments.forEach(assignment => {
-      const dept = assignment.staff.departmentName || '미지정'
-      if (!uniqueStaffPerDept.has(dept)) {
-        uniqueStaffPerDept.set(dept, new Set())
+    allStaffAssignments.forEach(assignment => {
+      const assignmentDate = new Date(assignment.date)
+      if (assignmentDate >= currentMonthStart && assignmentDate <= currentMonthEnd) {
+        const dept = assignment.staff.departmentName || '미지정'
+        if (!uniqueStaffPerDept.has(dept)) {
+          uniqueStaffPerDept.set(dept, new Set())
+        }
+        uniqueStaffPerDept.get(dept)!.add(assignment.staffId)
       }
-      uniqueStaffPerDept.get(dept)!.add(assignment.staffId)
     })
 
     uniqueStaffPerDept.forEach((staffSet, dept) => {
@@ -247,6 +369,7 @@ export async function GET(request: NextRequest) {
       totalSlots: number
       assignedSlots: number
       issues: number
+      issuesDetail?: string
       status: string
       label: string
     }[] = []
@@ -255,21 +378,10 @@ export async function GET(request: NextRequest) {
     console.log(`  Total assignments: ${totalAssignments}`)
     console.log(`  Staff count: ${staffWorkDays.size}`)
     console.log(`  Doctor count: ${schedule.doctors.length}`)
-
-    // 이전 달 스케줄 조회 (배포 범위 확인)
-    const prevMonth = month === 1 ? 12 : month - 1
-    const prevYear = month === 1 ? year - 1 : year
-    const prevSchedule = await prisma.schedule.findFirst({
-      where: {
-        clinicId: session.user.clinicId,
-        year: prevYear,
-        month: prevMonth
-      },
-      select: {
-        deployedEndDate: true,
-        status: true
-      }
-    })
+    console.log(`  Prev schedule deployed: ${prevSchedule?.status === 'DEPLOYED' ? 'Yes' : 'No'}`)
+    if (prevSchedule?.deployedEndDate) {
+      console.log(`  Prev deployed end date: ${prevSchedule.deployedEndDate}`)
+    }
 
     // 해당 월의 모든 주차 계산 (일~토 기준)
     const weeks = new Map<number, { dates: Date[], startDate: Date, endDate: Date }>()
@@ -323,8 +435,8 @@ export async function GET(request: NextRequest) {
       for (const date of dates) {
         const dateStr = date.toISOString().split('T')[0]
 
-        // 해당 날짜의 원장 스케줄 확인
-        const doctorsOnDay = schedule.doctors.filter(d => {
+        // 해당 날짜의 원장 스케줄 확인 (현재 달 + 이전 달 배포 데이터 모두 포함)
+        const doctorsOnDay = allDoctors.filter(d => {
           const doctorDate = new Date(d.date).toISOString().split('T')[0]
           return doctorDate === dateStr
         })
@@ -333,7 +445,7 @@ export async function GET(request: NextRequest) {
           hasDoctorSchedule = true
 
           // 원장 조합으로 필요 인원 찾기
-          const doctorShortNames = Array.from(new Set(doctorsOnDay.map(d => d.doctor.name))).sort()
+          const doctorShortNames = Array.from(new Set(doctorsOnDay.map(d => d.doctor.shortName))).sort()
           const hasNightShift = doctorsOnDay.some(d => d.hasNightShift)
 
           const combination = allCombinations.find(c => {
@@ -344,8 +456,8 @@ export async function GET(request: NextRequest) {
           const requiredStaff = combination?.requiredStaff || 0
           totalSlots += requiredStaff
 
-          // 배치된 직원 수
-          const dayAssignments = schedule.staffAssignments.filter(a => {
+          // 배치된 직원 수 (현재 달 + 이전 달 배포 데이터 모두 포함)
+          const dayAssignments = allStaffAssignments.filter(a => {
             const assignmentDate = new Date(a.date).toISOString().split('T')[0]
             return assignmentDate === dateStr && (a.shiftType === 'DAY' || a.shiftType === 'NIGHT')
           })
@@ -357,6 +469,21 @@ export async function GET(request: NextRequest) {
           assignedSlots += dayAssignments.length
         }
       }
+
+      // 해당 주의 경고 건수 계산 (ON_HOLD 상태의 연차 신청)
+      const weekStartDate = new Date(startDate)
+      const weekEndDate = new Date(endDate)
+      weekEndDate.setHours(23, 59, 59, 999)
+
+      const weekLeaveIssues = leaveApplications.filter(l => {
+        const leaveDate = new Date(l.date)
+        return leaveDate >= weekStartDate &&
+               leaveDate <= weekEndDate &&
+               l.status === 'ON_HOLD'
+      })
+
+      const totalIssues = weekLeaveIssues.length
+      const annualIssues = weekLeaveIssues.filter(l => l.leaveType === 'ANNUAL').length
 
       // 상태 및 라벨 결정
       let status = 'empty'
@@ -385,12 +512,13 @@ export async function GET(request: NextRequest) {
         endDate: endDateStr,
         totalSlots,
         assignedSlots,
-        issues: 0,
+        issues: totalIssues,
+        issuesDetail: annualIssues > 0 ? `연차 ${annualIssues}건` : '',
         status,
         label
       })
 
-      console.log(`  Week ${weekNum}: ${startDateStr} ~ ${endDateStr}, Slots: ${assignedSlots}/${totalSlots}, Status: ${status}`)
+      console.log(`  Week ${weekNum}: ${startDateStr} ~ ${endDateStr}, Slots: ${assignedSlots}/${totalSlots}, Issues: ${totalIssues}, Status: ${status}`)
     }
 
     console.log(`✅ Returning ${weekSummaries.length} week summaries`)
@@ -416,6 +544,12 @@ export async function GET(request: NextRequest) {
         offLeaveCount,
         pendingLeaveCount,
         onHoldLeaveCount
+      },
+      warnings: {
+        total: totalWarnings,
+        summary: warningsSummary,
+        workDayWarnings,
+        annualLeaveWarnings
       },
       data: weekSummaries, // 주차별 요약 추가
       staffStats,
