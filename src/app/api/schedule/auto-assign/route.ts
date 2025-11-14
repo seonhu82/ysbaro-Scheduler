@@ -1707,36 +1707,20 @@ export async function POST(request: NextRequest) {
 
   } // 메인 try 블록 종료
 
-    // 배치 완료 후 충돌하는 연차/오프 신청 자동 반려 처리
-    console.log(`\n========== 4차 연차/오프 충돌 처리 시작 ==========`)
+    // 4차: 배치되지 않은 직원을 분류하여 저장 + 충돌 처리
+    console.log(`\n========== 4차: 배치되지 않은 직원 저장 및 충돌 처리 시작 ==========`)
     try {
-      // 해당 월의 모든 근무 배정 조회 (DAY, NIGHT)
-      const workAssignments = await prisma.staffAssignment.findMany({
-        where: {
-          scheduleId: schedule.id,
-          shiftType: { in: ['DAY', 'NIGHT'] }
-        },
-        select: {
-          staffId: true,
-          date: true
-        }
-      })
-
-      // staffId + date 조합으로 맵 생성
-      const workMap = new Map<string, boolean>()
-      workAssignments.forEach(assignment => {
-        const key = `${assignment.staffId}_${assignment.date.toISOString().split('T')[0]}`
-        workMap.set(key, true)
-      })
-
-      // 충돌하는 CONFIRMED LeaveApplication 조회
       const monthStart = new Date(year, month - 1, 1)
       const monthEnd = new Date(year, month, 0)
 
-      const conflictingLeaves = await prisma.leaveApplication.findMany({
+      // 전체 자동 배치 대상 직원 조회
+      const autoAssignStaffIds = autoAssignStaff.map(s => s.id)
+
+      // 확정 및 보류 중인 연차/오프 조회 (분류 및 충돌 확인용)
+      const leaveApplications = await prisma.leaveApplication.findMany({
         where: {
           clinicId,
-          status: 'CONFIRMED',
+          status: { in: ['CONFIRMED', 'ON_HOLD'] },
           date: {
             gte: monthStart,
             lte: monthEnd
@@ -1749,43 +1733,139 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      // 충돌 검사 및 반려 처리
-      let cancelledCount = 0
-      for (const leave of conflictingLeaves) {
+      // 연차/오프 맵 생성 (staffId_date -> leave)
+      const leaveMap = new Map<string, any>()
+      leaveApplications.forEach(leave => {
         const key = `${leave.staffId}_${leave.date.toISOString().split('T')[0]}`
-        if (workMap.has(key)) {
-          // 근무 배정과 충돌 발견 → 반려 처리
-          await prisma.leaveApplication.update({
-            where: { id: leave.id },
-            data: { status: 'CANCELLED' }
-          })
+        leaveMap.set(key, leave)
+      })
 
-          // 알림 생성
-          await prisma.notification.create({
-            data: {
-              clinicId,
-              staffId: leave.staffId,
-              type: 'LEAVE_CANCELLED',
-              title: '연차/오프 신청 자동 취소',
-              message: `자동 배치로 인해 ${leave.date.toISOString().split('T')[0]} ${leave.leaveType === 'ANNUAL' ? '연차' : '오프'} 신청이 취소되었습니다.`,
-              isRead: false
+      const confirmedCount = leaveApplications.filter(l => l.status === 'CONFIRMED').length
+      const onHoldCount = leaveApplications.filter(l => l.status === 'ON_HOLD').length
+      console.log(`   📋 확정 연차/오프: ${confirmedCount}건, 보류: ${onHoldCount}건`)
+      console.log(`   👥 자동 배치 대상 직원: ${autoAssignStaffIds.length}명`)
+
+      let annualCreated = 0
+      let offCreated = 0
+      let conflictRejected = 0
+      let onHoldApproved = 0
+
+      console.log(`   🔍 Step 1: 1~3차 배치 날짜 조회 중...`)
+      // 1~3차가 배치한 날짜만 추출 (DAY/NIGHT가 있는 날짜)
+      const assignedDatesRaw = await prisma.staffAssignment.findMany({
+        where: {
+          scheduleId: schedule.id,
+          shiftType: { in: ['DAY', 'NIGHT'] }
+        },
+        select: { date: true },
+        distinct: ['date'],
+        orderBy: { date: 'asc' }
+      })
+
+      const assignedDates = assignedDatesRaw.map(d => d.date)
+      console.log(`   📅 1~3차 배치 날짜: ${assignedDates.length}일 (${assignedDates[0]?.toISOString().split('T')[0]} ~ ${assignedDates[assignedDates.length - 1]?.toISOString().split('T')[0]})`)
+
+      console.log(`   🔍 Step 2: 날짜별 처리 시작...`)
+      // 1~3차가 배치한 날짜만 순회
+      for (const currentDate of assignedDates) {
+        console.log(`      Processing ${currentDate.toISOString().split('T')[0]}...`)
+        const dateStr = currentDate.toISOString().split('T')[0]
+
+        // 해당 날짜의 기존 배정 조회 (1~3차에서 저장된 DAY/NIGHT)
+        const existingAssignments = await prisma.staffAssignment.findMany({
+          where: {
+            scheduleId: schedule.id,
+            date: currentDate
+          }
+        })
+
+        const assignedStaffIds = new Set(existingAssignments.map(a => a.staffId))
+
+        // 배치되지 않은 직원 찾기
+        const unassignedStaff = autoAssignStaffIds.filter(id => !assignedStaffIds.has(id))
+
+        // 기존 OFF 배치를 연차/오프 신청에 따라 업데이트
+        const offAssignments = existingAssignments.filter(a => a.shiftType === 'OFF')
+
+        for (const offAssignment of offAssignments) {
+          const leaveKey = `${offAssignment.staffId}_${dateStr}`
+          const leave = leaveMap.get(leaveKey)
+
+          if (leave) {
+            // 연차 또는 오프 신청이 있는 경우 → leaveApplicationId 연결 및 ANNUAL 분류
+            const shiftType = leave.leaveType === 'ANNUAL' ? 'ANNUAL' : 'OFF'
+
+            await prisma.staffAssignment.update({
+              where: { id: offAssignment.id },
+              data: {
+                shiftType,
+                leaveApplicationId: leave.id
+              }
+            })
+
+            // 보류 중이었다면 승인으로 변경
+            if (leave.status === 'ON_HOLD') {
+              await prisma.leaveApplication.update({
+                where: { id: leave.id },
+                data: { status: 'CONFIRMED' }
+              })
+              onHoldApproved++
+              console.log(`   ✅ 보류 승인: ${leave.staff.name} (${dateStr}) - ${leave.leaveType} 신청 승인 (OFF 배치 확인)`)
             }
-          })
 
-          cancelledCount++
-          console.log(`   ❌ ${leave.staff.name} (${leave.date.toISOString().split('T')[0]}): ${leave.leaveType} 신청 취소`)
+            if (leave.leaveType === 'ANNUAL') {
+              annualCreated++
+            } else {
+              offCreated++
+            }
+          }
+          // 신청 없는 OFF는 그대로 유지 (아무것도 안 함)
+        }
+
+        // 충돌 확인: 근무 배치(DAY/NIGHT)된 직원 중 연차/오프 신청한 경우
+        for (const assignment of existingAssignments) {
+          if (assignment.shiftType === 'DAY' || assignment.shiftType === 'NIGHT') {
+            const leaveKey = `${assignment.staffId}_${dateStr}`
+            const leave = leaveMap.get(leaveKey)
+
+            if (leave) {
+              // 충돌 발견: 연차/오프 신청 반려
+              await prisma.leaveApplication.update({
+                where: { id: leave.id },
+                data: { status: 'CANCELLED' }
+              })
+
+              // 알림 생성 (Staff는 User와 별개이므로 userId는 null, relatedId에 staffId 저장)
+              await prisma.notification.create({
+                data: {
+                  clinicId,
+                  userId: null,
+                  type: 'LEAVE_CANCELLED',
+                  title: '연차/오프 신청 자동 취소',
+                  message: `[${leave.staff.name}] 자동 배치로 인해 ${dateStr} ${leave.leaveType === 'ANNUAL' ? '연차' : '오프'} 신청이 취소되었습니다. (근무 배정됨: ${assignment.shiftType})`,
+                  relatedId: leave.staffId,
+                  isRead: false
+                }
+              })
+
+              conflictRejected++
+              console.log(`   ⚠️ 충돌 반려: ${leave.staff.name} (${dateStr}) - ${leave.leaveType} 신청 vs ${assignment.shiftType} 배정`)
+            }
+          }
         }
       }
 
-      if (cancelledCount > 0) {
-        console.log(`\n✅ 4차 충돌 처리 완료: ${cancelledCount}건 연차/오프 신청 취소`)
-      } else {
-        console.log(`\n✅ 4차 충돌 처리 완료: 충돌 없음`)
-      }
-    } catch (conflictError) {
-      console.error('❌ 연차/오프 충돌 처리 실패 (무시):', conflictError)
+      console.log(`\n✅ 4차 저장 완료:`)
+      console.log(`   - ANNUAL 생성: ${annualCreated}건`)
+      console.log(`   - OFF 생성: ${offCreated}건`)
+      console.log(`   - 충돌 반려: ${conflictRejected}건`)
+      console.log(`   - 보류 승인: ${onHoldApproved}건`)
+    } catch (saveError: any) {
+      console.error('❌ 4차 저장 실패 (무시):', saveError.message)
+      console.error('❌ 에러 상세:', JSON.stringify(saveError, null, 2))
+      if (saveError.stack) console.error('❌ Stack:', saveError.stack)
     }
-    console.log(`========== 4차 연차/오프 충돌 처리 완료 ==========\n`)
+    console.log(`========== 4차: 완료 ==========\n`)
 
     // 배치 완료 후 최종 형평성 재계산 & 스냅샷 저장
     try {

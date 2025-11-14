@@ -324,7 +324,7 @@ export async function GET(request: NextRequest) {
         categoryName: data.categoryName,
         totalDeviation: Math.round(data.deviation.total * 10) / 10,
         actualWorkDays: data.actual.total,
-        averageWorkDays: Math.round((data.actual.total - data.deviation.total) * 10) / 10,
+        averageWorkDays: Math.round((data.actual.total + data.deviation.total) * 10) / 10,
         deviationDetails: {
           night: Math.round(data.deviation.night * 10) / 10,
           weekend: Math.round(data.deviation.weekend * 10) / 10,

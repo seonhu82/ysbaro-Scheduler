@@ -458,6 +458,7 @@ enum ShiftType {
   DAY // 주간
   NIGHT // 야간
   OFF // 오프
+  ANNUAL // 연차
 }
 
 model StaffAssignment {
@@ -478,6 +479,10 @@ model StaffAssignment {
   isFlexible       Boolean @default(false) // 유연 배치 여부
   originalCategory String? // 원래 카테고리
   assignedCategory String? // 배치된 카테고리
+
+  // 🆕 연차/오프 신청 연결 (데이터 일관성 확보)
+  leaveApplicationId String?           @unique
+  leaveApplication   LeaveApplication? @relation(fields: [leaveApplicationId], references: [id], onDelete: SetNull)
 
   // 🆕 출퇴근 기록 연결
   attendanceRecords AttendanceRecord[]
@@ -669,7 +674,8 @@ model LeaveApplication {
   updatedAt  DateTime          @updatedAt
 
   // 관계
-  changeLogs LeaveChangeLog[]
+  changeLogs       LeaveChangeLog[]
+  staffAssignment  StaffAssignment? // 역참조 (배치 시 연결)
 
   @@index([clinicId])
   @@index([linkId])

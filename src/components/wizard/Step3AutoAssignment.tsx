@@ -470,10 +470,10 @@ export default function Step3AutoAssignment({ wizardState, updateWizardState, on
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 많이 근무한 직원 (음수 편차) */}
+                {/* 적게 근무한 직원 (음수 편차) */}
                 <div className="border rounded-lg p-4">
-                  <div className="text-sm font-medium text-red-600 mb-3">
-                    ⬇️ 평균보다 많이 근무 (TOP 5)
+                  <div className="text-sm font-medium text-blue-600 mb-3">
+                    ⬆️ 평균보다 적게 근무 (TOP 5)
                   </div>
                   <div className="space-y-2">
                     {report.staffDeviations.topNegative.length > 0 ? (
@@ -481,7 +481,7 @@ export default function Step3AutoAssignment({ wizardState, updateWizardState, on
                         <div key={staff.staffId} className="text-xs border-b pb-2 last:border-0">
                           <div className="flex justify-between items-center mb-1">
                             <span className="font-medium">{staff.staffName}</span>
-                            <span className="text-red-600 font-bold">
+                            <span className="text-blue-600 font-bold">
                               {staff.totalDeviation > 0 ? '+' : ''}{staff.totalDeviation}일
                             </span>
                           </div>
@@ -515,10 +515,10 @@ export default function Step3AutoAssignment({ wizardState, updateWizardState, on
                   </div>
                 </div>
 
-                {/* 적게 근무한 직원 (양수 편차) */}
+                {/* 많이 근무한 직원 (양수 편차) */}
                 <div className="border rounded-lg p-4">
-                  <div className="text-sm font-medium text-blue-600 mb-3">
-                    ⬆️ 평균보다 적게 근무 (TOP 5)
+                  <div className="text-sm font-medium text-red-600 mb-3">
+                    ⬇️ 평균보다 많이 근무 (TOP 5)
                   </div>
                   <div className="space-y-2">
                     {report.staffDeviations.topPositive.length > 0 ? (
@@ -526,7 +526,7 @@ export default function Step3AutoAssignment({ wizardState, updateWizardState, on
                         <div key={staff.staffId} className="text-xs border-b pb-2 last:border-0">
                           <div className="flex justify-between items-center mb-1">
                             <span className="font-medium">{staff.staffName}</span>
-                            <span className="text-blue-600 font-bold">
+                            <span className="text-red-600 font-bold">
                               {staff.totalDeviation > 0 ? '+' : ''}{staff.totalDeviation}일
                             </span>
                           </div>

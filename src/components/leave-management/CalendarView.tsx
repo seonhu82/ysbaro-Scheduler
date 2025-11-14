@@ -159,6 +159,7 @@ export function CalendarView() {
   const confirmedCount = totalApplications.filter((a) => a.status === 'CONFIRMED').length
   const onHoldCount = totalApplications.filter((a) => a.status === 'ON_HOLD').length
   const rejectedCount = totalApplications.filter((a) => a.status === 'REJECTED').length
+  const cancelledCount = totalApplications.filter((a) => a.status === 'CANCELLED').length
 
   return (
     <div className="space-y-4">
@@ -235,11 +236,12 @@ export function CalendarView() {
             const isSundayDate = isSunday(date)
             const isSaturdayDate = isSaturday(date)
 
-            // 상태별 건수 계산 (CANCELLED 제외)
+            // 상태별 건수 계산
             const pendingApps = dateApplications.filter((a) => a.status === 'PENDING')
             const confirmedApps = dateApplications.filter((a) => a.status === 'CONFIRMED')
             const onHoldApps = dateApplications.filter((a) => a.status === 'ON_HOLD')
             const rejectedApps = dateApplications.filter((a) => a.status === 'REJECTED')
+            const cancelledApps = dateApplications.filter((a) => a.status === 'CANCELLED')
 
             const hasNightShift = dateDoctorSchedules.some((ds) => ds.hasNightShift)
             const doctorShortNames = dateDoctorSchedules.map((ds) => ds.doctorShortName).join(',')
@@ -300,6 +302,12 @@ export function CalendarView() {
                       <div className="text-xs px-2 py-1 rounded bg-red-100 text-red-800 border border-red-300 flex items-center justify-between">
                         <span>반려</span>
                         <span className="font-semibold">{rejectedApps.length}</span>
+                      </div>
+                    )}
+                    {cancelledApps.length > 0 && (
+                      <div className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 border border-gray-300 flex items-center justify-between">
+                        <span>취소</span>
+                        <span className="font-semibold">{cancelledApps.length}</span>
                       </div>
                     )}
                   </div>
