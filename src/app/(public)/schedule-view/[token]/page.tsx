@@ -64,6 +64,12 @@ export default function ScheduleViewPage({
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [selectedSchedule, setSelectedSchedule] = useState<PublicDaySchedule | null>(null)
   const [isPopupOpen, setIsPopupOpen] = useState(false)
+  const [personalStats, setPersonalStats] = useState<{
+    workDays: number
+    offDays: number
+    annualDays: number
+    totalLeaveDays: number
+  } | null>(null)
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth() + 1
@@ -138,6 +144,40 @@ export default function ScheduleViewPage({
     })
 
     setScheduleData(formattedData)
+
+    // 개인 통계 계산 (현재 월만)
+    if (authenticatedStaffId) {
+      const monthStart = new Date(data.year, data.month - 1, 1).toISOString().split('T')[0]
+      const monthEnd = new Date(data.year, data.month, 0).toISOString().split('T')[0]
+
+      let workDays = 0
+      let offDays = 0
+      let annualDays = 0
+
+      data.days.forEach((day: any) => {
+        // 현재 월에 속하는 날짜만 계산
+        if (day.date < monthStart || day.date > monthEnd) return
+
+        const myAssignment = day.assignments.find((a: any) => a.staff.id === authenticatedStaffId)
+        if (myAssignment) {
+          if (myAssignment.leaveType === 'ANNUAL') {
+            annualDays++
+          } else if (myAssignment.leaveType === 'OFF') {
+            offDays++
+          } else if (!myAssignment.leaveType) {
+            // 근무일 (DAY, NIGHT)
+            workDays++
+          }
+        }
+      })
+
+      setPersonalStats({
+        workDays,
+        offDays,
+        annualDays,
+        totalLeaveDays: offDays + annualDays
+      })
+    }
   }
 
   const fetchSchedule = async () => {
@@ -273,6 +313,32 @@ export default function ScheduleViewPage({
           </div>
         </CardContent>
       </Card>
+
+      {/* 개인 통계 (개인 뷰에서만 표시) */}
+      {viewMode === 'personal' && personalStats && (
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-3 bg-blue-50 rounded-lg">
+                <p className="text-xs text-gray-600 mb-1">근무일</p>
+                <p className="text-2xl font-bold text-blue-600">{personalStats.workDays}</p>
+              </div>
+              <div className="text-center p-3 bg-amber-50 rounded-lg">
+                <p className="text-xs text-gray-600 mb-1">오프</p>
+                <p className="text-2xl font-bold text-amber-600">{personalStats.offDays}</p>
+              </div>
+              <div className="text-center p-3 bg-green-50 rounded-lg">
+                <p className="text-xs text-gray-600 mb-1">연차</p>
+                <p className="text-2xl font-bold text-green-600">{personalStats.annualDays}</p>
+              </div>
+              <div className="text-center p-3 bg-purple-50 rounded-lg">
+                <p className="text-xs text-gray-600 mb-1">총 휴무</p>
+                <p className="text-2xl font-bold text-purple-600">{personalStats.totalLeaveDays}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 캘린더 */}
       <div>

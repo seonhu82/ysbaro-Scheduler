@@ -15,11 +15,49 @@ import { useToast } from '@/hooks/use-toast'
 interface FairnessData {
   year: number
   month: number
-  totalWorkDays: number
-  totalOffDays: number
-  annualLeaveDays: number
-  fairnessScore: number
-  averageScore: number
+  staffInfo: {
+    name: string
+    rank: string
+  }
+  fairnessSettings: {
+    enableNightShiftFairness: boolean
+    enableWeekendFairness: boolean
+    enableHolidayFairness: boolean
+    enableHolidayAdjacentFairness: boolean
+  }
+  currentMonth: {
+    totalWork: number
+    annual: number
+    off: number
+    night: number
+    weekend: number
+    holiday: number
+    holidayAdjacent: number
+    deviation: {
+      total: number
+      night: number
+      weekend: number
+      holiday: number
+      holidayAdjacent: number
+    }
+  }
+  cumulative: {
+    totalWork: number
+    annual: number
+    off: number
+    night: number
+    weekend: number
+    holiday: number
+    holidayAdjacent: number
+    deviation: {
+      total: number
+      night: number
+      weekend: number
+      holiday: number
+      holidayAdjacent: number
+    }
+  }
+  averageDeviation: number
 }
 
 export default function MyFairnessPage({
@@ -30,7 +68,7 @@ export default function MyFairnessPage({
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
-  const [fairnessData, setFairnessData] = useState<FairnessData[]>([])
+  const [fairnessData, setFairnessData] = useState<FairnessData | null>(null)
   const [staffName, setStaffName] = useState('')
 
   useEffect(() => {
@@ -74,22 +112,24 @@ export default function MyFairnessPage({
     }
   }
 
-  const getScoreIcon = (myScore: number, avgScore: number) => {
-    const diff = myScore - avgScore
-    if (diff > 0.5) {
+  const getDeviationIcon = (deviation: number) => {
+    // 양수: 평균보다 적게 근무 (좋음)
+    // 음수: 평균보다 많이 근무 (나쁨)
+    if (deviation > 0.5) {
       return <TrendingUp className="w-5 h-5 text-green-600" />
-    } else if (diff < -0.5) {
+    } else if (deviation < -0.5) {
       return <TrendingDown className="w-5 h-5 text-red-600" />
     } else {
       return <Minus className="w-5 h-5 text-gray-600" />
     }
   }
 
-  const getScoreColor = (myScore: number, avgScore: number) => {
-    const diff = myScore - avgScore
-    if (diff > 0.5) {
+  const getDeviationColor = (deviation: number) => {
+    // 양수: 평균보다 적게 근무 (좋음)
+    // 음수: 평균보다 많이 근무 (나쁨)
+    if (deviation > 0) {
       return 'text-green-600'
-    } else if (diff < -0.5) {
+    } else if (deviation < 0) {
       return 'text-red-600'
     } else {
       return 'text-gray-900'
@@ -130,14 +170,20 @@ export default function MyFairnessPage({
       <Card className="mb-6 bg-blue-50 border-blue-200">
         <CardContent className="pt-6">
           <p className="text-sm text-blue-900">
-            <strong>형평성 점수란?</strong> 근무 일수와 휴무 일수를 고려하여 공정한 스케줄 배분을 위해 계산되는 점수입니다.
-            평균보다 높으면 더 많이 근무한 것이고, 낮으면 더 적게 근무한 것입니다.
+            <strong>형평성 점수란?</strong> 근무 일수, 야간, 주말, 공휴일 근무를 고려하여 공정한 스케줄 배분을 위해 계산되는 편차 점수입니다.
+            <br />
+            <span className="text-green-700">• 양수(+): 평균보다 적게 근무 (근무 배치 선순위)</span> |
+            <span className="text-red-700"> 음수(-): 평균보다 많이 근무 (근무 배치 후순위)</span>
+            <br /><br />
+            <strong>다음 달 오프 신청 제한:</strong> 편차만큼 다음 달 오프 신청이 조정됩니다.
+            <br />
+            예) 기본 주말 오프 가능일 3일일 때, 편차 +2이면 신청가능 1일, 편차 -1이면 신청가능 4일
           </p>
         </CardContent>
       </Card>
 
       {/* 형평성 데이터 */}
-      {fairnessData.length === 0 ? (
+      {!fairnessData ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
@@ -145,65 +191,102 @@ export default function MyFairnessPage({
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {fairnessData.map((data, idx) => (
-            <Card key={idx}>
-              <CardHeader>
-                <CardTitle className="text-lg">
-                  {data.year}년 {data.month}월
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <div className="text-center p-3 bg-blue-50 rounded-lg">
-                    <p className="text-xs text-gray-600 mb-1">근무일</p>
-                    <p className="text-2xl font-bold text-blue-600">{data.totalWorkDays}</p>
-                  </div>
-                  <div className="text-center p-3 bg-amber-50 rounded-lg">
-                    <p className="text-xs text-gray-600 mb-1">오프</p>
-                    <p className="text-2xl font-bold text-amber-600">{data.totalOffDays}</p>
-                  </div>
-                  <div className="text-center p-3 bg-green-50 rounded-lg">
-                    <p className="text-xs text-gray-600 mb-1">연차</p>
-                    <p className="text-2xl font-bold text-green-600">{data.annualLeaveDays}</p>
-                  </div>
-                  <div className="text-center p-3 bg-purple-50 rounded-lg">
-                    <p className="text-xs text-gray-600 mb-1">총 휴무</p>
-                    <p className="text-2xl font-bold text-purple-600">
-                      {data.totalOffDays + data.annualLeaveDays}
-                    </p>
+        <div className="space-y-6">
+          {/* 누적 편차 */}
+          <Card>
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100">
+              <CardTitle className="text-xl font-bold text-purple-900">
+                현재 편차 ({fairnessData.year}년 {fairnessData.month}월까지 누적)
+              </CardTitle>
+              <div className="text-sm text-purple-700">
+                {fairnessData.staffInfo.name} / {fairnessData.staffInfo.rank}
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="space-y-4">
+                {/* 총 근무 */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <span className="text-sm text-gray-600">총 근무</span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-bold text-gray-900">{fairnessData.cumulative.totalWork}일</span>
+                      <span className={`text-lg font-bold ${getDeviationColor(fairnessData.cumulative.deviation.total)}`}>
+                        ({fairnessData.cumulative.deviation.total > 0 ? '+' : ''}{fairnessData.cumulative.deviation.total})
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-gray-700">내 형평성 점수</span>
-                    <div className="flex items-center gap-2">
-                      {getScoreIcon(data.fairnessScore, data.averageScore)}
-                      <span className={`text-2xl font-bold ${getScoreColor(data.fairnessScore, data.averageScore)}`}>
-                        {data.fairnessScore.toFixed(2)}
-                      </span>
-                    </div>
+                {/* 연차/오프 */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                    <p className="text-xs text-gray-600 mb-1">연차</p>
+                    <p className="text-2xl font-bold text-green-700">{fairnessData.cumulative.annual}일</p>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">부서 평균</span>
-                    <span className="text-lg font-semibold text-gray-900">
-                      {data.averageScore.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="mt-2">
-                    <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                      <span>평균 대비</span>
-                      <span className={getScoreColor(data.fairnessScore, data.averageScore)}>
-                        {data.fairnessScore > data.averageScore ? '+' : ''}
-                        {(data.fairnessScore - data.averageScore).toFixed(2)}
-                      </span>
-                    </div>
+                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <p className="text-xs text-gray-600 mb-1">오프</p>
+                    <p className="text-2xl font-bold text-amber-700">{fairnessData.cumulative.off}일</p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                {/* 세부 항목 */}
+                <div className="grid grid-cols-2 gap-3">
+                  {fairnessData.fairnessSettings.enableNightShiftFairness && (
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-sm text-gray-600">야간</span>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-xl font-bold">{fairnessData.cumulative.night}일</span>
+                          <span className={`text-sm font-bold ${getDeviationColor(fairnessData.cumulative.deviation.night)}`}>
+                            ({fairnessData.cumulative.deviation.night > 0 ? '+' : ''}{fairnessData.cumulative.deviation.night})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {fairnessData.fairnessSettings.enableWeekendFairness && (
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-sm text-gray-600">주말</span>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-xl font-bold">{fairnessData.cumulative.weekend}일</span>
+                          <span className={`text-sm font-bold ${getDeviationColor(fairnessData.cumulative.deviation.weekend)}`}>
+                            ({fairnessData.cumulative.deviation.weekend > 0 ? '+' : ''}{fairnessData.cumulative.deviation.weekend})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {fairnessData.fairnessSettings.enableHolidayFairness && (
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-sm text-gray-600">공휴일</span>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-xl font-bold">{fairnessData.cumulative.holiday}일</span>
+                          <span className={`text-sm font-bold ${getDeviationColor(fairnessData.cumulative.deviation.holiday)}`}>
+                            ({fairnessData.cumulative.deviation.holiday > 0 ? '+' : ''}{fairnessData.cumulative.deviation.holiday})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {fairnessData.fairnessSettings.enableHolidayAdjacentFairness && (
+                    <div className="p-3 border rounded-lg">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-sm text-gray-600">공휴일 연장</span>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-xl font-bold">{fairnessData.cumulative.holidayAdjacent}일</span>
+                          <span className={`text-sm font-bold ${getDeviationColor(fairnessData.cumulative.deviation.holidayAdjacent)}`}>
+                            ({fairnessData.cumulative.deviation.holidayAdjacent > 0 ? '+' : ''}{fairnessData.cumulative.deviation.holidayAdjacent})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

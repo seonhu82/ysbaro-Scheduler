@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
           maxWeeklyOffs: 2,
           preventSundayOff: true,
           preventHolidayOff: true,
-          maxConsecutiveNights: 3,
-          minRestAfterNight: 1
+          maxMonthlyOffApplications: 4,
+          maxMonthlyAnnualApplications: 4
         }
       })
     }
@@ -57,11 +57,12 @@ export async function PATCH(request: NextRequest) {
     const {
       weekBusinessDays,
       defaultWorkDays,
+      defaultAnnualDays,
       maxWeeklyOffs,
       preventSundayOff,
       preventHolidayOff,
-      maxConsecutiveNights,
-      minRestAfterNight
+      maxMonthlyOffApplications,
+      maxMonthlyAnnualApplications
     } = body
 
     // upsert로 생성 또는 업데이트
@@ -73,20 +74,22 @@ export async function PATCH(request: NextRequest) {
         clinicId: session.user.clinicId,
         weekBusinessDays: weekBusinessDays ?? 6,
         defaultWorkDays: defaultWorkDays ?? 4,
+        defaultAnnualDays: defaultAnnualDays ?? 15,
         maxWeeklyOffs: maxWeeklyOffs ?? 2,
         preventSundayOff: preventSundayOff ?? true,
         preventHolidayOff: preventHolidayOff ?? true,
-        maxConsecutiveNights: maxConsecutiveNights ?? 3,
-        minRestAfterNight: minRestAfterNight ?? 1
+        maxMonthlyOffApplications: maxMonthlyOffApplications ?? 4,
+        maxMonthlyAnnualApplications: maxMonthlyAnnualApplications ?? 4
       },
       update: {
         weekBusinessDays,
         defaultWorkDays,
+        defaultAnnualDays,
         maxWeeklyOffs,
         preventSundayOff,
         preventHolidayOff,
-        maxConsecutiveNights,
-        minRestAfterNight
+        maxMonthlyOffApplications,
+        maxMonthlyAnnualApplications
       }
     })
 

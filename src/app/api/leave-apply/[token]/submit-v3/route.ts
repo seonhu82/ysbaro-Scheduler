@@ -228,7 +228,56 @@ export async function POST(
     const year = applicationDate.getFullYear()
     const month = applicationDate.getMonth() + 1
 
-    // 3. 시뮬레이션 제거: 구분별 슬롯으로 이미 체크하므로 불필요
+    // 3. 월별 신청 제한 확인
+    const ruleSettings = await prisma.ruleSettings.findUnique({
+      where: { clinicId }
+    })
+
+    if (ruleSettings) {
+      // 해당 월의 시작일과 종료일
+      const monthStart = new Date(year, month - 1, 1)
+      const monthEnd = new Date(year, month, 0)
+
+      // 해당 월의 기존 신청 건수 조회 (PENDING, CONFIRMED, ON_HOLD만 카운트)
+      const existingApplications = await prisma.leaveApplication.findMany({
+        where: {
+          staffId,
+          date: {
+            gte: monthStart,
+            lte: monthEnd
+          },
+          status: {
+            in: ['PENDING', 'CONFIRMED', 'ON_HOLD']
+          }
+        }
+      })
+
+      const offCount = existingApplications.filter(a => a.leaveType === 'OFF').length
+      const annualCount = existingApplications.filter(a => a.leaveType === 'ANNUAL').length
+
+      // 신청하려는 타입에 따라 제한 확인
+      if (type === 'OFF' && offCount >= ruleSettings.maxMonthlyOffApplications) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `월 최대 오프 신청 수(${ruleSettings.maxMonthlyOffApplications}건)를 초과했습니다. 현재: ${offCount}건`
+          },
+          { status: 400 }
+        )
+      }
+
+      if (type === 'ANNUAL' && annualCount >= ruleSettings.maxMonthlyAnnualApplications) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `월 최대 연차 신청 수(${ruleSettings.maxMonthlyAnnualApplications}건)를 초과했습니다. 현재: ${annualCount}건`
+          },
+          { status: 400 }
+        )
+      }
+    }
+
+    // 4. 시뮬레이션 제거: 구분별 슬롯으로 이미 체크하므로 불필요
     // 구분별로 슬롯을 나눠서 받고 있기 때문에 다른 구분의 인원은 영향을 주지 않음
 
     // 4. ScheduleDoctor 확인 (DailySlot보다 우선)

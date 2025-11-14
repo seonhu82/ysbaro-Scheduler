@@ -69,14 +69,13 @@ export function StatusBadge({
 /**
  * 연차 신청 상태 배지
  */
-export type LeaveStatus = "PENDING" | "CONFIRMED" | "ON_HOLD" | "REJECTED" | "CANCELLED"
+export type LeaveStatus = "PENDING" | "CONFIRMED" | "ON_HOLD" | "REJECTED"
 
 const leaveStatusMap: Record<LeaveStatus, { status: StatusType; label: string }> = {
   PENDING: { status: "pending", label: "검토 중" },
   CONFIRMED: { status: "success", label: "승인됨" },
   ON_HOLD: { status: "warning", label: "보류" },
-  REJECTED: { status: "error", label: "거부됨" },
-  CANCELLED: { status: "error", label: "취소됨" }
+  REJECTED: { status: "error", label: "반려" }
 }
 
 export function LeaveStatusBadge({

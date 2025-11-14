@@ -26,8 +26,8 @@ interface RuleSettings {
   maxWeeklyOffs: number
   preventSundayOff: boolean
   preventHolidayOff: boolean
-  maxConsecutiveNights: number
-  minRestAfterNight: number
+  maxMonthlyOffApplications: number
+  maxMonthlyAnnualApplications: number
 }
 
 export default function RulesSettingsPage() {
@@ -41,8 +41,8 @@ export default function RulesSettingsPage() {
     maxWeeklyOffs: 2,
     preventSundayOff: true,
     preventHolidayOff: true,
-    maxConsecutiveNights: 3,
-    minRestAfterNight: 1
+    maxMonthlyOffApplications: 4,
+    maxMonthlyAnnualApplications: 4
   })
 
   useEffect(() => {
@@ -289,52 +289,58 @@ export default function RulesSettingsPage() {
           </CardContent>
         </Card>
 
-        {/* 근무 관련 규칙 */}
+        {/* 월별 신청 제한 */}
         <Card>
           <CardHeader>
-            <CardTitle>근무 관련 규칙</CardTitle>
+            <CardTitle>월별 신청 제한</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="maxConsecutiveNights">최대 연속 야간 근무</Label>
+                <Label htmlFor="maxMonthlyOffApplications">월 최대 오프 신청수</Label>
                 <Input
-                  id="maxConsecutiveNights"
+                  id="maxMonthlyOffApplications"
                   type="number"
-                  min="1"
-                  max="7"
-                  value={settings.maxConsecutiveNights}
+                  min="0"
+                  max="20"
+                  value={settings.maxMonthlyOffApplications}
                   onChange={(e) =>
                     setSettings({
                       ...settings,
-                      maxConsecutiveNights: parseInt(e.target.value)
+                      maxMonthlyOffApplications: parseInt(e.target.value)
                     })
                   }
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  연속으로 허용되는 최대 야간 근무 일수
+                  한 달에 신청 가능한 최대 오프 횟수
                 </p>
               </div>
 
               <div>
-                <Label htmlFor="minRestAfterNight">야간 후 최소 휴식일</Label>
+                <Label htmlFor="maxMonthlyAnnualApplications">월 최대 연차 신청수</Label>
                 <Input
-                  id="minRestAfterNight"
+                  id="maxMonthlyAnnualApplications"
                   type="number"
                   min="0"
-                  max="7"
-                  value={settings.minRestAfterNight}
+                  max="20"
+                  value={settings.maxMonthlyAnnualApplications}
                   onChange={(e) =>
                     setSettings({
                       ...settings,
-                      minRestAfterNight: parseInt(e.target.value)
+                      maxMonthlyAnnualApplications: parseInt(e.target.value)
                     })
                   }
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  야간 근무 후 필요한 최소 휴식 일수
+                  한 달에 신청 가능한 최대 연차 횟수
                 </p>
               </div>
+            </div>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+              <p className="text-xs text-amber-800">
+                💡 이 설정값은 직원이 연차/오프를 신청할 때 제한하는 데 사용됩니다.
+                형평성을 맞추기 위해 월별 신청 가능 횟수를 제한할 수 있습니다.
+              </p>
             </div>
           </CardContent>
         </Card>

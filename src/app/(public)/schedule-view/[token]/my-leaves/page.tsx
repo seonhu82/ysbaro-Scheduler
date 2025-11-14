@@ -19,7 +19,19 @@ interface LeaveApplication {
   leaveType: 'ANNUAL' | 'OFF'
   status: 'PENDING' | 'CONFIRMED' | 'ON_HOLD' | 'REJECTED'
   reason?: string
-  createdAt: string
+  holdReason?: string
+  year: number
+  month: number
+}
+
+interface Statistics {
+  total: number
+  pending: number
+  confirmed: number
+  onHold: number
+  rejected: number
+  annual: number
+  off: number
 }
 
 export default function MyLeavesPage({
@@ -30,7 +42,8 @@ export default function MyLeavesPage({
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
-  const [applications, setApplications] = useState<LeaveApplication[]>([])
+  const [statistics, setStatistics] = useState<Statistics | null>(null)
+  const [applicationsByMonth, setApplicationsByMonth] = useState<Record<string, LeaveApplication[]>>({})
   const [staffName, setStaffName] = useState('')
 
   useEffect(() => {
@@ -55,7 +68,8 @@ export default function MyLeavesPage({
       const data = await response.json()
 
       if (data.success) {
-        setApplications(data.data)
+        setStatistics(data.data.statistics)
+        setApplicationsByMonth(data.data.applicationsByMonth)
       } else {
         toast({
           variant: 'destructive',
@@ -140,11 +154,50 @@ export default function MyLeavesPage({
           <Calendar className="w-8 h-8 text-blue-600" />
           <h1 className="text-3xl font-bold">내 연차/오프 신청 내역</h1>
         </div>
-        <p className="text-gray-600">{staffName}님의 신청 내역</p>
+        <p className="text-gray-600">{staffName}님의 신청 내역 ({new Date().getFullYear()}년)</p>
       </div>
 
-      {/* 신청 내역 목록 */}
-      {applications.length === 0 ? (
+      {/* 통계 */}
+      {statistics && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-lg">신청 현황</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div className="text-center p-3 bg-blue-50 rounded-lg">
+                <p className="text-xs text-gray-600 mb-1">총 신청</p>
+                <p className="text-2xl font-bold text-blue-600">{statistics.total}</p>
+              </div>
+              <div className="text-center p-3 bg-green-50 rounded-lg">
+                <p className="text-xs text-gray-600 mb-1">승인</p>
+                <p className="text-2xl font-bold text-green-600">{statistics.confirmed}</p>
+              </div>
+              <div className="text-center p-3 bg-yellow-50 rounded-lg">
+                <p className="text-xs text-gray-600 mb-1">대기/보류</p>
+                <p className="text-2xl font-bold text-yellow-600">{statistics.pending + statistics.onHold}</p>
+              </div>
+              <div className="text-center p-3 bg-red-50 rounded-lg">
+                <p className="text-xs text-gray-600 mb-1">반려</p>
+                <p className="text-2xl font-bold text-red-600">{statistics.rejected}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+              <div className="text-center p-2 bg-purple-50 rounded">
+                <p className="text-xs text-gray-600 mb-1">연차</p>
+                <p className="text-xl font-bold text-purple-600">{statistics.annual}</p>
+              </div>
+              <div className="text-center p-2 bg-amber-50 rounded">
+                <p className="text-xs text-gray-600 mb-1">오프</p>
+                <p className="text-xl font-bold text-amber-600">{statistics.off}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 월별 신청 내역 */}
+      {Object.keys(applicationsByMonth).length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
@@ -152,45 +205,60 @@ export default function MyLeavesPage({
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {applications.map((app) => (
-            <Card key={app.id}>
-              <CardContent className="pt-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-lg font-semibold">
-                        {new Date(app.date).toLocaleDateString('ko-KR', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                          weekday: 'short'
-                        })}
-                      </span>
-                      <Badge variant="outline" className="bg-blue-50">
-                        {getLeaveTypeName(app.leaveType)}
-                      </Badge>
-                      {getStatusBadge(app.status)}
+        <div className="space-y-6">
+          {Object.keys(applicationsByMonth)
+            .sort()
+            .reverse()
+            .map((monthKey) => {
+              const apps = applicationsByMonth[monthKey]
+              const [year, month] = monthKey.split('-')
+              return (
+                <Card key={monthKey}>
+                  <CardHeader>
+                    <CardTitle className="text-lg">{year}년 {parseInt(month)}월</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {apps.map((app) => (
+                        <div key={app.id} className="p-3 border rounded-lg hover:bg-gray-50">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="font-semibold">
+                                {new Date(app.date).toLocaleDateString('ko-KR', {
+                                  month: 'long',
+                                  day: 'numeric',
+                                  weekday: 'short'
+                                })}
+                              </span>
+                              <Badge variant="outline" className="bg-blue-50">
+                                {getLeaveTypeName(app.leaveType)}
+                              </Badge>
+                              {getStatusBadge(app.status)}
+                            </div>
+                          </div>
+
+                          {/* 보류 사유 */}
+                          {app.status === 'ON_HOLD' && app.holdReason && (
+                            <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
+                              <p className="text-xs font-semibold text-yellow-800 mb-1">보류 사유</p>
+                              <p className="text-xs text-yellow-700">{app.holdReason}</p>
+                            </div>
+                          )}
+
+                          {/* 반려 사유 */}
+                          {app.status === 'REJECTED' && app.reason && (
+                            <div className="mt-2 p-2 bg-red-50 rounded border border-red-200">
+                              <p className="text-xs font-semibold text-red-800 mb-1">반려 사유</p>
+                              <p className="text-xs text-red-700">{app.reason}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-
-                    {/* 보류/반려 사유 */}
-                    {(app.status === 'ON_HOLD' || app.status === 'REJECTED') && app.reason && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200">
-                        <p className="text-sm font-semibold text-gray-700 mb-1">
-                          {app.status === 'ON_HOLD' ? '보류 사유' : '반려 사유'}
-                        </p>
-                        <p className="text-sm text-gray-600">{app.reason}</p>
-                      </div>
-                    )}
-
-                    <p className="text-xs text-gray-500 mt-2">
-                      신청일: {new Date(app.createdAt).toLocaleDateString('ko-KR')}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  </CardContent>
+                </Card>
+              )
+            })}
         </div>
       )}
     </div>

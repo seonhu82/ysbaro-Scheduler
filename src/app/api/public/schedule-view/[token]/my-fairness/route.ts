@@ -57,25 +57,16 @@ export async function GET(
       )
     }
 
-    // 최근 6개월 배포된 스케줄 조회
-    const sixMonthsAgo = new Date()
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-    const currentDate = new Date()
+    // 형평성 설정 조회
+    const fairnessSettings = await prisma.fairnessSettings.findUnique({
+      where: { clinicId: link.clinicId }
+    })
 
-    const schedules = await prisma.schedule.findMany({
+    // 최근 배포된 스케줄 조회
+    const schedule = await prisma.schedule.findFirst({
       where: {
         clinicId: link.clinicId,
-        status: 'DEPLOYED',
-        OR: [
-          {
-            year: { gte: sixMonthsAgo.getFullYear() },
-            month: { gte: sixMonthsAgo.getMonth() + 1 }
-          },
-          {
-            year: { lte: currentDate.getFullYear() },
-            month: { lte: currentDate.getMonth() + 1 }
-          }
-        ]
+        status: 'DEPLOYED'
       },
       orderBy: [
         { year: 'desc' },
@@ -83,99 +74,177 @@ export async function GET(
       ]
     })
 
-    const fairnessData = []
+    if (!schedule) {
+      return NextResponse.json({
+        success: false,
+        error: '배포된 스케줄이 없습니다'
+      }, { status: 404 })
+    }
 
-    for (const schedule of schedules) {
-      // 해당 월의 직원 배치 조회
-      const startDate = new Date(schedule.year, schedule.month - 1, 1)
-      const endDate = new Date(schedule.year, schedule.month, 0)
+    // 월별 형평성 데이터에서 해당 직원의 deviation 가져오기
+    const monthlyFairness = schedule.monthlyFairness as any || {}
+    const staffFairness = monthlyFairness[staffId]
 
-      const assignments = await prisma.staffAssignment.findMany({
-        where: {
-          scheduleId: schedule.id,
-          staffId,
-          date: {
-            gte: startDate,
-            lte: endDate
-          }
-        }
-      })
+    if (!staffFairness) {
+      return NextResponse.json({
+        success: false,
+        error: '형평성 데이터를 찾을 수 없습니다'
+      }, { status: 404 })
+    }
 
-      // 연차 신청 조회
-      const annualLeaves = await prisma.leaveApplication.findMany({
-        where: {
-          staffId,
-          clinicId: link.clinicId,
-          leaveType: 'ANNUAL',
-          status: {
-            in: ['CONFIRMED', 'ON_HOLD']
-          },
-          date: {
-            gte: startDate,
-            lte: endDate
-          }
-        }
-      })
+    // 당월 실제 근무 데이터
+    const currentMonth = {
+      totalWork: staffFairness.actual?.total || 0,
+      night: staffFairness.actual?.night || 0,
+      weekend: staffFairness.actual?.weekend || 0,
+      holiday: staffFairness.actual?.holiday || 0,
+      holidayAdjacent: staffFairness.actual?.holidayAdjacent || 0
+    }
 
-      // 근무일, 오프일 계산
-      const totalWorkDays = assignments.filter(a => a.shiftType !== 'OFF').length
-      const totalOffDays = assignments.filter(a => a.shiftType === 'OFF').length
-      const annualLeaveDays = annualLeaves.length
+    // 당월 편차
+    const currentDeviation = {
+      total: staffFairness.deviation?.total || 0,
+      night: staffFairness.deviation?.night || 0,
+      weekend: staffFairness.deviation?.weekend || 0,
+      holiday: staffFairness.deviation?.holiday || 0,
+      holidayAdjacent: staffFairness.deviation?.holidayAdjacent || 0
+    }
 
-      // 형평성 점수 계산 (근무일 - 오프일)
-      const fairnessScore = totalWorkDays - totalOffDays
+    // 누적 데이터 (cumulativeActual 필드 사용)
+    const cumulative = {
+      totalWork: staffFairness.cumulativeActual?.total || currentMonth.totalWork,
+      night: staffFairness.cumulativeActual?.night || currentMonth.night,
+      weekend: staffFairness.cumulativeActual?.weekend || currentMonth.weekend,
+      holiday: staffFairness.cumulativeActual?.holiday || currentMonth.holiday,
+      holidayAdjacent: staffFairness.cumulativeActual?.holidayAdjacent || currentMonth.holidayAdjacent
+    }
 
-      // 부서 평균 계산
-      const departmentAssignments = await prisma.staffAssignment.findMany({
-        where: {
-          scheduleId: schedule.id,
-          date: {
-            gte: startDate,
-            lte: endDate
-          },
-          staff: {
-            departmentName: staff.departmentName,
-            isActive: true
-          }
-        },
-        include: {
-          staff: true
-        }
-      })
+    // 누적 편차 (cumulativeDeviation 필드 사용)
+    const cumulativeDeviation = {
+      total: staffFairness.cumulativeDeviation || currentDeviation.total,
+      night: staffFairness.cumulativeDeviationDetails?.night || currentDeviation.night,
+      weekend: staffFairness.cumulativeDeviationDetails?.weekend || currentDeviation.weekend,
+      holiday: staffFairness.cumulativeDeviationDetails?.holiday || currentDeviation.holiday,
+      holidayAdjacent: staffFairness.cumulativeDeviationDetails?.holidayAdjacent || currentDeviation.holidayAdjacent
+    }
 
-      // 직원별로 그룹화하여 평균 계산
-      const staffScores = new Map<string, number>()
-      for (const assignment of departmentAssignments) {
-        if (!staffScores.has(assignment.staffId)) {
-          staffScores.set(assignment.staffId, 0)
-        }
-        const currentScore = staffScores.get(assignment.staffId)!
-        if (assignment.shiftType === 'OFF') {
-          staffScores.set(assignment.staffId, currentScore - 1)
-        } else {
-          staffScores.set(assignment.staffId, currentScore + 1)
+    // 당월 연차/오프 조회
+    const startDate = new Date(schedule.year, schedule.month - 1, 1)
+    const endDate = new Date(schedule.year, schedule.month, 0)
+
+    const assignments = await prisma.staffAssignment.findMany({
+      where: {
+        scheduleId: schedule.id,
+        staffId,
+        date: {
+          gte: startDate,
+          lte: endDate
         }
       }
+    })
 
-      const scores = Array.from(staffScores.values())
-      const averageScore = scores.length > 0
-        ? scores.reduce((sum, score) => sum + score, 0) / scores.length
-        : 0
-
-      fairnessData.push({
-        year: schedule.year,
-        month: schedule.month,
-        totalWorkDays,
-        totalOffDays,
-        annualLeaveDays,
-        fairnessScore,
-        averageScore
-      })
+    const currentMonthStats = {
+      annual: assignments.filter(a => a.shiftType === 'ANNUAL').length,
+      off: assignments.filter(a => a.shiftType === 'OFF').length
     }
+
+    // 누적 연차/오프 조회 (올해 전체)
+    const yearStart = new Date(schedule.year, 0, 1)
+    const yearEnd = new Date(schedule.year, schedule.month, 0) // 현재 월까지
+
+    const yearAssignments = await prisma.staffAssignment.findMany({
+      where: {
+        staffId,
+        date: {
+          gte: yearStart,
+          lte: yearEnd
+        },
+        schedule: {
+          clinicId: link.clinicId,
+          status: 'DEPLOYED'
+        }
+      }
+    })
+
+    const cumulativeStats = {
+      annual: yearAssignments.filter(a => a.shiftType === 'ANNUAL').length,
+      off: yearAssignments.filter(a => a.shiftType === 'OFF').length
+    }
+
+    // 부서 평균 편차 계산
+    const departmentStaff = await prisma.staff.findMany({
+      where: {
+        clinicId: link.clinicId,
+        departmentName: staff.departmentName,
+        isActive: true
+      },
+      select: { id: true }
+    })
+
+    let departmentDeviationSum = 0
+    let departmentStaffCount = 0
+
+    for (const deptStaff of departmentStaff) {
+      const deptFairness = monthlyFairness[deptStaff.id]
+      if (deptFairness && deptFairness.deviation) {
+        departmentDeviationSum += deptFairness.deviation.total || 0
+        departmentStaffCount++
+      }
+    }
+
+    const averageDeviation = departmentStaffCount > 0
+      ? departmentDeviationSum / departmentStaffCount
+      : 0
 
     return NextResponse.json({
       success: true,
-      data: fairnessData
+      data: {
+        year: schedule.year,
+        month: schedule.month,
+        staffInfo: {
+          name: staff.name,
+          rank: staff.rank || staff.departmentName
+        },
+        fairnessSettings: {
+          enableNightShiftFairness: fairnessSettings?.enableNightShiftFairness ?? true,
+          enableWeekendFairness: fairnessSettings?.enableWeekendFairness ?? true,
+          enableHolidayFairness: fairnessSettings?.enableHolidayFairness ?? true,
+          enableHolidayAdjacentFairness: fairnessSettings?.enableHolidayAdjacentFairness ?? false
+        },
+        currentMonth: {
+          totalWork: currentMonth.totalWork,
+          annual: currentMonthStats.annual,
+          off: currentMonthStats.off,
+          night: currentMonth.night,
+          weekend: currentMonth.weekend,
+          holiday: currentMonth.holiday,
+          holidayAdjacent: currentMonth.holidayAdjacent,
+          deviation: {
+            total: Math.round(currentDeviation.total * 10) / 10,
+            night: Math.round(currentDeviation.night * 10) / 10,
+            weekend: Math.round(currentDeviation.weekend * 10) / 10,
+            holiday: Math.round(currentDeviation.holiday * 10) / 10,
+            holidayAdjacent: Math.round(currentDeviation.holidayAdjacent * 10) / 10
+          }
+        },
+        cumulative: {
+          totalWork: cumulative.totalWork,
+          annual: cumulativeStats.annual,
+          off: cumulativeStats.off,
+          night: cumulative.night,
+          weekend: cumulative.weekend,
+          holiday: cumulative.holiday,
+          holidayAdjacent: cumulative.holidayAdjacent,
+          deviation: {
+            total: Math.round(cumulativeDeviation.total * 10) / 10,
+            night: Math.round(cumulativeDeviation.night * 10) / 10,
+            weekend: Math.round(cumulativeDeviation.weekend * 10) / 10,
+            holiday: Math.round(cumulativeDeviation.holiday * 10) / 10,
+            holidayAdjacent: Math.round(cumulativeDeviation.holidayAdjacent * 10) / 10
+          }
+        },
+        averageDeviation: Math.round(averageDeviation * 10) / 10
+      }
     })
   } catch (error: any) {
     console.error('형평성 점수 조회 오류:', error)

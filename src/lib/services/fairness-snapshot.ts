@@ -27,6 +27,20 @@ interface StaffFairnessSnapshot {
     holiday: number
     holidayAdjacent: number
   }
+  cumulativeActual: {
+    total: number
+    night: number
+    weekend: number
+    holiday: number
+    holidayAdjacent: number
+  }
+  cumulativeDeviation: number
+  cumulativeDeviationDetails: {
+    night: number
+    weekend: number
+    holiday: number
+    holidayAdjacent: number
+  }
 }
 
 /**
@@ -109,7 +123,10 @@ export async function recalculateFinalFairness(
 
   console.log(`   🏢 부서: ${Array.from(staffByDepartment.keys()).join(', ')}\n`)
 
-  // 6. 부서별로 처리
+  // 6. 이전 달들의 누적 데이터 로드
+  const previousCumulative = month > 1 ? await loadCumulativeFairness(clinicId, year, month) : {}
+
+  // 7. 부서별로 처리
   const allSnapshots: Record<string, StaffFairnessSnapshot> = {}
 
   for (const [deptName, deptStaff] of staffByDepartment) {
@@ -230,16 +247,38 @@ export async function recalculateFinalFairness(
         holidayAdjacent: Math.round(deviation.holidayAdjacent * 10) / 10
       }
 
+      // 누적 실제 근무일 계산
+      const previousData = previousCumulative[staff.id]
+      const cumulativeActual = {
+        total: (previousData?.actual.total || 0) + actual.total,
+        night: (previousData?.actual.night || 0) + actual.night,
+        weekend: (previousData?.actual.weekend || 0) + actual.weekend,
+        holiday: (previousData?.actual.holiday || 0) + actual.holiday,
+        holidayAdjacent: (previousData?.actual.holidayAdjacent || 0) + actual.holidayAdjacent
+      }
+
+      // 누적 편차 계산
+      const cumulativeDeviationTotal = Math.round(((previousData?.deviation.total || 0) + roundedDeviation.total) * 10) / 10
+      const cumulativeDeviationDetails = {
+        night: Math.round(((previousData?.deviation.night || 0) + roundedDeviation.night) * 10) / 10,
+        weekend: Math.round(((previousData?.deviation.weekend || 0) + roundedDeviation.weekend) * 10) / 10,
+        holiday: Math.round(((previousData?.deviation.holiday || 0) + roundedDeviation.holiday) * 10) / 10,
+        holidayAdjacent: Math.round(((previousData?.deviation.holidayAdjacent || 0) + roundedDeviation.holidayAdjacent) * 10) / 10
+      }
+
       allSnapshots[staff.id] = {
         staffId: staff.id,
         staffName: staff.name || '직원',
         departmentName: staff.departmentName || '미지정',
         categoryName: staff.categoryName,
         actual,
-        deviation: roundedDeviation
+        deviation: roundedDeviation,
+        cumulativeActual,
+        cumulativeDeviation: cumulativeDeviationTotal,
+        cumulativeDeviationDetails
       }
 
-      console.log(`         ${staff.name}: 총 ${actual.total}일 (편차 ${roundedDeviation.total})`)
+      console.log(`         ${staff.name}: 총 ${actual.total}일 (편차 ${roundedDeviation.total}) / 누적 ${cumulativeActual.total}일 (누적 편차 ${cumulativeDeviationTotal})`)
     }
   }
 
@@ -284,11 +323,20 @@ export async function loadCumulativeFairness(
   year: number,
   month: number
 ): Promise<Record<string, {
-  total: number
-  night: number
-  weekend: number
-  holiday: number
-  holidayAdjacent: number
+  actual: {
+    total: number
+    night: number
+    weekend: number
+    holiday: number
+    holidayAdjacent: number
+  }
+  deviation: {
+    total: number
+    night: number
+    weekend: number
+    holiday: number
+    holidayAdjacent: number
+  }
 }>> {
   console.log(`\n📦 누적 형평성 로드 (${year}년 1월 ~ ${month - 1}월)`)
 
@@ -306,12 +354,21 @@ export async function loadCumulativeFairness(
     orderBy: { month: 'asc' }
   })
 
-  const cumulativeDeviation: Record<string, {
-    total: number
-    night: number
-    weekend: number
-    holiday: number
-    holidayAdjacent: number
+  const cumulativeData: Record<string, {
+    actual: {
+      total: number
+      night: number
+      weekend: number
+      holiday: number
+      holidayAdjacent: number
+    }
+    deviation: {
+      total: number
+      night: number
+      weekend: number
+      holiday: number
+      holidayAdjacent: number
+    }
   }> = {}
 
   for (const schedule of previousSchedules) {
@@ -322,26 +379,42 @@ export async function loadCumulativeFairness(
     for (const [staffId, snapshot] of Object.entries(fairness)) {
       const data = snapshot as any
 
-      if (!cumulativeDeviation[staffId]) {
-        cumulativeDeviation[staffId] = {
-          total: 0,
-          night: 0,
-          weekend: 0,
-          holiday: 0,
-          holidayAdjacent: 0
+      if (!cumulativeData[staffId]) {
+        cumulativeData[staffId] = {
+          actual: {
+            total: 0,
+            night: 0,
+            weekend: 0,
+            holiday: 0,
+            holidayAdjacent: 0
+          },
+          deviation: {
+            total: 0,
+            night: 0,
+            weekend: 0,
+            holiday: 0,
+            holidayAdjacent: 0
+          }
         }
       }
 
       // 실제 근무일 누적
-      cumulativeDeviation[staffId].total += data.actual.total
-      cumulativeDeviation[staffId].night += data.actual.night
-      cumulativeDeviation[staffId].weekend += data.actual.weekend
-      cumulativeDeviation[staffId].holiday += data.actual.holiday
-      cumulativeDeviation[staffId].holidayAdjacent += data.actual.holidayAdjacent
+      cumulativeData[staffId].actual.total += data.actual?.total || 0
+      cumulativeData[staffId].actual.night += data.actual?.night || 0
+      cumulativeData[staffId].actual.weekend += data.actual?.weekend || 0
+      cumulativeData[staffId].actual.holiday += data.actual?.holiday || 0
+      cumulativeData[staffId].actual.holidayAdjacent += data.actual?.holidayAdjacent || 0
+
+      // 편차 누적
+      cumulativeData[staffId].deviation.total += data.deviation?.total || 0
+      cumulativeData[staffId].deviation.night += data.deviation?.night || 0
+      cumulativeData[staffId].deviation.weekend += data.deviation?.weekend || 0
+      cumulativeData[staffId].deviation.holiday += data.deviation?.holiday || 0
+      cumulativeData[staffId].deviation.holidayAdjacent += data.deviation?.holidayAdjacent || 0
     }
   }
 
-  console.log(`   ✅ 누적 데이터 로드 완료: ${Object.keys(cumulativeDeviation).length}명\n`)
+  console.log(`   ✅ 누적 데이터 로드 완료: ${Object.keys(cumulativeData).length}명\n`)
 
-  return cumulativeDeviation
+  return cumulativeData
 }

@@ -760,9 +760,9 @@ model RuleSettings {
   preventSundayOff  Boolean @default(true) // 일요일 오프 방지
   preventHolidayOff Boolean @default(true) // 공휴일 오프 방지
 
-  // 근무 관련 규칙
-  maxConsecutiveNights Int @default(3) // 최대 연속 야간 근무
-  minRestAfterNight    Int @default(1) // 야간 후 최소 휴식일
+  // 월별 신청 제한
+  maxMonthlyOffApplications    Int @default(4) // 월 최대 오프 신청 수
+  maxMonthlyAnnualApplications Int @default(4) // 월 최대 연차 신청 수
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
