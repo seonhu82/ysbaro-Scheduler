@@ -47,11 +47,28 @@ export async function GET(
       }
     })
 
-    if (!staff || staff.departmentName !== '진료실') {
+    if (!staff) {
       return NextResponse.json(
         { success: false, error: '직원 정보를 찾을 수 없습니다' },
         { status: 404 }
       )
+    }
+
+    // 자동배치 부서인지 확인
+    if (staff.departmentName) {
+      const department = await prisma.department.findFirst({
+        where: {
+          clinicId: link.clinicId,
+          name: staff.departmentName
+        }
+      })
+
+      if (!department || !department.useAutoAssignment) {
+        return NextResponse.json(
+          { success: false, error: '자동배치 사용 부서만 통계를 조회할 수 있습니다' },
+          { status: 403 }
+        )
+      }
     }
 
     // 병원 설정 조회 (주간 영업일, 기본 근무일)

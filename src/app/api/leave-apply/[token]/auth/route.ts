@@ -50,6 +50,27 @@ export async function POST(
       )
     }
 
+    // 부서의 자동배치 사용 여부 확인
+    if (staff.departmentName) {
+      const department = await prisma.department.findFirst({
+        where: {
+          clinicId: link.clinicId,
+          name: staff.departmentName
+        }
+      })
+
+      if (department && !department.useAutoAssignment) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: '수동배치 부서는 연차/오프 신청을 사용하지 않습니다',
+            reason: 'manual_department'
+          },
+          { status: 403 }
+        )
+      }
+    }
+
     // PIN 설정 여부에 따라 인증 방식 결정
     if (staff.pinCode) {
       // PIN이 설정되어 있으면 PIN으로만 인증

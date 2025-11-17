@@ -246,7 +246,7 @@ export async function GET(
               [key: string]: { count: number; minRequired: number }
             }
           }
-          const treatmentDept = departmentCategoryStaff['진료실'] || {}
+          const treatmentDept = departmentCategoryStaff[staff.departmentName || ''] || {}
           const categoryData = treatmentDept[staff.categoryName]
           const categoryRequired = categoryData?.count || 0
           totalRequiredSlots += categoryRequired
@@ -316,7 +316,7 @@ export async function GET(
               [key: string]: { count: number; minRequired: number }
             }
           }
-          const treatmentDept = departmentCategoryStaff['진료실'] || {}
+          const treatmentDept = departmentCategoryStaff[staff.departmentName || ''] || {}
           const categoryData = treatmentDept[staff.categoryName]
           const categoryRequired = categoryData?.count || 0
           totalRequiredSlots += categoryRequired
@@ -376,7 +376,7 @@ export async function GET(
               [key: string]: { count: number; minRequired: number }
             }
           }
-          const treatmentDept = departmentCategoryStaff['진료실'] || {}
+          const treatmentDept = departmentCategoryStaff[staff.departmentName || ''] || {}
           const categoryData = treatmentDept[staff.categoryName]
           const categoryRequired = categoryData?.count || 0
           totalRequiredSlots += categoryRequired
@@ -444,7 +444,7 @@ export async function GET(
               [key: string]: { count: number; minRequired: number }
             }
           }
-          const treatmentDept = departmentCategoryStaff['진료실'] || {}
+          const treatmentDept = departmentCategoryStaff[staff.departmentName || ''] || {}
           const categoryData = treatmentDept[staff.categoryName]
           const categoryRequired = categoryData?.count || 0
           totalRequiredSlots += categoryRequired
@@ -532,7 +532,7 @@ export async function GET(
               [key: string]: { count: number; minRequired: number }
             }
           }
-          const treatmentDept = departmentCategoryStaff['진료실'] || {}
+          const treatmentDept = departmentCategoryStaff[staff.departmentName || ''] || {}
           const categoryData = treatmentDept[staff.categoryName]
           const categoryRequired = categoryData?.count || 0
           totalRequiredSlots += categoryRequired

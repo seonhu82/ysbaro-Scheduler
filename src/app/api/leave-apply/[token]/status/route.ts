@@ -64,12 +64,27 @@ export async function GET(
     const weekBusinessDays = ruleSettings?.weekBusinessDays || 6 // 주 영업일 (일요일 제외 6일)
     const defaultWorkDays = ruleSettings?.defaultWorkDays || 4 // 주 근무일 (4일)
 
-    // 총 활성 직원 수 조회
+    // 자동배치를 사용하는 부서 목록 조회
+    const autoAssignDepartments = await prisma.department.findMany({
+      where: {
+        clinicId,
+        useAutoAssignment: true
+      },
+      select: {
+        name: true
+      }
+    })
+
+    const autoAssignDepartmentNames = autoAssignDepartments.map(d => d.name)
+
+    // 총 활성 직원 수 조회 (자동배치 사용 부서만)
     const totalStaffCount = await prisma.staff.count({
       where: {
         clinicId,
         isActive: true,
-        departmentName: '진료실' // 자동배치 사용 부서
+        departmentName: {
+          in: autoAssignDepartmentNames
+        }
       }
     })
 
