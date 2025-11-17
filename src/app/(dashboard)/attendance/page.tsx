@@ -344,7 +344,7 @@ export default function AttendanceDashboardPage() {
                 <Users className="w-5 h-5" />
                 출근 대상 직원
                 <Badge variant="outline" className="ml-2">
-                  총 {stats?.scheduledStaffList.length || 0}명
+                  총 {stats?.scheduledStaffList?.length || 0}명
                 </Badge>
                 {stats?.summary.totalScheduled && stats.summary.totalScheduled > 0 && (
                   <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700">
@@ -441,7 +441,7 @@ export default function AttendanceDashboardPage() {
                 <UserCheck className="w-5 h-5" />
                 출근한 인원
                 <Badge variant="outline" className="ml-2">
-                  {stats?.checkedInStaffList.length || 0}명
+                  {stats?.checkedInStaffList?.length || 0}명
                 </Badge>
               </CardTitle>
             </CardHeader>
