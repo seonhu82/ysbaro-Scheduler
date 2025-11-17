@@ -556,17 +556,55 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 6. 해당 날짜의 기존 연차/오프 신청 삭제 (수동으로 생성된 것만)
-    await prisma.leaveApplication.deleteMany({
+    // 6. 자동 배치 부서 직원만 LeaveApplication 생성
+    // 수동 배치 부서는 StaffAssignment만 사용 (신청-승인 프로세스 불필요)
+
+    // 6-1. 직원들의 부서 타입 확인
+    const allDepartmentNames = new Set([
+      ...(staff?.map((s: any) => s.departmentName).filter(Boolean) || []),
+      ...(annualLeave?.map((s: any) => s.departmentName).filter(Boolean) || []),
+      ...(offDays?.map((s: any) => s.departmentName).filter(Boolean) || [])
+    ])
+
+    const staffDepts = await prisma.department.findMany({
       where: {
         clinicId,
-        date: dateOnly,
-        status: 'CONFIRMED'
-      }
+        name: { in: Array.from(allDepartmentNames) }
+      },
+      select: { name: true, useAutoAssignment: true }
+    })
+    const deptTypeMap = new Map(staffDepts.map(d => [d.name, d.useAutoAssignment]))
+
+    // 6-2. 자동 배치 부서 직원만 필터링
+    const autoAnnualLeave = annualLeave?.filter((s: any) => deptTypeMap.get(s.departmentName) === true) || []
+    const autoOffDays = offDays?.filter((s: any) => deptTypeMap.get(s.departmentName) === true) || []
+
+    console.log('📋 LeaveApplication 생성 필터링:', {
+      전체연차: annualLeave?.length || 0,
+      자동부서연차: autoAnnualLeave.length,
+      전체오프: offDays?.length || 0,
+      자동부서오프: autoOffDays.length
     })
 
-    // 7. 새 연차 신청 추가
-    if (annualLeave && annualLeave.length > 0) {
+    // 6-3. 해당 날짜의 기존 연차/오프 신청 삭제 (자동 배치 부서만)
+    if (autoAnnualLeave.length > 0 || autoOffDays.length > 0) {
+      const autoStaffIds = [
+        ...autoAnnualLeave.map((s: any) => s.id),
+        ...autoOffDays.map((s: any) => s.id)
+      ]
+
+      await prisma.leaveApplication.deleteMany({
+        where: {
+          clinicId,
+          date: dateOnly,
+          staffId: { in: autoStaffIds },
+          status: 'CONFIRMED'
+        }
+      })
+    }
+
+    // 7. 자동 배치 부서만 연차 신청 추가
+    if (autoAnnualLeave.length > 0) {
       // ApplicationLink 먼저 생성
       const expiresAt = new Date()
       expiresAt.setMonth(expiresAt.getMonth() + 3) // 3개월 후 만료
@@ -583,21 +621,20 @@ export async function POST(request: NextRequest) {
       })
 
       await prisma.leaveApplication.createMany({
-        data: annualLeave.map((s: any) => ({
+        data: autoAnnualLeave.map((s: any) => ({
           clinicId,
           linkId: annualLink.id,
           staffId: s.id,
           date: dateOnly,
           leaveType: 'ANNUAL',
           status: 'CONFIRMED',
-          holdReason: '수동 배정'
+          holdReason: '관리자 수동 배정'
         }))
       })
     }
 
-    // 8. 새 오프 신청 추가 (수동 배정만 저장, 자동 오프는 저장하지 않음)
-    // 오프는 자동으로 계산되므로 수동으로 지정한 오프만 저장
-    if (offDays && offDays.length > 0) {
+    // 8. 자동 배치 부서만 오프 신청 추가 (수동 배정만 저장, 자동 오프는 저장하지 않음)
+    if (autoOffDays.length > 0) {
       // 자동 배치 부서의 모든 활성 직원 조회
       const autoAssignDeptNames = await getAutoAssignDepartmentNamesWithFallback(clinicId)
       const allActiveStaff = await prisma.staff.findMany({
@@ -614,14 +651,14 @@ export async function POST(request: NextRequest) {
       const annualLeaveIds = new Set(annualLeave?.map((s: any) => s.id) || [])
 
       // 자동 오프 계산: 전체 - 근무 - 연차
-      const autoOffIds = new Set(
+      const autoOffIdsCalculated = new Set(
         Array.from(allActiveStaffIds).filter(
           id => !workingStaffIds.has(id) && !annualLeaveIds.has(id)
         )
       )
 
-      // offDays 중에서 자동 오프가 아닌 것만 수동 오프로 저장
-      const manualOffDays = offDays.filter((s: any) => !autoOffIds.has(s.id))
+      // autoOffDays 중에서 자동 오프가 아닌 것만 수동 오프로 저장
+      const manualOffDays = autoOffDays.filter((s: any) => !autoOffIdsCalculated.has(s.id))
 
       if (manualOffDays.length > 0) {
         // ApplicationLink 먼저 생성
@@ -647,7 +684,7 @@ export async function POST(request: NextRequest) {
             date: dateOnly,
             leaveType: 'OFF',
             status: 'CONFIRMED',
-            holdReason: '수동 배정'
+            holdReason: '관리자 수동 배정'
           }))
         })
       }
