@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Calendar, Users, TrendingUp, AlertCircle, Play, BarChart3 } from 'lucide-react'
+import { Calendar, Users, TrendingUp, AlertCircle, Play, BarChart3, Edit } from 'lucide-react'
 import Link from 'next/link'
 import { useToast } from '@/hooks/use-toast'
 
@@ -20,6 +20,12 @@ interface WeekSummary {
   label: string
 }
 
+interface DepartmentStats {
+  name: string
+  total: number
+  withCategory: number
+}
+
 export default function ScheduleManagementPage() {
   const { toast } = useToast()
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -29,6 +35,7 @@ export default function ScheduleManagementPage() {
   const [loading, setLoading] = useState(true)
   const [warningsSummary, setWarningsSummary] = useState('')
   const [totalWarnings, setTotalWarnings] = useState(0)
+  const [departmentStats, setDepartmentStats] = useState<DepartmentStats[]>([])
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth() + 1
@@ -73,19 +80,44 @@ export default function ScheduleManagementPage() {
           }
         }
 
-        // 전체 직원 수 조회
-        const staffResponse = await fetch('/api/staff')
+        // 전체 직원 수 및 부서 정보 조회
+        const [staffResponse, departmentsResponse] = await Promise.all([
+          fetch('/api/staff'),
+          fetch('/api/settings/departments')
+        ])
+
         const staffResult = await staffResponse.json()
+        const departmentsData = await departmentsResponse.json()
 
         if (staffResult.success && Array.isArray(staffResult.data)) {
           const allStaff = staffResult.data
           setTotalStaff(allStaff.length)
 
-          // 진료실 직원만 카운트 (배치 가능 인원)
-          const treatment = allStaff.filter((staff: any) =>
-            staff.departmentName === '진료실' && staff.categoryName
-          )
-          setTreatmentStaff(treatment.length)
+          // 부서 데이터 처리 (배열 직접 반환 또는 {success, data} 형식)
+          let departments: any[] = []
+          if (Array.isArray(departmentsData)) {
+            departments = departmentsData
+          } else if (departmentsData?.success && departmentsData?.data) {
+            departments = departmentsData.data
+          }
+
+          // 자동배치 사용 부서만 필터링
+          const autoAssignDepartments = departments.filter((dept: any) => dept.useAutoAssignment)
+
+          // 부서별 통계 계산
+          const deptStats: DepartmentStats[] = autoAssignDepartments.map((dept: any) => ({
+            name: dept.name,
+            total: allStaff.filter((staff: any) => staff.departmentName === dept.name).length,
+            withCategory: allStaff.filter((staff: any) =>
+              staff.departmentName === dept.name && staff.categoryName
+            ).length
+          }))
+
+          setDepartmentStats(deptStats)
+
+          // 전체 자동배치 부서의 배치 가능 인원 합계
+          const totalAutoAssignStaff = deptStats.reduce((sum, dept) => sum + dept.withCategory, 0)
+          setTreatmentStaff(totalAutoAssignStaff)
         }
       } catch (error) {
         console.error('Failed to fetch data:', error)
@@ -108,7 +140,7 @@ export default function ScheduleManagementPage() {
       </div>
 
       {/* 빠른 작업 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Link href="/schedule/auto-assign">
           <Card className="hover:bg-gray-50 transition cursor-pointer">
             <CardContent className="p-6">
@@ -167,6 +199,22 @@ export default function ScheduleManagementPage() {
                 <div className="flex-1">
                   <h3 className="font-semibold">캘린더</h3>
                   <p className="text-sm text-gray-500">월간 스케줄 보기</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/schedule/manual">
+          <Card className="hover:bg-gray-50 transition cursor-pointer">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="bg-teal-100 p-3 rounded-lg">
+                  <Edit className="w-6 h-6 text-teal-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">수동 배치</h3>
+                  <p className="text-sm text-gray-500">부서별 수동 스케줄</p>
                 </div>
               </div>
             </CardContent>
@@ -363,6 +411,40 @@ export default function ScheduleManagementPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 부서별 배치 인원 현황 */}
+      {departmentStats.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              부서별 배치 인원 현황
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {departmentStats.map((dept) => (
+                <div
+                  key={dept.name}
+                  className="border rounded-lg p-4 hover:bg-gray-50 transition"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                      {dept.name}
+                    </Badge>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-bold text-blue-600">{dept.withCategory}</p>
+                    <p className="text-lg text-gray-400">/</p>
+                    <p className="text-lg text-gray-600">{dept.total}명</p>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">배치인원 / 총인원</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

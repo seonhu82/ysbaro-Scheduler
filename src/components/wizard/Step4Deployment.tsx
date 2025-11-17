@@ -496,6 +496,13 @@ export default function Step4Deployment({ wizardState, updateWizardState, onComp
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900">{stat.staffName}</span>
+                            {/* 부서 표시 */}
+                            {stat.departmentName && (
+                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                {stat.departmentName}
+                              </Badge>
+                            )}
+                            {/* 구분 표시 */}
                             <Badge variant="outline" className="text-xs">
                               {stat.categoryName}
                             </Badge>

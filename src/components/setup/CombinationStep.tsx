@@ -44,17 +44,6 @@ interface Combination {
   hasNightShift: boolean
 }
 
-interface CategoryRatios {
-  [categoryName: string]: number // percentage (0-100)
-}
-
-interface Fairness {
-  enableNightShiftFairness: boolean
-  enableWeekendFairness: boolean
-  enableHolidayFairness: boolean
-  enableHolidayAdjacentFairness: boolean
-}
-
 interface Staff {
   name: string
   birthDate: string
@@ -71,12 +60,9 @@ interface CombinationStepProps {
   doctors: Doctor[]
   departments: { name: string; order: number; useAutoAssignment: boolean }[]
   staff: Staff[]  // 추가: 현재 직원 수 계산용
-  fairness: Fairness
-  categoryRatios: CategoryRatios
   categories: string[]
   onChange: (data: Combination[]) => void
-  onFairnessChange: (fairness: Fairness) => void
-  onCategoryRatiosChange: (ratios: CategoryRatios) => void
+  editMode?: boolean  // 수정 모드 여부
 }
 
 const DAYS_OF_WEEK = [
@@ -94,12 +80,9 @@ export function CombinationStep({
   doctors,
   departments,
   staff,
-  fairness,
-  categoryRatios,
   categories,
   onChange,
-  onFairnessChange,
-  onCategoryRatiosChange,
+  editMode = false,
 }: CombinationStepProps) {
   const [newCombination, setNewCombination] = useState<Combination>({
     name: '',
@@ -111,7 +94,9 @@ export function CombinationStep({
   })
   const [selectedDoctorIndex, setSelectedDoctorIndex] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState<string>('')
-  const [expandedCombinations, setExpandedCombinations] = useState<Set<number>>(new Set())
+  const [expandedCombinations, setExpandedCombinations] = useState<Set<number>>(
+    editMode && data.length > 0 ? new Set([0]) : new Set()
+  )
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 의사 목록 생성 (이름 표시용, shortName 조합명용)
@@ -582,14 +567,26 @@ export function CombinationStep({
 
   return (
     <div className="space-y-6">
-      <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">의사 조합 설정</h2>
-        <p className="text-gray-600">
-          일 패턴에 사용될 의사 조합을 요일별로 설정해주세요
-        </p>
-      </div>
+      {!editMode && (
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">의사 조합 설정</h2>
+          <p className="text-gray-600">
+            일 패턴에 사용될 의사 조합을 요일별로 설정해주세요
+          </p>
+        </div>
+      )}
 
-      {/* 엑셀 업로드 섹션 */}
+      {editMode && (
+        <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg border border-amber-300">
+          <p className="text-sm text-amber-900 font-medium">
+            ⚠️ <strong>수정 모드:</strong> 아래 조합 정보를 수정한 후 상단의 "수정" 버튼을 눌러 저장하세요.
+            자동배치 부서를 변경하려면 상단의 "부서 자동배치 설정" 버튼을 사용하세요.
+          </p>
+        </div>
+      )}
+
+      {/* 엑셀 업로드 섹션 - 수정 모드가 아닐 때만 표시 */}
+      {!editMode && (
       <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border border-green-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -629,9 +626,10 @@ export function CombinationStep({
           </div>
         </div>
       </div>
+      )}
 
       {/* 업로드 에러 메시지 */}
-      {uploadError && (
+      {!editMode && uploadError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription className="whitespace-pre-line">
@@ -699,14 +697,16 @@ export function CombinationStep({
                           <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                         </Button>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeCombination(index)}
-                        className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
+                      {!editMode && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeCombination(index)}
+                          className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -870,12 +870,13 @@ export function CombinationStep({
         </div>
       )}
 
-      {/* 새 조합 추가 */}
-      <div className="p-5 bg-gray-50 rounded-lg border border-gray-200">
-        <div className="flex items-center gap-2 mb-4">
-          <Users className="w-5 h-5 text-blue-600" />
-          <h3 className="font-semibold">새 조합 추가</h3>
-        </div>
+      {/* 새 조합 추가 - 수정 모드가 아닐 때만 표시 */}
+      {!editMode && (
+        <div className="p-5 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center gap-2 mb-4">
+            <Users className="w-5 h-5 text-blue-600" />
+            <h3 className="font-semibold">새 조합 추가</h3>
+          </div>
 
         <div className="space-y-4">
           {/* 조합명, 요일 */}
@@ -1166,93 +1167,14 @@ export function CombinationStep({
           </Button>
         </div>
       </div>
+      )}
 
-      {/* 형평성 설정 */}
-      <div className="p-5 bg-gray-50 rounded-lg border border-gray-200">
-        <h3 className="font-semibold mb-4 text-gray-900">형평성 기반 근무 배치</h3>
-        <p className="text-sm text-gray-600 mb-4">
-          사용할 형평성 항목을 선택하세요. 각 항목은 독립적으로 관리됩니다.
-        </p>
-        <div className="space-y-3">
-          <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-200">
-            <Checkbox
-              id="fairness-night"
-              checked={fairness.enableNightShiftFairness}
-              onCheckedChange={(checked) =>
-                onFairnessChange({ ...fairness, enableNightShiftFairness: checked as boolean })
-              }
-            />
-            <div className="flex-1">
-              <Label htmlFor="fairness-night" className="cursor-pointer font-medium text-gray-900">
-                야간 근무 형평성
-              </Label>
-              <p className="text-xs text-gray-500 mt-1">
-                평일 야간 진료 근무 횟수를 추적합니다
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-200">
-            <Checkbox
-              id="fairness-weekend"
-              checked={fairness.enableWeekendFairness}
-              onCheckedChange={(checked) =>
-                onFairnessChange({ ...fairness, enableWeekendFairness: checked as boolean })
-              }
-            />
-            <div className="flex-1">
-              <Label htmlFor="fairness-weekend" className="cursor-pointer font-medium text-gray-900">
-                주말 근무 형평성
-              </Label>
-              <p className="text-xs text-gray-500 mt-1">
-                토요일 근무 횟수를 추적합니다
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-200">
-            <Checkbox
-              id="fairness-holiday"
-              checked={fairness.enableHolidayFairness}
-              onCheckedChange={(checked) =>
-                onFairnessChange({ ...fairness, enableHolidayFairness: checked as boolean })
-              }
-            />
-            <div className="flex-1">
-              <Label htmlFor="fairness-holiday" className="cursor-pointer font-medium text-gray-900">
-                공휴일 근무 형평성
-              </Label>
-              <p className="text-xs text-gray-500 mt-1">
-                공휴일 근무 횟수를 추적합니다 (일요일 제외, 단 공휴일과 붙어있는 일요일은 포함)
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-gray-200">
-            <Checkbox
-              id="fairness-holiday-adjacent"
-              checked={fairness.enableHolidayAdjacentFairness}
-              onCheckedChange={(checked) =>
-                onFairnessChange({ ...fairness, enableHolidayAdjacentFairness: checked as boolean })
-              }
-            />
-            <div className="flex-1">
-              <Label htmlFor="fairness-holiday-adjacent" className="cursor-pointer font-medium text-gray-900">
-                공휴일 전후 근무 형평성
-              </Label>
-              <p className="text-xs text-gray-500 mt-1">
-                공휴일 전날/다음날 근무 횟수를 추적합니다 (예: 5월 3일(토), 5월 6일(화) 등)
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
         <p className="text-sm text-blue-900">
-          💡 <strong>안내:</strong> 의사 조합은 하루의 진료 패턴을 의미합니다.
-          예를 들어 "월요일 조합"으로 박(상담)구윤 / 구윤 / 박(진료)구윤 3가지
-          조합을 만들 수 있습니다.
+          💡 <strong>안내:</strong> {editMode
+            ? '아래 조합 정보를 수정하고 상단의 "수정" 버튼을 눌러 저장하세요.'
+            : '의사 조합은 하루의 진료 패턴을 의미합니다. 예를 들어 "월요일 조합"으로 박(상담)구윤 / 구윤 / 박(진료)구윤 3가지 조합을 만들 수 있습니다.'}
         </p>
       </div>
     </div>

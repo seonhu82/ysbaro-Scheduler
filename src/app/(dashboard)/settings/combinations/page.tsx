@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ChevronDown, ChevronUp, Save, Plus, Edit2, Trash2, Copy } from 'lucide-react'
+import { ChevronDown, ChevronUp, Save, Plus, Edit2, Trash2, Copy, Settings2 } from 'lucide-react'
 import { CombinationStep } from '@/components/setup/CombinationStep'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 
 interface Combination {
   id: string
@@ -28,6 +31,7 @@ interface Doctor {
 }
 
 interface Department {
+  id: string
   name: string
   order: number
   useAutoAssignment: boolean
@@ -56,20 +60,14 @@ export default function CombinationsSettings() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [showDeptSettings, setShowDeptSettings] = useState(false)
 
   // 템플릿 저장용 데이터
   const [newCombinations, setNewCombinations] = useState<any[]>([])
   const [doctors, setDoctors] = useState<Doctor[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [categories, setCategories] = useState<Category[]>([])
-  const [categoryRatios, setCategoryRatios] = useState<any>({})
   const [staff, setStaff] = useState<any[]>([])
-  const [fairness, setFairness] = useState<any>({
-    enableNightShiftFairness: false,
-    enableWeekendFairness: false,
-    enableHolidayFairness: false,
-    enableHolidayAdjacentFairness: false
-  })
 
   useEffect(() => {
     fetchAllData()
@@ -78,21 +76,19 @@ export default function CombinationsSettings() {
   const fetchAllData = async () => {
     setLoading(true)
     try {
-      const [combosRes, doctorsRes, deptsRes, catsRes, ratiosRes, staffRes] = await Promise.all([
+      const [combosRes, doctorsRes, deptsRes, catsRes, staffRes] = await Promise.all([
         fetch('/api/settings/combinations'),
         fetch('/api/doctors'),
         fetch('/api/settings/departments'),
         fetch('/api/settings/categories'),
-        fetch('/api/settings/category-ratios'),
         fetch('/api/staff')
       ])
 
-      const [combosData, doctorsData, deptsData, catsData, ratiosData, staffData] = await Promise.all([
+      const [combosData, doctorsData, deptsData, catsData, staffData] = await Promise.all([
         combosRes.json(),
         doctorsRes.json(),
         deptsRes.json(),
         catsRes.json(),
-        ratiosRes.json(),
         staffRes.json()
       ])
 
@@ -108,16 +104,15 @@ export default function CombinationsSettings() {
         setDoctors(formattedDoctors)
       }
 
-      if (deptsData.success && deptsData.data) {
+      // 부서 API는 배열 직접 반환, 방어 코드로 두 형식 모두 처리
+      if (Array.isArray(deptsData)) {
+        setDepartments(deptsData)
+      } else if (deptsData?.success && deptsData?.data) {
         setDepartments(deptsData.data)
       }
 
       if (catsData.success && catsData.data) {
         setCategories(catsData.data)
-      }
-
-      if (ratiosData.success && ratiosData.data) {
-        setCategoryRatios(ratiosData.data.ratios || {})
       }
 
       if (staffData.success && staffData.data) {
@@ -242,6 +237,31 @@ export default function CombinationsSettings() {
     }
   }
 
+  const handleDepartmentAutoAssignmentChange = async (deptId: string, useAutoAssignment: boolean) => {
+    try {
+      const res = await fetch(`/api/settings/departments/${deptId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useAutoAssignment })
+      })
+      if (res.ok) {
+        // 로컬 상태 업데이트
+        setDepartments(prev =>
+          prev.map(dept =>
+            dept.id === deptId
+              ? { ...dept, useAutoAssignment }
+              : dept
+          )
+        )
+      } else {
+        alert('부서 설정 업데이트에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('Failed to update department:', error)
+      alert('부서 설정 업데이트 중 오류가 발생했습니다.')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -257,48 +277,125 @@ export default function CombinationsSettings() {
           <h1 className="text-3xl font-bold text-gray-900">의사 조합 관리</h1>
           <p className="text-gray-600 mt-2">요일별 의사 조합과 필요 인원을 관리합니다</p>
         </div>
-        <Button onClick={() => setShowAddForm(!showAddForm)}>
-          {showAddForm ? (
-            <>
-              <ChevronUp className="w-4 h-4 mr-2" />
-              접기
-            </>
-          ) : (
-            <>
-              <Plus className="w-4 h-4 mr-2" />
-              새 조합 추가
-            </>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowDeptSettings(!showDeptSettings)}
+          >
+            <Settings2 className="w-4 h-4 mr-2" />
+            부서 자동배치 설정
+          </Button>
+          <Button onClick={() => setShowAddForm(!showAddForm)}>
+            {showAddForm ? (
+              <>
+                <ChevronUp className="w-4 h-4 mr-2" />
+                접기
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4 mr-2" />
+                새 조합 추가
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
-      {/* 템플릿 추가 폼 */}
-      {showAddForm && (
-        <Card>
+      {/* 부서 자동배치 빠른 설정 */}
+      {showDeptSettings && (
+        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
           <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Settings2 className="w-5 h-5" />
+              부서 자동배치 설정
+            </CardTitle>
+            <p className="text-sm text-gray-600 mt-1">
+              자동배치를 사용할 부서를 선택하세요. 자동배치 부서만 의사조합에서 필요 인원을 지정할 수 있습니다.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {departments.map((dept) => (
+                <div
+                  key={dept.id}
+                  className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200"
+                >
+                  <Label htmlFor={`dept-${dept.id}`} className="font-medium cursor-pointer flex-1">
+                    {dept.name}
+                  </Label>
+                  <Switch
+                    id={`dept-${dept.id}`}
+                    checked={dept.useAutoAssignment}
+                    onCheckedChange={(checked) =>
+                      handleDepartmentAutoAssignmentChange(dept.id, checked)
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+            {departments.filter(d => d.useAutoAssignment).length === 0 && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded text-center">
+                <p className="text-sm text-amber-900">
+                  ⚠️ 자동배치를 사용하는 부서가 없습니다. 최소 1개 이상의 부서를 활성화하세요.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 수정 폼 */}
+      {editingId && (
+        <Card className="border-2 border-blue-500">
+          <CardHeader className="bg-blue-50">
             <div className="flex items-center justify-between">
-              <CardTitle>{editingId ? '조합 수정' : '새 조합 템플릿 작성'}</CardTitle>
+              <CardTitle className="text-blue-900">조합 수정</CardTitle>
               <div className="flex gap-2">
-                {editingId && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setEditingId(null)
-                      setNewCombinations([])
-                      setShowAddForm(false)
-                    }}
-                  >
-                    취소
-                  </Button>
-                )}
                 <Button
-                  onClick={editingId ? handleUpdate : handleSaveTemplate}
+                  variant="outline"
+                  onClick={() => {
+                    setEditingId(null)
+                    setNewCombinations([])
+                  }}
+                >
+                  취소
+                </Button>
+                <Button
+                  onClick={handleUpdate}
                   disabled={saving || newCombinations.length === 0}
                 >
                   <Save className="w-4 h-4 mr-2" />
-                  {saving ? '저장 중...' : editingId ? '수정' : '저장'}
+                  {saving ? '저장 중...' : '수정 완료'}
                 </Button>
               </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <EditCombinationForm
+              combination={newCombinations[0]}
+              doctors={doctors}
+              departments={departments}
+              staff={staff}
+              categories={categories.map(c => c.name)}
+              onChange={(updated) => setNewCombinations([updated])}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 새 조합 추가 폼 */}
+      {showAddForm && !editingId && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>새 조합 템플릿 작성</CardTitle>
+              <Button
+                onClick={handleSaveTemplate}
+                disabled={saving || newCombinations.length === 0}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {saving ? '저장 중...' : '저장'}
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -307,12 +404,9 @@ export default function CombinationsSettings() {
               doctors={doctors}
               departments={departments}
               staff={staff}
-              fairness={fairness}
               categories={categories.map(c => c.name)}
-              categoryRatios={categoryRatios}
               onChange={setNewCombinations}
-              onFairnessChange={setFairness}
-              onCategoryRatiosChange={setCategoryRatios}
+              editMode={false}
             />
           </CardContent>
         </Card>
@@ -348,6 +442,319 @@ export default function CombinationsSettings() {
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+/**
+ * 조합 수정 폼 컴포넌트
+ */
+function EditCombinationForm({
+  combination,
+  doctors,
+  departments,
+  staff,
+  categories,
+  onChange,
+}: {
+  combination: any
+  doctors: Doctor[]
+  departments: Department[]
+  staff: any[]
+  categories: string[]
+  onChange: (combination: any) => void
+}) {
+  const [localCombination, setLocalCombination] = useState(combination)
+
+  useEffect(() => {
+    setLocalCombination(combination)
+  }, [combination])
+
+  useEffect(() => {
+    onChange(localCombination)
+  }, [localCombination])
+
+  const doctorOptions = doctors.flatMap((doctor) => {
+    if (doctor.useCategory && doctor.categories.length > 0) {
+      return doctor.categories.map((category: any) => ({
+        displayName: `${doctor.name}(${category.name})`,
+        shortName: `${doctor.shortName}(${category.shortName || category.name})`
+      }))
+    } else {
+      return [{
+        displayName: doctor.name,
+        shortName: doctor.shortName
+      }]
+    }
+  })
+
+  const toggleDoctor = (shortName: string) => {
+    const isSelected = localCombination.doctors.includes(shortName)
+    const updatedDoctors = isSelected
+      ? localCombination.doctors.filter((d: string) => d !== shortName)
+      : [...localCombination.doctors, shortName]
+
+    setLocalCombination({
+      ...localCombination,
+      doctors: updatedDoctors,
+      name: updatedDoctors.join('')
+    })
+  }
+
+  const autoDepartments = departments.filter(d => d.useAutoAssignment)
+
+  return (
+    <div className="space-y-6">
+      {/* 기본 정보 */}
+      <Card className="bg-gray-50">
+        <CardHeader>
+          <CardTitle className="text-lg">기본 정보</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 조합명 */}
+          <div>
+            <Label>조합명</Label>
+            <Input
+              value={localCombination.name}
+              onChange={(e) => setLocalCombination({ ...localCombination, name: e.target.value })}
+              className="mt-1"
+            />
+          </div>
+
+          {/* 요일 */}
+          <div>
+            <Label>요일</Label>
+            <select
+              value={localCombination.dayOfWeek}
+              onChange={(e) => setLocalCombination({ ...localCombination, dayOfWeek: e.target.value })}
+              className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"
+            >
+              <option value="MONDAY">월요일</option>
+              <option value="TUESDAY">화요일</option>
+              <option value="WEDNESDAY">수요일</option>
+              <option value="THURSDAY">목요일</option>
+              <option value="FRIDAY">금요일</option>
+              <option value="SATURDAY">토요일</option>
+              <option value="SUNDAY">일요일</option>
+            </select>
+          </div>
+
+          {/* 야간 진료 */}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="hasNightShift"
+              checked={localCombination.hasNightShift}
+              onChange={(e) => setLocalCombination({ ...localCombination, hasNightShift: e.target.checked })}
+              className="rounded"
+            />
+            <Label htmlFor="hasNightShift" className="cursor-pointer">야간 진료 포함</Label>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 원장 선택 */}
+      <Card className="bg-gray-50">
+        <CardHeader>
+          <CardTitle className="text-lg">원장 구성</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {doctorOptions.map((option: any, index: number) => {
+              const isSelected = localCombination.doctors.includes(option.shortName)
+              return (
+                <Button
+                  key={index}
+                  type="button"
+                  variant={isSelected ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => toggleDoctor(option.shortName)}
+                  className={`h-auto py-2 px-3 justify-start text-left ${
+                    isSelected ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="truncate">{option.displayName}</span>
+                </Button>
+              )
+            })}
+          </div>
+          {localCombination.doctors.length > 0 && (
+            <div className="mt-3 p-2 bg-blue-50 rounded text-sm text-blue-900">
+              선택됨: {localCombination.doctors.join(', ')}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 부서별 필요 인원 */}
+      <Card className="bg-gray-50">
+        <CardHeader>
+          <CardTitle className="text-lg">부서별 필요 인원</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {autoDepartments.map((dept) => (
+              <div key={dept.id} className="flex items-center gap-3 p-3 bg-white rounded border">
+                <Label className="w-32">{dept.name}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={localCombination.departmentRequiredStaff?.[dept.name] || 0}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value) || 0
+                    setLocalCombination({
+                      ...localCombination,
+                      departmentRequiredStaff: {
+                        ...localCombination.departmentRequiredStaff,
+                        [dept.name]: value
+                      },
+                      requiredStaff: Object.values({
+                        ...localCombination.departmentRequiredStaff,
+                        [dept.name]: value
+                      }).reduce((sum: number, val: any) => sum + val, 0)
+                    })
+                  }}
+                  className="w-24"
+                />
+                <span className="text-sm text-gray-600">명</span>
+              </div>
+            ))}
+          </div>
+          {autoDepartments.length === 0 && (
+            <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded">
+              자동배치 부서가 없습니다. 상단의 "부서 자동배치 설정"에서 설정하세요.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 구분별 상세 인원 */}
+      {Object.entries(localCombination.departmentRequiredStaff || {}).some(([dept, count]: any) =>
+        autoDepartments.find(d => d.name === dept) && count > 0
+      ) && (
+        <Card className="bg-gray-50">
+          <CardHeader>
+            <CardTitle className="text-lg">구분별 상세 인원</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {autoDepartments
+              .filter(dept => (localCombination.departmentRequiredStaff?.[dept.name] || 0) > 0)
+              .map(dept => {
+                const deptRequired = localCombination.departmentRequiredStaff[dept.name]
+                const deptStaff = staff.filter((s: any) => s.departmentName === dept.name && s.categoryName)
+                const deptCategories = Array.from(new Set(deptStaff.map((s: any) => s.categoryName)))
+
+                if (deptCategories.length === 0) {
+                  return (
+                    <div key={dept.name} className="p-3 bg-amber-50 border border-amber-200 rounded">
+                      <p className="text-sm text-amber-900">
+                        ⚠️ {dept.name} 부서에 구분이 설정된 직원이 없습니다.
+                      </p>
+                    </div>
+                  )
+                }
+
+                const currentStaff = localCombination.departmentCategoryStaff?.[dept.name] || {}
+
+                return (
+                  <div key={dept.name} className="p-4 bg-white border rounded-lg">
+                    <h4 className="font-semibold mb-3">{dept.name} (총 {deptRequired}명)</h4>
+                    <div className="space-y-2">
+                      {deptCategories.map((cat: any) => {
+                        const config = currentStaff[cat] || { count: 0, minRequired: 0 }
+                        return (
+                          <div key={cat} className="flex items-center gap-3 p-2 bg-gray-50 rounded">
+                            <Label className="w-24">{cat}</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={deptRequired}
+                              value={config.count}
+                              onChange={(e) => {
+                                const value = Math.min(deptRequired, Math.max(0, parseInt(e.target.value) || 0))
+                                setLocalCombination({
+                                  ...localCombination,
+                                  departmentCategoryStaff: {
+                                    ...localCombination.departmentCategoryStaff,
+                                    [dept.name]: {
+                                      ...currentStaff,
+                                      [cat]: {
+                                        count: value,
+                                        minRequired: Math.min(config.minRequired, value)
+                                      }
+                                    }
+                                  }
+                                })
+                              }}
+                              className="w-20"
+                            />
+                            <span className="text-sm">명</span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id={`min-${dept.name}-${cat}`}
+                                checked={config.minRequired > 0}
+                                onChange={(e) => {
+                                  setLocalCombination({
+                                    ...localCombination,
+                                    departmentCategoryStaff: {
+                                      ...localCombination.departmentCategoryStaff,
+                                      [dept.name]: {
+                                        ...currentStaff,
+                                        [cat]: {
+                                          ...config,
+                                          minRequired: e.target.checked ? config.count : 0
+                                        }
+                                      }
+                                    }
+                                  })
+                                }}
+                                className="rounded"
+                              />
+                              <Label htmlFor={`min-${dept.name}-${cat}`} className="text-sm cursor-pointer">
+                                필수
+                              </Label>
+                            </div>
+                            {config.minRequired > 0 && (
+                              <>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={config.count}
+                                  value={config.minRequired}
+                                  onChange={(e) => {
+                                    const value = Math.min(config.count, Math.max(0, parseInt(e.target.value) || 0))
+                                    setLocalCombination({
+                                      ...localCombination,
+                                      departmentCategoryStaff: {
+                                        ...localCombination.departmentCategoryStaff,
+                                        [dept.name]: {
+                                          ...currentStaff,
+                                          [cat]: {
+                                            ...config,
+                                            minRequired: value
+                                          }
+                                        }
+                                      }
+                                    })
+                                  }}
+                                  className="w-20"
+                                />
+                                <div className="px-2 py-1 bg-green-50 border border-green-200 rounded text-xs text-green-700">
+                                  유연: {config.count - config.minRequired}명
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
