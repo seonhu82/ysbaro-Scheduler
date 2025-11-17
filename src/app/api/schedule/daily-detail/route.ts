@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const dateStr = searchParams.get('date')
     const statusParam = searchParams.get('status') // 'DRAFT', 'CONFIRMED', 'DEPLOYED'
+    const departmentType = searchParams.get('departmentType') // 'auto' | 'manual' | null
 
     if (!dateStr) {
       return NextResponse.json({ success: false, error: 'Date required' }, { status: 400 })
@@ -27,37 +28,65 @@ export async function GET(request: NextRequest) {
     const dateMonth = date.getMonth() + 1
     const clinicId = (session.user as any).clinicId
 
-    // 스케줄 조회: date의 year/month를 기준으로 조회 (파라미터 무시)
-    let schedule = null
-    if (statusParam) {
-      // status 파라미터가 있으면 해당 status만 조회
-      schedule = await prisma.schedule.findFirst({
+    // 부서 필터링
+    let departmentNames: string[] | undefined = undefined
+    if (departmentType === 'auto' || departmentType === 'manual') {
+      const departments = await prisma.department.findMany({
         where: {
           clinicId,
-          year: dateYear,
-          month: dateMonth,
-          status: statusParam as any
-        }
+          useAutoAssignment: departmentType === 'auto'
+        },
+        select: { name: true }
       })
-    } else {
-      // status 파라미터가 없으면 DEPLOYED 우선, 없으면 DRAFT
-      const deployedSchedule = await prisma.schedule.findFirst({
-        where: {
-          clinicId,
-          year: dateYear,
-          month: dateMonth,
-          status: 'DEPLOYED'
-        }
-      })
+      departmentNames = departments.map(d => d.name)
+    }
 
-      schedule = deployedSchedule || await prisma.schedule.findFirst({
-        where: {
-          clinicId,
-          year: dateYear,
-          month: dateMonth,
-          status: 'DRAFT'
-        }
-      })
+    // **의사 스케줄 기준으로 조회**
+    // 해당 날짜에 의사가 배정된 스케줄을 찾기 (월 상관없이)
+    const doctorSchedule = await prisma.scheduleDoctor.findFirst({
+      where: {
+        schedule: {
+          clinicId
+        },
+        date: new Date(dateStr)
+      },
+      include: {
+        schedule: true
+      }
+    })
+
+    let schedule = doctorSchedule?.schedule || null
+
+    // 의사 스케줄이 없으면 현재 월 스케줄 찾기 (fallback)
+    if (!schedule) {
+      if (statusParam) {
+        schedule = await prisma.schedule.findFirst({
+          where: {
+            clinicId,
+            year: dateYear,
+            month: dateMonth,
+            status: statusParam as any
+          }
+        })
+      } else {
+        const deployedSchedule = await prisma.schedule.findFirst({
+          where: {
+            clinicId,
+            year: dateYear,
+            month: dateMonth,
+            status: 'DEPLOYED'
+          }
+        })
+
+        schedule = deployedSchedule || await prisma.schedule.findFirst({
+          where: {
+            clinicId,
+            year: dateYear,
+            month: dateMonth,
+            status: 'DRAFT'
+          }
+        })
+      }
     }
 
     // 공휴일 확인
@@ -79,11 +108,16 @@ export async function GET(request: NextRequest) {
       }
     }) : []
 
-    // 직원 배정 조회
+    // 직원 배정 조회 (Department, StaffCategory 포함)
     const staffAssignments = schedule ? await prisma.staffAssignment.findMany({
       where: {
         scheduleId: schedule.id,
-        date: new Date(dateStr)
+        date: new Date(dateStr),
+        ...(departmentNames ? {
+          staff: {
+            departmentName: { in: departmentNames }
+          }
+        } : {})
       },
       include: {
         staff: {
@@ -91,6 +125,7 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             departmentName: true,
+            categoryName: true,
             rank: true
           }
         }
@@ -101,7 +136,12 @@ export async function GET(request: NextRequest) {
     const leaves = await prisma.leaveApplication.findMany({
       where: {
         clinicId,
-        date: new Date(dateStr)
+        date: new Date(dateStr),
+        ...(departmentNames ? {
+          staff: {
+            departmentName: { in: departmentNames }
+          }
+        } : {})
       },
       include: {
         staff: {
@@ -109,6 +149,7 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             departmentName: true,
+            categoryName: true,
             rank: true
           }
         }
@@ -122,11 +163,31 @@ export async function GET(request: NextRequest) {
       hasNightShift: d.hasNightShift
     }))
 
+    // Department와 StaffCategory 정보 가져오기 (order 필드용)
+    const departments = await prisma.department.findMany({
+      where: { clinicId },
+      select: { name: true, order: true }
+    })
+    const departmentOrderMap = new Map(departments.map(d => [d.name, d.order]))
+
+    const staffCategories = await prisma.staffCategory.findMany({
+      where: { clinicId },
+      select: { name: true, order: true }
+    })
+    const categoryOrderMap = new Map(staffCategories.map(c => [c.name, c.order]))
+
     // 직원 목록 생성 (StaffAssignment 기준)
     const staffList: Array<{
       id: string
       name: string
-      category: string
+      rank: string
+      categoryName?: string
+      departmentName?: string
+      departmentOrder?: number
+      categoryOrder?: number
+      isFlexible?: boolean
+      originalCategory?: string
+      assignedCategory?: string
       isAssigned: boolean
       leaveType?: 'ANNUAL' | 'OFF' | null
       leaveStatus?: string | null
@@ -151,10 +212,20 @@ export async function GET(request: NextRequest) {
         leaveType = 'OFF'
       }
 
+      const departmentName = assignment.staff.departmentName || undefined
+      const categoryName = assignment.staff.categoryName || undefined
+
       staffList.push({
         id: assignment.staff.id,
         name: assignment.staff.name,
-        category: assignment.staff.departmentName || '미분류',
+        rank: assignment.staff.rank || '',
+        categoryName,
+        departmentName,
+        departmentOrder: departmentName ? departmentOrderMap.get(departmentName) : undefined,
+        categoryOrder: categoryName ? categoryOrderMap.get(categoryName) : undefined,
+        isFlexible: assignment.isFlexible,
+        originalCategory: assignment.originalCategory || undefined,
+        assignedCategory: assignment.assignedCategory || undefined,
         isAssigned: true,
         leaveType,
         leaveStatus: leaveInfo?.status || null
@@ -168,10 +239,17 @@ export async function GET(request: NextRequest) {
         (leave.status === 'CONFIRMED' || leave.status === 'ON_HOLD') &&
         !assignedStaffIds.has(leave.staffId)
       ) {
+        const departmentName = leave.staff.departmentName || undefined
+        const categoryName = leave.staff.categoryName || undefined
+
         staffList.push({
           id: leave.staff.id,
           name: leave.staff.name,
-          category: leave.staff.departmentName || '미분류',
+          rank: leave.staff.rank || '',
+          categoryName,
+          departmentName,
+          departmentOrder: departmentName ? departmentOrderMap.get(departmentName) : undefined,
+          categoryOrder: categoryName ? categoryOrderMap.get(categoryName) : undefined,
           isAssigned: true,
           leaveType: 'ANNUAL',
           leaveStatus: leave.status
@@ -194,15 +272,20 @@ export async function GET(request: NextRequest) {
         status: s.leaveStatus!
       }))
 
+    // isNightShift 계산 (하나라도 야간 근무면 true)
+    const isNightShift = doctorList.some(d => d.hasNightShift)
+
     return NextResponse.json({
       success: true,
       data: {
+        id: schedule?.id,
         date: dateStr,
-        doctors: doctorList,
+        doctors: doctorList.map(d => ({ id: d.id, name: d.name })),
         staff: workingStaff,
         annualLeave: annualLeaveStaff,
         offDays: offDaysStaff,
         leaves: leavesList,
+        isNightShift,
         isHoliday: !!holiday,
         holidayName: holiday?.name
       }
