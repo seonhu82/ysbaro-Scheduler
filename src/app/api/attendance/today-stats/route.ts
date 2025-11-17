@@ -19,8 +19,36 @@ export async function GET(request: NextRequest) {
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-    // 오늘 스케줄 조회 (근무 예정 직원)
-    const scheduleToday = await prisma.staffAssignment.findMany({
+    // 오늘이 공휴일인지 확인
+    const holidayToday = await prisma.holiday.findFirst({
+      where: {
+        clinicId: session.user.clinicId,
+        date: today
+      }
+    })
+
+    // 부서 정보 조회 (스케줄 사용 여부 확인)
+    const departments = await prisma.department.findMany({
+      where: {
+        clinicId: session.user.clinicId
+      },
+      select: {
+        name: true,
+        useAutoAssignment: true
+      }
+    })
+
+    // 스케줄 사용 부서와 미사용 부서 구분
+    const scheduledDepartments = new Set(
+      departments.filter(d => d.useAutoAssignment).map(d => d.name)
+    )
+    const nonScheduledDepartments = new Set(
+      departments.filter(d => !d.useAutoAssignment).map(d => d.name)
+    )
+
+    // 오늘 스케줄 조회 (스케줄 사용 부서의 근무 예정 직원)
+    // 단, 공휴일인 경우 스케줄 조회하지 않음
+    const scheduleToday = holidayToday ? [] : await prisma.staffAssignment.findMany({
       where: {
         schedule: {
           clinicId: session.user.clinicId
@@ -39,6 +67,24 @@ export async function GET(request: NextRequest) {
             departmentName: true
           }
         }
+      }
+    })
+
+    // 스케줄 미사용 부서의 모든 활성 직원 조회
+    // 단, 공휴일인 경우 조회하지 않음 (공휴일에는 아무도 출근 대상이 아님)
+    const nonScheduledStaff = holidayToday ? [] : await prisma.staff.findMany({
+      where: {
+        clinicId: session.user.clinicId,
+        isActive: true,
+        departmentName: {
+          in: Array.from(nonScheduledDepartments)
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        rank: true,
+        departmentName: true
       }
     })
 
@@ -77,24 +123,56 @@ export async function GET(request: NextRequest) {
         .map(r => r.staffId)
     )
 
+    // 스케줄 사용 부서와 미사용 부서의 직원 목록 생성
+    const scheduledStaffList = scheduleToday.map(s => ({
+      id: s.staff.id,
+      name: s.staff.name,
+      rank: s.staff.rank,
+      departmentName: s.staff.departmentName,
+      shiftType: s.shiftType
+    }))
+
+    const nonScheduledStaffList = nonScheduledStaff.map(s => ({
+      id: s.id,
+      name: s.name,
+      rank: s.rank,
+      departmentName: s.departmentName,
+      shiftType: 'DAY' as const
+    }))
+
+    // Map을 사용하여 staffId 기준으로 중복 제거 (스케줄이 있는 직원 우선)
+    const staffMap = new Map()
+
+    // nonScheduledStaffList를 먼저 추가
+    nonScheduledStaffList.forEach(s => {
+      staffMap.set(s.id, s)
+    })
+
+    // scheduledStaffList를 나중에 추가하여 덮어쓰기 (스케줄 정보 우선)
+    scheduledStaffList.forEach(s => {
+      staffMap.set(s.id, s)
+    })
+
+    const allTargetStaff = Array.from(staffMap.values())
+
     // 현재 재직 중인 직원 (출근했지만 퇴근하지 않은)
     const currentlyInOffice = Array.from(checkedInStaffIds).filter(
       id => !checkedOutStaffIds.has(id)
     )
 
     // 근무 예정이지만 출근하지 않은 직원
-    const notCheckedIn = scheduleToday
-      .filter(s => !checkedInStaffIds.has(s.staffId))
+    const notCheckedIn = allTargetStaff
+      .filter(s => !checkedInStaffIds.has(s.id))
       .map(s => ({
-        id: s.staff.id,
-        name: s.staff.name,
-        rank: s.staff.rank,
-        departmentName: s.staff.departmentName,
+        id: s.id,
+        name: s.name,
+        rank: s.rank,
+        departmentName: s.departmentName,
         shiftType: s.shiftType
       }))
 
     // 통계 계산
-    const totalScheduled = scheduleToday.length
+    const totalScheduled = allTargetStaff.length
     const totalCheckedIn = checkedInStaffIds.size
     const totalCheckedOut = checkedOutStaffIds.size
     const currentlyPresent = currentlyInOffice.length
@@ -118,17 +196,17 @@ export async function GET(request: NextRequest) {
       present: number
     }>()
 
-    scheduleToday.forEach(s => {
-      const dept = s.staff.departmentName || '미지정'
+    allTargetStaff.forEach(s => {
+      const dept = s.departmentName || '미지정'
       if (!departmentStats.has(dept)) {
         departmentStats.set(dept, { scheduled: 0, checkedIn: 0, present: 0 })
       }
       const stats = departmentStats.get(dept)!
       stats.scheduled++
-      if (checkedInStaffIds.has(s.staffId)) {
+      if (checkedInStaffIds.has(s.id)) {
         stats.checkedIn++
       }
-      if (currentlyInOffice.includes(s.staffId)) {
+      if (currentlyInOffice.includes(s.id)) {
         stats.present++
       }
     })
