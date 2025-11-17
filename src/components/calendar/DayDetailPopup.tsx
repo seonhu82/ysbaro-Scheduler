@@ -72,6 +72,7 @@ interface DayDetailPopupProps {
   year?: number
   month?: number
   status?: 'DRAFT' | 'DEPLOYED'
+  departmentFilter?: 'all' | 'auto' | 'manual'
 }
 
 // 드래그 가능한 직원 카드 컴포넌트
@@ -209,6 +210,7 @@ export function DayDetailPopup({
   year,
   month,
   status,
+  departmentFilter,
 }: DayDetailPopupProps) {
   const { toast } = useToast()
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
@@ -255,6 +257,9 @@ export function DayDetailPopup({
         }
         if (status) {
           apiUrl += `&status=${status}`
+        }
+        if (departmentFilter && departmentFilter !== 'all') {
+          apiUrl += `&departmentType=${departmentFilter}`
         }
 
         const [scheduleRes, doctorsRes, staffRes] = await Promise.all([
@@ -361,7 +366,7 @@ export function DayDetailPopup({
     }
 
     fetchDaySchedule()
-  }, [date, isOpen, year, month, status])
+  }, [date, isOpen, year, month, status, departmentFilter])
 
   const handleSave = async (skipValidation: boolean | any = false) => {
     if (!schedule) return
@@ -1153,7 +1158,14 @@ export function DayDetailPopup({
                           return acc
                         }, {} as Record<string, typeof schedule.staff>)
 
-                        return Object.entries(groupedByDept).map(([dept, staffList]) => (
+                        // 부서 정렬 (departmentOrder 사용)
+                        const sortedDepts = Object.entries(groupedByDept).sort(([, a], [, b]) => {
+                          const orderA = a[0]?.departmentOrder ?? 999
+                          const orderB = b[0]?.departmentOrder ?? 999
+                          return orderA - orderB
+                        })
+
+                        return sortedDepts.map(([dept, staffList]) => (
                           <div key={dept}>
                             <div className="text-xs font-semibold text-gray-600 mb-1.5 px-1">
                               {dept} ({staffList.length}명)
@@ -1185,16 +1197,42 @@ export function DayDetailPopup({
                       연차 ({schedule?.annualLeave?.length || 0}명)
                     </h3>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {schedule?.annualLeave && schedule.annualLeave.length > 0 ? (
-                      schedule.annualLeave.map((staff) => (
-                        <DraggableStaffCard
-                          key={staff.id}
-                          staff={staff}
-                          status="annual"
-                          isEditing={false}
-                        />
-                      ))
+                      (() => {
+                        // 부서별로 그룹화
+                        const groupedByDept = schedule.annualLeave.reduce((acc, staff) => {
+                          const dept = staff.departmentName || '미지정'
+                          if (!acc[dept]) acc[dept] = []
+                          acc[dept].push(staff)
+                          return acc
+                        }, {} as Record<string, typeof schedule.annualLeave>)
+
+                        // 부서 정렬 (departmentOrder 사용)
+                        const sortedDepts = Object.entries(groupedByDept).sort(([, a], [, b]) => {
+                          const orderA = a[0]?.departmentOrder ?? 999
+                          const orderB = b[0]?.departmentOrder ?? 999
+                          return orderA - orderB
+                        })
+
+                        return sortedDepts.map(([dept, staffList]) => (
+                          <div key={dept}>
+                            <div className="text-xs font-semibold text-gray-600 mb-1.5 px-1">
+                              {dept} ({staffList.length}명)
+                            </div>
+                            <div className="space-y-2">
+                              {staffList.map((staff) => (
+                                <DraggableStaffCard
+                                  key={staff.id}
+                                  staff={staff}
+                                  status="annual"
+                                  isEditing={false}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      })()
                     ) : (
                       <p className="text-sm text-gray-500">연차 직원이 없습니다</p>
                     )}
@@ -1213,16 +1251,42 @@ export function DayDetailPopup({
                       )}
                     </h3>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {schedule?.offDays && schedule.offDays.length > 0 ? (
-                      schedule.offDays.map((staff) => (
-                        <DraggableStaffCard
-                          key={staff.id}
-                          staff={staff}
-                          status="off"
-                          isEditing={false}
-                        />
-                      ))
+                      (() => {
+                        // 부서별로 그룹화
+                        const groupedByDept = schedule.offDays.reduce((acc, staff) => {
+                          const dept = staff.departmentName || '미지정'
+                          if (!acc[dept]) acc[dept] = []
+                          acc[dept].push(staff)
+                          return acc
+                        }, {} as Record<string, typeof schedule.offDays>)
+
+                        // 부서 정렬 (departmentOrder 사용)
+                        const sortedDepts = Object.entries(groupedByDept).sort(([, a], [, b]) => {
+                          const orderA = a[0]?.departmentOrder ?? 999
+                          const orderB = b[0]?.departmentOrder ?? 999
+                          return orderA - orderB
+                        })
+
+                        return sortedDepts.map(([dept, staffList]) => (
+                          <div key={dept}>
+                            <div className="text-xs font-semibold text-gray-600 mb-1.5 px-1">
+                              {dept} ({staffList.length}명)
+                            </div>
+                            <div className="space-y-2">
+                              {staffList.map((staff) => (
+                                <DraggableStaffCard
+                                  key={staff.id}
+                                  staff={staff}
+                                  status="off"
+                                  isEditing={false}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      })()
                     ) : (
                       <p className="text-sm text-gray-500">오프 직원이 없습니다</p>
                     )}

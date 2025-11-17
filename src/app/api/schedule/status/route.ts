@@ -43,7 +43,9 @@ export async function GET(request: NextRequest) {
         month: true,
         status: true,
         createdAt: true,
-        deployedAt: true
+        deployedAt: true,
+        deployedStartDate: true,
+        deployedEndDate: true
       }
     })
 

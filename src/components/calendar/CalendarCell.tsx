@@ -20,6 +20,7 @@ interface CalendarCellProps {
   isCurrentMonth: boolean
   schedule?: DaySchedule
   onClick?: () => void
+  filterType?: 'all' | 'auto' | 'manual'
 }
 
 export function CalendarCell({
@@ -27,6 +28,7 @@ export function CalendarCell({
   isCurrentMonth,
   schedule,
   onClick,
+  filterType = 'all',
 }: CalendarCellProps) {
   const today = isToday(date)
   const weekend = isWeekend(date)
@@ -88,18 +90,30 @@ export function CalendarCell({
                 )}
               </div>
 
-              {/* 배치인력 / 필요인력 */}
-              <div className="text-xs">
-                <span className={cn(
-                  'font-medium',
-                  isCurrentMonth
-                    ? (schedule.assignedStaff >= schedule.requiredStaff ? 'text-green-600' : 'text-amber-600')
-                    : 'text-gray-500'
-                )}>
-                  {schedule.assignedStaff}
-                </span>
-                <span className="text-gray-500"> / {schedule.requiredStaff}</span>
-              </div>
+              {/* 배치인력 / 필요인력 (수동 배치 부서는 필요인력 숨김) */}
+              {filterType !== 'manual' && (
+                <div className="text-xs">
+                  <span className={cn(
+                    'font-medium',
+                    isCurrentMonth
+                      ? (schedule.assignedStaff >= schedule.requiredStaff ? 'text-green-600' : 'text-amber-600')
+                      : 'text-gray-500'
+                  )}>
+                    {schedule.assignedStaff}
+                  </span>
+                  <span className="text-gray-500"> / {schedule.requiredStaff}</span>
+                </div>
+              )}
+              {filterType === 'manual' && (
+                <div className="text-xs">
+                  <span className={cn(
+                    'font-medium text-gray-700',
+                    !isCurrentMonth && 'text-gray-500'
+                  )}>
+                    배치: {schedule.assignedStaff}명
+                  </span>
+                </div>
+              )}
 
               {/* 연차/오프 */}
               <div className="flex gap-2 text-xs">

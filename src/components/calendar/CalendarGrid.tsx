@@ -23,6 +23,7 @@ interface CalendarGridProps {
   month: number
   scheduleData?: ScheduleData
   onDateClick?: (date: Date) => void
+  filterType?: 'all' | 'auto' | 'manual'
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
@@ -32,6 +33,7 @@ export function CalendarGrid({
   month,
   scheduleData = {},
   onDateClick,
+  filterType = 'all',
 }: CalendarGridProps) {
   const dates = getCalendarGridDates(year, month)
 
@@ -65,6 +67,7 @@ export function CalendarGrid({
               isCurrentMonth={isCurrentMonthDate}
               schedule={schedule}
               onClick={() => onDateClick?.(date)}
+              filterType={filterType}
             />
           )
         })}

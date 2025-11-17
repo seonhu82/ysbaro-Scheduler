@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     const year = parseInt(searchParams.get('year') || '')
     const month = parseInt(searchParams.get('month') || '')
     const statusParam = searchParams.get('status') // 'DRAFT' or 'DEPLOYED'
+    const departmentType = searchParams.get('departmentType') // 'auto' | 'manual' | null
 
     if (!year || !month || month < 1 || month > 12) {
       return NextResponse.json(
@@ -29,6 +30,19 @@ export async function GET(request: NextRequest) {
     }
 
     const clinicId = (session.user as any).clinicId
+
+    // 부서 필터링
+    let departmentNames: string[] | undefined = undefined
+    if (departmentType === 'auto' || departmentType === 'manual') {
+      const departments = await prisma.department.findMany({
+        where: {
+          clinicId,
+          useAutoAssignment: departmentType === 'auto'
+        },
+        select: { name: true }
+      })
+      departmentNames = departments.map(d => d.name)
+    }
 
     // 스케줄 조회 조건 결정
     // status 파라미터가 없으면 DEPLOYED만 조회 (메인 대시보드용)
@@ -43,107 +57,46 @@ export async function GET(request: NextRequest) {
     const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 })
     const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
 
-    // 현재 월 스케줄 조회
-    const schedule = await prisma.schedule.findFirst({
+    // **의사 스케줄 기준으로 조회**
+    // 캘린더 범위의 모든 의사 스케줄 조회
+    const doctorSchedules = await prisma.scheduleDoctor.findMany({
       where: {
-        clinicId,
-        year,
-        month,
-        status: scheduleStatus as any
+        schedule: {
+          clinicId,
+          status: scheduleStatus as any
+        },
+        date: {
+          gte: calendarStart,
+          lte: calendarEnd
+        }
       },
       include: {
-        doctors: {
-          include: {
-            doctor: true
-          }
-        },
-        staffAssignments: {
-          include: {
-            staff: true
-          }
-        }
+        doctor: true,
+        schedule: true
       }
     })
 
-    // 이전/다음 달 DEPLOYED는 현재 월 스케줄이 있을 때만 조회
-    // (CONFIRMED나 DRAFT 스케줄이 없으면 이전 달 데이터도 가져오지 않음)
-    let prevSchedule = null
-    let nextSchedule = null
+    // 의사 스케줄이 속한 Schedule ID들 수집
+    const scheduleIds = [...new Set(doctorSchedules.map(ds => ds.scheduleId))]
 
-    if (schedule) {
-      // 이전 달의 DEPLOYED 스케줄 조회 (캘린더 시작 ~ 현재 월 끝까지)
-      // 현재 달에 속하지만 이전 달 스케줄에 포함된 날짜도 가져옴 (예: 2월 1일이 1월 DEPLOYED에 있는 경우)
-      const prevMonth = month === 1 ? 12 : month - 1
-      const prevYear = month === 1 ? year - 1 : year
-      prevSchedule = await prisma.schedule.findFirst({
+    // 해당 Schedule들의 직원 배정 조회
+    const staffAssignments = scheduleIds.length > 0 ? await prisma.staffAssignment.findMany({
       where: {
-        clinicId,
-        year: prevYear,
-        month: prevMonth,
-        status: 'DEPLOYED'
+        scheduleId: { in: scheduleIds },
+        date: {
+          gte: calendarStart,
+          lte: calendarEnd
+        },
+        ...(departmentNames ? {
+          staff: {
+            departmentName: { in: departmentNames }
+          }
+        } : {})
       },
       include: {
-        doctors: {
-          include: {
-            doctor: true
-          },
-          where: {
-            date: {
-              gte: calendarStart,
-              lte: monthEnd // 현재 월 끝까지 (이전 달에서 현재 월 포함된 날짜도 가져옴)
-            }
-          }
-        },
-        staffAssignments: {
-          include: {
-            staff: true
-          },
-          where: {
-            date: {
-              gte: calendarStart,
-              lte: monthEnd
-            }
-          }
-        }
+        staff: true
       }
-      })
-
-      // 다음 달의 DEPLOYED 스케줄 조회 (캘린더 범위에 포함되는 날짜만)
-      const nextMonth = month === 12 ? 1 : month + 1
-      const nextYear = month === 12 ? year + 1 : year
-      nextSchedule = await prisma.schedule.findFirst({
-        where: {
-          clinicId,
-          year: nextYear,
-          month: nextMonth,
-          status: 'DEPLOYED'
-        },
-        include: {
-          doctors: {
-            include: {
-              doctor: true
-            },
-            where: {
-              date: {
-                gt: monthEnd,
-                lte: calendarEnd
-              }
-            }
-          },
-          staffAssignments: {
-            include: {
-              staff: true
-            },
-            where: {
-              date: {
-                gt: monthEnd,
-                lte: calendarEnd
-              }
-            }
-          }
-        }
-      })
-    }
+    }) : []
 
     // 연차/오프 신청 조회 (캘린더 전체 범위)
     const leaves = await prisma.leaveApplication.findMany({
@@ -152,7 +105,12 @@ export async function GET(request: NextRequest) {
         date: {
           gte: calendarStart,
           lte: calendarEnd
-        }
+        },
+        ...(departmentNames ? {
+          staff: {
+            departmentName: { in: departmentNames }
+          }
+        } : {})
       },
       include: {
         staff: true
@@ -196,30 +154,9 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 모든 스케줄 데이터 병합 (현재 월 우선, 중복 제거)
-    const currentDoctors = schedule?.doctors || []
-    const currentStaff = schedule?.staffAssignments || []
-
-    // 현재 월 스케줄에 이미 있는 날짜는 제외
-    const currentDoctorDates = new Set(currentDoctors.map(d => new Date(d.date).toISOString().split('T')[0]))
-    const currentStaffDates = new Set(currentStaff.map(s => new Date(s.date).toISOString().split('T')[0]))
-
-    const prevDoctors = (prevSchedule?.doctors || []).filter(d =>
-      !currentDoctorDates.has(new Date(d.date).toISOString().split('T')[0])
-    )
-    const prevStaff = (prevSchedule?.staffAssignments || []).filter(s =>
-      !currentStaffDates.has(new Date(s.date).toISOString().split('T')[0])
-    )
-
-    const nextDoctors = (nextSchedule?.doctors || []).filter(d =>
-      !currentDoctorDates.has(new Date(d.date).toISOString().split('T')[0])
-    )
-    const nextStaff = (nextSchedule?.staffAssignments || []).filter(s =>
-      !currentStaffDates.has(new Date(s.date).toISOString().split('T')[0])
-    )
-
-    const allDoctors = [...currentDoctors, ...prevDoctors, ...nextDoctors]
-    const allStaffAssignments = [...currentStaff, ...prevStaff, ...nextStaff]
+    // 의사 스케줄 기준으로 이미 조회했으므로 그대로 사용
+    const allDoctors = doctorSchedules
+    const allStaffAssignments = staffAssignments
 
     // 날짜별로 의사 스케줄 그룹화
     const doctorsByDate = new Map<string, typeof allDoctors>()
@@ -245,7 +182,8 @@ export async function GET(request: NextRequest) {
     const scheduleData: { [key: string]: any } = {}
 
     doctorsByDate.forEach((doctorSchedules, dateKey) => {
-      const doctorShortNames = doctorSchedules.map(ds => ds.doctor.shortName)
+      // 중복 제거 (같은 날짜에 여러 Schedule의 데이터가 있을 수 있음)
+      const doctorShortNames = [...new Set(doctorSchedules.map(ds => ds.doctor.shortName))]
       const hasNightShift = doctorSchedules.some(ds => ds.hasNightShift)
 
       // 의사 조합 찾기
@@ -297,6 +235,11 @@ export async function GET(request: NextRequest) {
         }
       })
 
+      // 디버깅: OFF 카운트 로그
+      if (offCount > 0) {
+        console.log(`📊 ${dateKey}: OFF ${offCount}명, 배치 ${assignedStaff}명, 연차 ${annualLeaveCount}명`)
+      }
+
       // ANNUAL은 StaffAssignment에 없을 수 있으므로 LeaveApplication에서 직접 카운트
       const annualOnlyStaff = dayLeaves.filter(leave =>
         leave.leaveType === 'ANNUAL' &&
@@ -335,7 +278,14 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      scheduleData
+      scheduleData,
+      staffAssignments: allStaffAssignments.map(sa => ({
+        id: sa.id,
+        scheduleId: sa.scheduleId,
+        staffId: sa.staffId,
+        date: sa.date.toISOString(),
+        shiftType: sa.shiftType
+      }))
     })
   } catch (error) {
     console.error('Error fetching monthly view:', error)

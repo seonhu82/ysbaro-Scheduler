@@ -6,6 +6,7 @@ import { CalendarGrid } from './CalendarGrid'
 import { DayDetailPopup } from './DayDetailPopup'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Copy, Share2, MessageCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 // import { PatternApplyButton } from './PatternApplyButton' // 메인 캘린더에서는 미사용
@@ -44,6 +45,7 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
   const [deployedUrl, setDeployedUrl] = useState<string | null>(null)
   const [deploying, setDeploying] = useState(false)
   const [kakaoApiKey, setKakaoApiKey] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'all' | 'auto' | 'manual'>('auto')
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth() + 1
@@ -70,7 +72,8 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
       setLoading(true)
       try {
         // monthly-view API 사용 (이미 offCount를 정확하게 계산함)
-        const response = await fetch(`/api/schedule/monthly-view?year=${year}&month=${month}`, { cache: 'no-store' })
+        const departmentTypeParam = activeTab !== 'all' ? `&departmentType=${activeTab}` : ''
+        const response = await fetch(`/api/schedule/monthly-view?year=${year}&month=${month}${departmentTypeParam}`, { cache: 'no-store' })
         const result = await response.json()
 
         console.log('Monthly-view API response:', result)
@@ -88,7 +91,7 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
     }
 
     fetchScheduleData()
-  }, [year, month])
+  }, [year, month, activeTab])
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(year, month - 2, 1))
@@ -277,6 +280,14 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
         </div>
       </div>
 
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'all' | 'auto' | 'manual')} className="mb-6">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="auto">자동 배치 부서</TabsTrigger>
+          <TabsTrigger value="manual">수동 배치 부서</TabsTrigger>
+          <TabsTrigger value="all">전체</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {loading && (
         <div className="text-center py-8">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
@@ -291,6 +302,7 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
             month={month}
             scheduleData={scheduleData}
             onDateClick={handleDateClick}
+            filterType={activeTab}
           />
 
           <DayDetailPopup
@@ -298,6 +310,9 @@ export function CalendarView({ onDateClick }: CalendarViewProps) {
             isOpen={isPopupOpen}
             onClose={handleClosePopup}
             onSave={handleSaveSchedule}
+            year={year}
+            month={month}
+            departmentFilter={activeTab}
           />
 
           {/* 배포 버튼 - 하단 */}
