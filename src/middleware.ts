@@ -124,6 +124,11 @@ export async function middleware(request: NextRequest) {
   const publicPaths = [
     '/schedule-view',
     '/leave-apply',
+    '/tablet',
+    '/biometric-setup',
+    '/api/public',
+    '/api/attendance/check',
+    '/api/biometric',
   ]
 
   const isPublic = publicPaths.some(path => pathname.startsWith(path))

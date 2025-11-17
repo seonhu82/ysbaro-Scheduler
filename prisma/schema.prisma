@@ -83,6 +83,10 @@ model Clinic {
   address        String?
   phone          String?
   setupCompleted Boolean  @default(false) // 초기 설정 완료 여부
+
+  // 출퇴근 체크 방법 설정 (QR_CODE, BIOMETRIC_FINGERPRINT, BIOMETRIC_FACE)
+  attendanceCheckMethods String[] @default(["QR_CODE", "BIOMETRIC_FINGERPRINT", "BIOMETRIC_FACE"])
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -101,6 +105,7 @@ model Clinic {
   leaveApplications     LeaveApplication[]
   applicationLinks      ApplicationLink[]
   scheduleViewLinks     ScheduleViewLink[]
+  manualAssignLinks     ManualAssignLink[]
   deploymentSettings    DeploymentSettings?
   ruleSettings          RuleSettings?
   fairnessSettings      FairnessSettings?
@@ -706,6 +711,22 @@ model ScheduleViewLink {
 
   @@index([clinicId])
   @@index([token])
+}
+
+model ManualAssignLink {
+  id             String   @id @default(cuid())
+  clinicId       String
+  clinic         Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  token          String   @unique
+  departmentName String
+  year           Int
+  month          Int
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@index([clinicId])
+  @@index([token])
+  @@index([departmentName])
 }
 
 model DeploymentSettings {
