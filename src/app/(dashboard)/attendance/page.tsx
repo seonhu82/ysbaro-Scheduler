@@ -361,7 +361,7 @@ export default function AttendanceDashboardPage() {
             <CardContent>
               {loading ? (
                 <div className="text-center py-8 text-gray-500">로딩 중...</div>
-              ) : stats && stats.scheduledStaffList.length > 0 ? (
+              ) : stats && stats.scheduledStaffList && stats.scheduledStaffList.length > 0 ? (
                 <div className="space-y-4 max-h-[600px] overflow-y-auto">
                   {/* 부서별로 그룹화 */}
                   {Object.entries(
@@ -448,7 +448,7 @@ export default function AttendanceDashboardPage() {
             <CardContent>
               {loading ? (
                 <div className="text-center py-8 text-gray-500">로딩 중...</div>
-              ) : stats && stats.checkedInStaffList.length > 0 ? (
+              ) : stats && stats.checkedInStaffList && stats.checkedInStaffList.length > 0 ? (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {stats.checkedInStaffList.map((staff, index) => (
                     <div
@@ -506,7 +506,7 @@ export default function AttendanceDashboardPage() {
           </Card>
 
           {/* 부서별 출근 현황 */}
-          {stats && stats.byDepartment.length > 0 && (
+          {stats && stats.byDepartment && stats.byDepartment.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
