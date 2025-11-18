@@ -48,15 +48,73 @@ export default function MonthlyWizardPage() {
     schedule: null
   })
 
+  // 원장 스케줄이 있는 가장 최근(미래) 달 찾기
+  const findLatestDoctorSchedule = async () => {
+    const today = new Date()
+    const currentYear = today.getFullYear()
+    const currentMonth = today.getMonth() + 1
+
+    let latestSchedule = null
+
+    // 현재 달부터 +3개월까지 확인 (역순)
+    for (let offset = 3; offset >= 0; offset--) {
+      const checkDate = new Date(currentYear, currentMonth - 1 + offset, 1)
+      const checkYear = checkDate.getFullYear()
+      const checkMonth = checkDate.getMonth() + 1
+
+      try {
+        const response = await fetch(`/api/schedule/status?year=${checkYear}&month=${checkMonth}`)
+        const result = await response.json()
+
+        if (result.success && result.schedule) {
+          // 원장 스케줄이 있으면 저장 (가장 미래 것을 우선)
+          latestSchedule = { year: checkYear, month: checkMonth }
+          break
+        }
+      } catch (error) {
+        console.error(`Failed to check schedule for ${checkYear}-${checkMonth}:`, error)
+      }
+    }
+
+    // 원장 스케줄이 있으면 반환, 없으면 현재 달 반환
+    return latestSchedule || { year: currentYear, month: currentMonth }
+  }
+
   // 페이지 로드 시 기존 스케줄 확인 및 적절한 단계로 이동
   useEffect(() => {
+    const initializeAndCheckSchedule = async () => {
+      try {
+        // URL에 year/month 파라미터가 없으면 원장 스케줄이 있는 가장 최근 달 찾기
+        if (!searchParams.get('year') || !searchParams.get('month')) {
+          setLoading(true)
+          const { year, month } = await findLatestDoctorSchedule()
+          console.log(`📅 원장 스케줄이 있는 가장 최근 달: ${year}년 ${month}월`)
+          router.replace(`/schedule/monthly-wizard?year=${year}&month=${month}`)
+          return
+        }
+
+        // URL 파라미터가 있으면 해당 스케줄 확인
+        checkExistingSchedule()
+      } catch (error) {
+        console.error('Failed to initialize page:', error)
+        setLoading(false)
+      }
+    }
+
     const checkExistingSchedule = async () => {
       try {
         setLoading(true)
 
+        // URL에서 직접 year, month 가져오기
+        const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString())
+        const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString())
+
+        // wizardState 업데이트
+        updateWizardState({ year, month })
+
         // 스케줄 상태 조회
         const scheduleResponse = await fetch(
-          `/api/schedule/status?year=${wizardState.year}&month=${wizardState.month}`
+          `/api/schedule/status?year=${year}&month=${month}`
         )
         const scheduleStatus = await scheduleResponse.json()
 
@@ -86,9 +144,9 @@ export default function MonthlyWizardPage() {
         const hasDoctorSchedule = schedule.status === 'DRAFT' || schedule.status === 'CONFIRMED'
 
         // 직원 배치 조회 (staff-stats API 사용)
-        console.log(`🔍 직원 배치 조회: /api/schedule/staff-stats?year=${wizardState.year}&month=${wizardState.month}&status=${schedule.status}`)
+        console.log(`🔍 직원 배치 조회: /api/schedule/staff-stats?year=${year}&month=${month}&status=${schedule.status}`)
         const staffStatsResponse = await fetch(
-          `/api/schedule/staff-stats?year=${wizardState.year}&month=${wizardState.month}&status=${schedule.status}`
+          `/api/schedule/staff-stats?year=${year}&month=${month}&status=${schedule.status}`
         )
         const staffStatsData = await staffStatsResponse.json()
         console.log('🔍 staff-stats 응답:', staffStatsData)
@@ -126,8 +184,8 @@ export default function MonthlyWizardPage() {
       }
     }
 
-    checkExistingSchedule()
-  }, [wizardState.year, wizardState.month])
+    initializeAndCheckSchedule()
+  }, [searchParams])
 
   const steps = [
     { number: 1, title: '원장 스케줄 확인', description: '배치된 원장 스케줄 및 슬롯 확인' },
@@ -215,14 +273,36 @@ export default function MonthlyWizardPage() {
     )
   }
 
+  const goToNextMonth = () => {
+    const nextMonth = wizardState.month === 12 ? 1 : wizardState.month + 1
+    const nextYear = wizardState.month === 12 ? wizardState.year + 1 : wizardState.year
+    router.push(`/schedule/monthly-wizard?year=${nextYear}&month=${nextMonth}`)
+  }
+
+  const goToPrevMonth = () => {
+    const prevMonth = wizardState.month === 1 ? 12 : wizardState.month - 1
+    const prevYear = wizardState.month === 1 ? wizardState.year - 1 : wizardState.year
+    router.push(`/schedule/monthly-wizard?year=${prevYear}&month=${prevMonth}`)
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* 헤더 */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-          <Calendar className="w-8 h-8" />
-          직원 스케줄 배치
-        </h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <Calendar className="w-8 h-8" />
+            직원 스케줄 배치
+          </h1>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={goToPrevMonth}>
+              이전 달
+            </Button>
+            <Button variant="outline" onClick={goToNextMonth}>
+              다음 달
+            </Button>
+          </div>
+        </div>
         <p className="text-gray-600">
           {wizardState.year}년 {wizardState.month}월 직원 스케줄을 자동으로 생성합니다
         </p>

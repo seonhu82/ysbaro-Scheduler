@@ -29,12 +29,6 @@ const navigation = [
         icon: '👥',
         roles: ['ADMIN', 'MANAGER'],
       },
-      {
-        name: '슬롯 현황',
-        href: '/schedule/slots',
-        icon: '📊',
-        roles: ['ADMIN', 'MANAGER'],
-      },
     ]
   },
   {
@@ -64,7 +58,7 @@ const navigation = [
     roles: ['ADMIN', 'MANAGER'],
   },
   {
-    name: '공정성 모니터링',
+    name: '형평성 모니터링',
     href: '/fairness',
     icon: '⚖️',
     roles: ['ADMIN', 'MANAGER'],
@@ -136,7 +130,7 @@ const navigation = [
         roles: ['ADMIN'],
       },
       {
-        name: '공정성 가중치',
+        name: '형평성 설정',
         href: '/settings/fairness',
         icon: '⚖️',
         roles: ['ADMIN'],

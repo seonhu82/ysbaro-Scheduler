@@ -40,8 +40,8 @@ export function CreatePeriodDialog({ open, onClose }: CreatePeriodDialogProps) {
         throw new Error('만료 날짜를 선택해주세요.')
       }
 
-      // 해당 월의 시작일과 종료일 계산
-      const startDate = new Date(formData.year, formData.month - 1, 1)
+      // 신청 시작일 = 현재 날짜, 만료일 = 사용자가 선택한 날짜
+      const startDate = new Date()
       const endDate = new Date(formData.expiresAt)
 
       const response = await fetch('/api/leave-management/period', {

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Calendar, Users, TrendingUp, AlertCircle, Play, BarChart3, Edit } from 'lucide-react'
+import { Calendar, Users, TrendingUp, AlertCircle, Play, Edit } from 'lucide-react'
 import Link from 'next/link'
 import { useToast } from '@/hooks/use-toast'
 
@@ -158,7 +158,7 @@ export default function ScheduleManagementPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold mb-2">스케줄 관리</h1>
         <p className="text-gray-600">
-          원장 및 직원 스케줄 배치, 슬롯 현황을 관리합니다
+          원장 및 직원 스케줄 배치를 관리합니다
         </p>
       </div>
 
@@ -190,22 +190,6 @@ export default function ScheduleManagementPage() {
                 <div className="flex-1">
                   <h3 className="font-semibold">직원 스케줄 배치</h3>
                   <p className="text-sm text-gray-500">형평성 기반 자동 배정</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/schedule/slots">
-          <Card className="hover:bg-gray-50 transition cursor-pointer">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="bg-green-100 p-3 rounded-lg">
-                  <BarChart3 className="w-6 h-6 text-green-600" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">슬롯 현황</h3>
-                  <p className="text-sm text-gray-500">구분별 가용 슬롯</p>
                 </div>
               </div>
             </CardContent>

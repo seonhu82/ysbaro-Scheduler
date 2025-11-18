@@ -163,34 +163,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 병원별 공용 토큰 생성 또는 조회
-    // 이미 존재하는 공용 토큰이 있으면 재사용, 없으면 새로 생성
-    let sharedToken = await prisma.applicationLink.findFirst({
+    // 해당 year/month에 대한 ApplicationLink가 이미 있는지 확인
+    let applicationLink = await prisma.applicationLink.findFirst({
       where: {
         clinicId: session.user.clinicId,
-        staffId: null // 전체 직원용
-      },
-      select: {
-        token: true
-      },
-      orderBy: {
-        createdAt: 'asc' // 가장 처음 생성된 토큰 사용
-      }
-    })
-
-    // 공용 토큰이 없으면 새로 생성 (병원당 1회만)
-    const token = sharedToken?.token ?? crypto.randomBytes(16).toString('hex')
-
-    // Create ApplicationLink (신청 링크)
-    const applicationLink = await prisma.applicationLink.create({
-      data: {
-        clinicId: session.user.clinicId,
-        staffId: null, // Null means link is for all staff
-        token, // 병원별 공용 토큰 사용
+        staffId: null, // 전체 직원용
         year: parseInt(year),
-        month: parseInt(month),
-        expiresAt: new Date(endDate),
-        status: 'ACTIVE'
+        month: parseInt(month)
       },
       include: {
         _count: {
@@ -200,6 +179,48 @@ export async function POST(request: NextRequest) {
         }
       }
     })
+
+    if (applicationLink) {
+      // 이미 있으면 만료일과 상태만 업데이트
+      applicationLink = await prisma.applicationLink.update({
+        where: {
+          id: applicationLink.id
+        },
+        data: {
+          expiresAt: new Date(endDate),
+          status: 'ACTIVE'
+        },
+        include: {
+          _count: {
+            select: {
+              applications: true
+            }
+          }
+        }
+      })
+    } else {
+      // 없으면 새로 생성 (year/month마다 고유한 토큰 생성)
+      const token = crypto.randomBytes(16).toString('hex')
+
+      applicationLink = await prisma.applicationLink.create({
+        data: {
+          clinicId: session.user.clinicId,
+          staffId: null, // Null means link is for all staff
+          token, // year/month마다 고유한 토큰 생성
+          year: parseInt(year),
+          month: parseInt(month),
+          expiresAt: new Date(endDate),
+          status: 'ACTIVE'
+        },
+        include: {
+          _count: {
+            select: {
+              applications: true
+            }
+          }
+        }
+      })
+    }
 
     // Also create LeavePeriod for tracking
     await prisma.leavePeriod.create({

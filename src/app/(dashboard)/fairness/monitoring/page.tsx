@@ -16,54 +16,55 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { TrendingUp, TrendingDown, AlertTriangle, Users, Calendar } from 'lucide-react'
+import { AlertTriangle, Users, Calendar } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface StaffFairness {
   staffId: string
   staffName: string
   categoryName: string
-  overallScore: number
+  departmentName: string
   dimensions: {
-    night: { score: number; status: string }
-    weekend: { score: number; status: string }
-    holiday: { score: number; status: string }
-    holidayAdjacent: { score: number; status: string }
+    total: { actual: number; baseline: number; deviation: number; status: string }
+    night: { actual: number; baseline: number; deviation: number; status: string }
+    weekend: { actual: number; baseline: number; deviation: number; status: string }
+    holiday: { actual: number; baseline: number; deviation: number; status: string }
+    holidayAdjacent: { actual: number; baseline: number; deviation: number; status: string }
   }
 }
 
 interface CategoryStats {
   categoryName: string
-  averageScore: number
   staffCount: number
-  minScore: number
-  maxScore: number
+  avgTotal: number
+  avgNight: number
+  avgWeekend: number
+  avgHoliday: number
+  avgHolidayAdjacent: number
 }
 
 export default function FairnessMonitoringPage() {
   const { toast } = useToast()
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [staffFairness, setStaffFairness] = useState<StaffFairness[]>([])
   const [categoryStats, setCategoryStats] = useState<CategoryStats[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL')
+  const [useHolidayFairness, setUseHolidayFairness] = useState(false)
 
   useEffect(() => {
     fetchFairnessData()
-  }, [selectedYear, selectedMonth])
+  }, [])
 
   const fetchFairnessData = async () => {
     try {
       setLoading(true)
-      const response = await fetch(
-        `/api/fairness/monitoring?year=${selectedYear}&month=${selectedMonth}`
-      )
+      const response = await fetch('/api/fairness/monitoring')
       const data = await response.json()
 
       if (data.success) {
         setStaffFairness(data.staffFairness || [])
         setCategoryStats(data.categoryStats || [])
+        setUseHolidayFairness(data.useHolidayFairness || false)
       } else {
         toast({
           variant: 'destructive',
@@ -83,27 +84,32 @@ export default function FairnessMonitoringPage() {
     }
   }
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'bg-red-500'
-    if (score >= 60) return 'bg-yellow-500'
-    if (score >= 40) return 'bg-green-500'
-    if (score >= 20) return 'bg-blue-500'
-    return 'bg-gray-500'
+  const getDeviationColor = (deviation: number) => {
+    // 편차: 양수 = 덜 일함 (부족), 음수 = 많이 일함 (과다)
+    if (deviation >= 3) return 'bg-blue-500' // 크게 부족
+    if (deviation >= 1) return 'bg-green-500' // 약간 부족
+    if (deviation >= -1) return 'bg-gray-400' // 균형
+    if (deviation >= -3) return 'bg-yellow-500' // 약간 과다
+    return 'bg-red-500' // 크게 과다
   }
 
-  const getScoreTextColor = (score: number) => {
-    if (score >= 80) return 'text-red-600'
-    if (score >= 60) return 'text-yellow-600'
-    if (score >= 40) return 'text-green-600'
-    if (score >= 20) return 'text-blue-600'
-    return 'text-gray-600'
+  const getDeviationTextColor = (deviation: number) => {
+    if (deviation >= 3) return 'text-blue-600'
+    if (deviation >= 1) return 'text-green-600'
+    if (deviation >= -1) return 'text-gray-600'
+    if (deviation >= -3) return 'text-yellow-600'
+    return 'text-red-600'
   }
 
   const filteredStaff = selectedCategory === 'ALL'
     ? staffFairness
     : staffFairness.filter(s => s.categoryName === selectedCategory)
 
-  const warningStaff = staffFairness.filter(s => s.overallScore < 30 || s.overallScore > 80)
+  // 경고: 야간/주말 편차가 -3 이하 또는 3 이상인 직원
+  const warningStaff = staffFairness.filter(s =>
+    Math.abs(s.dimensions.night.deviation) >= 3 ||
+    Math.abs(s.dimensions.weekend.deviation) >= 3
+  )
 
   if (loading) {
     return (
@@ -124,47 +130,12 @@ export default function FairnessMonitoringPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">형평성 모니터링</h1>
-          <p className="text-gray-600 mt-1">전체 직원 형평성 현황 및 분석</p>
+          <p className="text-gray-600 mt-1">자동배치 대상 직원의 누적 편차 현황</p>
         </div>
 
-        {/* 월 선택 */}
-        <div className="flex items-center gap-3">
-          <Select
-            value={selectedYear.toString()}
-            onValueChange={(value) => setSelectedYear(parseInt(value))}
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[2024, 2025, 2026].map(year => (
-                <SelectItem key={year} value={year.toString()}>
-                  {year}년
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={selectedMonth.toString()}
-            onValueChange={(value) => setSelectedMonth(parseInt(value))}
-          >
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                <SelectItem key={month} value={month.toString()}>
-                  {month}월
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Button onClick={fetchFairnessData} variant="outline">
-            새로고침
-          </Button>
-        </div>
+        <Button onClick={fetchFairnessData} variant="outline">
+          새로고침
+        </Button>
       </div>
 
       {/* 경고 알림 */}
@@ -186,17 +157,21 @@ export default function FairnessMonitoringPage() {
                   <div className="flex items-center gap-3">
                     <div className="font-medium">{staff.staffName}</div>
                     <Badge variant="outline">{staff.categoryName}</Badge>
+                    <Badge variant="outline" className="text-xs">{staff.departmentName}</Badge>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className={`text-lg font-bold ${getScoreTextColor(staff.overallScore)}`}>
-                      {staff.overallScore}점
+                  <div className="flex items-center gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-500">야간: </span>
+                      <span className={`font-bold ${getDeviationTextColor(staff.dimensions.night.deviation)}`}>
+                        {staff.dimensions.night.deviation > 0 ? '+' : ''}{staff.dimensions.night.deviation.toFixed(1)}
+                      </span>
                     </div>
-                    {staff.overallScore < 30 && (
-                      <Badge className="bg-blue-500">근무 부족</Badge>
-                    )}
-                    {staff.overallScore > 80 && (
-                      <Badge className="bg-red-500">근무 과다</Badge>
-                    )}
+                    <div>
+                      <span className="text-gray-500">주말: </span>
+                      <span className={`font-bold ${getDeviationTextColor(staff.dimensions.weekend.deviation)}`}>
+                        {staff.dimensions.weekend.deviation > 0 ? '+' : ''}{staff.dimensions.weekend.deviation.toFixed(1)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -217,16 +192,44 @@ export default function FairnessMonitoringPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                <div className="flex items-end gap-2">
-                  <div className="text-3xl font-bold">{cat.averageScore}</div>
-                  <div className="text-sm text-gray-500 mb-1">평균</div>
+                <div className="text-xs text-gray-500 mb-2">
+                  총 {cat.staffCount}명 평균 편차
                 </div>
-                <div className="flex items-center justify-between text-sm text-gray-600">
-                  <div>최소: {cat.minScore}점</div>
-                  <div>최대: {cat.maxScore}점</div>
-                </div>
-                <div className="text-xs text-gray-500">
-                  총 {cat.staffCount}명
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <div className="text-gray-500">전체</div>
+                    <div className={`font-bold ${getDeviationTextColor(cat.avgTotal)}`}>
+                      {cat.avgTotal > 0 ? '+' : ''}{cat.avgTotal}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500">야간</div>
+                    <div className={`font-bold ${getDeviationTextColor(cat.avgNight)}`}>
+                      {cat.avgNight > 0 ? '+' : ''}{cat.avgNight}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500">주말</div>
+                    <div className={`font-bold ${getDeviationTextColor(cat.avgWeekend)}`}>
+                      {cat.avgWeekend > 0 ? '+' : ''}{cat.avgWeekend}
+                    </div>
+                  </div>
+                  {useHolidayFairness && (
+                    <>
+                      <div>
+                        <div className="text-gray-500">공휴일</div>
+                        <div className={`font-bold ${getDeviationTextColor(cat.avgHoliday)}`}>
+                          {cat.avgHoliday > 0 ? '+' : ''}{cat.avgHoliday}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-500">인접</div>
+                        <div className={`font-bold ${getDeviationTextColor(cat.avgHolidayAdjacent)}`}>
+                          {cat.avgHolidayAdjacent > 0 ? '+' : ''}{cat.avgHolidayAdjacent}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -271,24 +274,24 @@ export default function FairnessMonitoringPage() {
               {/* 범례 */}
               <div className="flex items-center gap-4 text-sm text-gray-600 pb-3 border-b">
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-gray-500 rounded"></div>
-                  <span>0-20</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                  <span>20-40</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-green-500 rounded"></div>
-                  <span>40-60</span>
+                  <div className="w-4 h-4 bg-red-500 rounded"></div>
+                  <span>크게 과다 (≤-3)</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 bg-yellow-500 rounded"></div>
-                  <span>60-80</span>
+                  <span>약간 과다 (-3~-1)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-red-500 rounded"></div>
-                  <span>80-100</span>
+                  <div className="w-4 h-4 bg-gray-400 rounded"></div>
+                  <span>균형 (-1~1)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-green-500 rounded"></div>
+                  <span>약간 부족 (1~3)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                  <span>크게 부족 (≥3)</span>
                 </div>
               </div>
 
@@ -303,33 +306,29 @@ export default function FairnessMonitoringPage() {
                     <div className="w-40 flex-shrink-0">
                       <div className="font-medium">{staff.staffName}</div>
                       <div className="text-xs text-gray-500">{staff.categoryName}</div>
+                      <div className="text-xs text-gray-400">{staff.departmentName}</div>
                     </div>
 
-                    {/* 종합 점수 */}
-                    <div className="w-20 flex-shrink-0 text-center">
-                      <div className={`text-xl font-bold ${getScoreTextColor(staff.overallScore)}`}>
-                        {staff.overallScore}
-                      </div>
-                      <div className="text-xs text-gray-500">종합</div>
-                    </div>
-
-                    {/* 차원별 점수 바 */}
-                    <div className="flex-1 grid grid-cols-4 gap-2">
-                      {Object.entries(staff.dimensions).map(([key, dim]) => (
-                        <div key={key} className="text-center">
-                          <div
-                            className={`h-8 rounded flex items-center justify-center text-white text-sm font-bold ${getScoreColor(dim.score)}`}
-                          >
-                            {dim.score}
+                    {/* 차원별 편차 바 */}
+                    <div className={`flex-1 grid ${useHolidayFairness ? 'grid-cols-5' : 'grid-cols-3'} gap-2`}>
+                      {Object.entries(staff.dimensions)
+                        .filter(([key]) => key === 'total' || key === 'night' || key === 'weekend' || (useHolidayFairness && (key === 'holiday' || key === 'holidayAdjacent')))
+                        .map(([key, dim]) => (
+                          <div key={key} className="text-center">
+                            <div
+                              className={`h-8 rounded flex items-center justify-center text-white text-sm font-bold ${getDeviationColor(dim.deviation)}`}
+                            >
+                              {dim.deviation > 0 ? '+' : ''}{dim.deviation.toFixed(1)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {key === 'total' && '전체'}
+                              {key === 'night' && '야간'}
+                              {key === 'weekend' && '주말'}
+                              {key === 'holiday' && '공휴일'}
+                              {key === 'holidayAdjacent' && '인접'}
+                            </div>
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {key === 'night' && '야간'}
-                            {key === 'weekend' && '주말'}
-                            {key === 'holiday' && '공휴일'}
-                            {key === 'holidayAdjacent' && '인접'}
-                          </div>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   </div>
                 ))}
@@ -344,11 +343,14 @@ export default function FairnessMonitoringPage() {
         <CardContent className="p-6">
           <h3 className="font-bold text-blue-900 mb-3">📊 형평성 모니터링 가이드</h3>
           <div className="space-y-2 text-sm text-blue-800">
-            <p>• <strong>점수가 낮을수록</strong> (파란색) 근무가 적어 연차/오프 신청이 어렵습니다</p>
-            <p>• <strong>점수가 높을수록</strong> (빨간색) 근무가 많아 형평성이 좋습니다</p>
-            <p>• 30점 미만 또는 80점 초과 시 경고 알림이 표시됩니다</p>
-            <p>• 카테고리별로 평균을 비교하여 불균형을 확인하세요</p>
-            <p>• 히트맵에서 차원별(야간/주말/공휴일/인접) 세부 점수를 확인할 수 있습니다</p>
+            <p>• <strong>편차</strong>: 누적 형평성 편차 (양수: 부족, 음수: 과다)</p>
+            <p>• <strong>파란색 (≥3)</strong>: 크게 부족 - 근무 배정 필요</p>
+            <p>• <strong>초록색 (1~3)</strong>: 약간 부족 - 정상 범위</p>
+            <p>• <strong>회색 (-1~1)</strong>: 균형 잡힘 - 이상적 상태</p>
+            <p>• <strong>노란색 (-3~-1)</strong>: 약간 과다 - 주의 필요</p>
+            <p>• <strong>빨간색 (≤-3)</strong>: 크게 과다 - 조정 필요</p>
+            <p>• 야간/주말 편차가 ±3 이상인 직원은 경고 알림에 표시됩니다</p>
+            <p>• Staff 테이블에 저장된 누적 편차를 실시간 조회합니다</p>
           </div>
         </CardContent>
       </Card>
