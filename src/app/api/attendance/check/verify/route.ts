@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     const { staffId, credential, challenge, checkType } = await request.json();
 
-    if (!staffId || !credential || !challenge || !checkType) {
+    if (!credential || !challenge || !checkType) {
       return NextResponse.json(
         { error: '필수 정보가 누락되었습니다.' },
         { status: 400 }
@@ -22,18 +22,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 직원 확인
-    const staff = await prisma.staff.findUnique({
-      where: { id: staffId },
-      select: {
-        id: true,
-        name: true,
-        departmentName: true,
-        biometricEnabled: true,
-        biometricCredentialId: true,
-        biometricCounter: true,
-      },
-    });
+    let staff;
+
+    if (staffId) {
+      // 특정 직원 인증 모드
+      staff = await prisma.staff.findUnique({
+        where: { id: staffId },
+        select: {
+          id: true,
+          name: true,
+          departmentName: true,
+          biometricEnabled: true,
+          biometricCredentialId: true,
+          biometricCounter: true,
+        },
+      });
+    } else {
+      // 자동 식별 모드: credential의 rawId로 직원 찾기
+      const credentialId = credential.rawId || credential.id;
+
+      staff = await prisma.staff.findFirst({
+        where: {
+          biometricCredentialId: credentialId,
+          biometricEnabled: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          departmentName: true,
+          biometricEnabled: true,
+          biometricCredentialId: true,
+          biometricCounter: true,
+        },
+      });
+    }
 
     if (!staff) {
       return NextResponse.json(
@@ -82,18 +104,18 @@ export async function POST(request: NextRequest) {
       console.warn('⚠️ [출퇴근] Counter 이상 감지:', staff.name, counter, 'vs', staff.biometricCounter);
     }
 
-    // 오늘 날짜
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // 오늘 날짜 (KST 기준)
+    const now2 = new Date();
+    const kstOffset2 = 9 * 60; // KST는 UTC+9
+    const kstNow2 = new Date(now2.getTime() + kstOffset2 * 60 * 1000);
+    const today = new Date(Date.UTC(kstNow2.getUTCFullYear(), kstNow2.getUTCMonth(), kstNow2.getUTCDate()));
 
     // 오늘 이미 같은 타입의 기록이 있는지 확인
     const existingRecord = await prisma.attendanceRecord.findFirst({
       where: {
         staffId: staff.id,
         checkType,
-        checkTime: {
-          gte: today,
-        },
+        date: today,
       },
       orderBy: {
         checkTime: 'desc',
@@ -130,8 +152,38 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
-    const dateOnly = new Date(now);
-    dateOnly.setHours(0, 0, 0, 0);
+
+    // KST(한국 시간) 기준으로 오늘 날짜 계산
+    const kstOffset = 9 * 60; // KST는 UTC+9
+    const kstNow = new Date(now.getTime() + kstOffset * 60 * 1000);
+    const dateOnly = new Date(Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate()));
+
+    // 지각/조퇴 판단 (KST 기준)
+    const checkHour = kstNow.getUTCHours();
+    const checkMinute = kstNow.getUTCMinutes();
+
+    let isLate = false;
+    let isEarlyLeave = false;
+    let lateMinutes = 0;
+    let earlyMinutes = 0;
+
+    if (checkType === 'IN') {
+      // 출근: 09:00 이후면 지각
+      const standardHour = 9;
+      const standardMinute = 0;
+      if (checkHour > standardHour || (checkHour === standardHour && checkMinute > standardMinute)) {
+        isLate = true;
+        lateMinutes = (checkHour - standardHour) * 60 + (checkMinute - standardMinute);
+      }
+    } else if (checkType === 'OUT') {
+      // 퇴근: 18:00 이전이면 조퇴
+      const standardHour = 18;
+      const standardMinute = 0;
+      if (checkHour < standardHour || (checkHour === standardHour && checkMinute < standardMinute)) {
+        isEarlyLeave = true;
+        earlyMinutes = (standardHour - checkHour) * 60 + (standardMinute - checkMinute);
+      }
+    }
 
     // 출퇴근 기록 생성
     const attendanceRecord = await prisma.attendanceRecord.create({
@@ -156,11 +208,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    console.log(`✅ [출퇴근] ${checkType === 'IN' ? '출근' : '퇴근'}: ${staff.name} (생체인증)`);
+    console.log(`✅ [출퇴근] ${checkType === 'IN' ? '출근' : '퇴근'}: ${staff.name} (생체인증)${isLate ? ` - 지각 ${lateMinutes}분` : ''}${isEarlyLeave ? ` - 조퇴 ${earlyMinutes}분` : ''}`);
 
     return NextResponse.json({
       success: true,
       message: `${staff.name}님 ${checkType === 'IN' ? '출근' : '퇴근'} 처리되었습니다.`,
+      isLate,
+      lateMinutes,
+      isEarlyLeave,
+      earlyMinutes,
       record: {
         id: attendanceRecord.id,
         staffName: staff.name,

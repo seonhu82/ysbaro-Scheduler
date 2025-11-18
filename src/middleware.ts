@@ -126,8 +126,14 @@ export async function middleware(request: NextRequest) {
     '/leave-apply',
     '/tablet',
     '/biometric-setup',
+    '/manual-assign',
+    '/attendance/qr',
+    '/attendance/check',
     '/api/public',
     '/api/attendance/check',
+    '/api/attendance/qr-token',
+    '/api/attendance/settings',
+    '/api/attendance/submit-reason',
     '/api/biometric',
   ]
 

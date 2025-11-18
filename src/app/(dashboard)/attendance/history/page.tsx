@@ -63,13 +63,15 @@ export default function AttendanceHistoryPage() {
       const data = await response.json()
 
       if (data.success) {
-        setRecords(data.data)
+        const recordsData = data.data?.records || data.data || []
+        setRecords(Array.isArray(recordsData) ? recordsData : [])
       } else {
         toast({
           variant: 'destructive',
           title: '데이터 로드 실패',
           description: data.error
         })
+        setRecords([])
       }
     } catch (error) {
       toast({
@@ -77,6 +79,7 @@ export default function AttendanceHistoryPage() {
         title: '오류 발생',
         description: '서버 오류가 발생했습니다'
       })
+      setRecords([])
     } finally {
       setLoading(false)
     }
@@ -178,7 +181,7 @@ export default function AttendanceHistoryPage() {
                     <p className="text-gray-500">로딩 중...</p>
                   </td>
                 </tr>
-              ) : records.length === 0 ? (
+              ) : !Array.isArray(records) || records.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                     기록이 없습니다

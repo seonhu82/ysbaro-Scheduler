@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
           success: true,
           data: {
             token: tokenParam,
+            checkType: validation.tokenData.checkType || 'IN',
             clinicId: validation.tokenData.clinicId,
             expiresAt: validation.tokenData.expiresAt,
             valid: true
@@ -82,18 +83,34 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
+    let clinicId: string;
 
-    if (!session?.user?.clinicId) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // 인증된 사용자면 세션에서, 아니면 DB에서 첫 번째 클리닉 사용
+    if (session?.user?.clinicId) {
+      clinicId = session.user.clinicId;
+    } else {
+      // 공개 접근 (태블릿용): 첫 번째 활성 클리닉 사용
+      const { prisma } = await import('@/lib/prisma');
+      const clinic = await prisma.clinic.findFirst({
+        select: { id: true }
+      });
+
+      if (!clinic) {
+        return NextResponse.json(
+          { success: false, error: 'No clinic found' },
+          { status: 404 }
+        );
+      }
+
+      clinicId = clinic.id;
     }
 
-    const clinicId = session.user.clinicId;
+    // 요청 body에서 checkType 추출
+    const body = await request.json();
+    const checkType = (body?.checkType || 'IN') as 'IN' | 'OUT';
 
     // 새 QR 토큰 생성
-    const newToken = await generateQRToken(clinicId);
+    const newToken = await generateQRToken(clinicId, checkType);
 
     return NextResponse.json({
       success: true,

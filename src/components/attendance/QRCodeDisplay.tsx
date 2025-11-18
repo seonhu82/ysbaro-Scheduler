@@ -42,9 +42,9 @@ export function QRCodeDisplay() {
   // QR 코드 생성 (전체 URL 포함)
   useEffect(() => {
     if (token && canvasRef.current) {
-      // 전체 URL 생성 (프로토콜 + 호스트 + 경로)
+      // 환경변수에 설정된 외부 URL 우선 사용, 없으면 현재 origin 사용
       const baseUrl = typeof window !== 'undefined'
-        ? `${window.location.protocol}//${window.location.host}`
+        ? (process.env.NEXT_PUBLIC_APP_URL || `${window.location.protocol}//${window.location.host}`)
         : '';
       const fullUrl = `${baseUrl}/attendance/check/${token}`;
 

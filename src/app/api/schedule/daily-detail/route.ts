@@ -128,6 +128,14 @@ export async function GET(request: NextRequest) {
             categoryName: true,
             rank: true
           }
+        },
+        substituteForStaff: {
+          select: {
+            id: true,
+            name: true,
+            departmentName: true,
+            rank: true
+          }
         }
       }
     }) : []

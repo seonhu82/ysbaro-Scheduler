@@ -13,6 +13,7 @@ import crypto from 'crypto';
 
 export interface QRTokenData {
   token: string;
+  checkType: 'IN' | 'OUT';
   expiresAt: Date;
   isActive: boolean;
 }
@@ -21,7 +22,8 @@ export interface QRTokenData {
  * 새 QR 토큰 생성
  */
 export async function generateQRToken(
-  clinicId: string
+  clinicId: string,
+  checkType: 'IN' | 'OUT' = 'IN'
 ): Promise<QRTokenData> {
   // 1. 랜덤 토큰 생성 (UUID v4 형식)
   const token = crypto.randomUUID();
@@ -46,6 +48,7 @@ export async function generateQRToken(
     data: {
       clinicId,
       token,
+      checkType,
       expiresAt,
       used: false
     }
@@ -53,6 +56,7 @@ export async function generateQRToken(
 
   return {
     token,
+    checkType,
     expiresAt,
     isActive: true,
   };
@@ -128,6 +132,7 @@ export async function getCurrentActiveToken(
 
   return {
     token: activeToken.token,
+    checkType: (activeToken.checkType || 'IN') as 'IN' | 'OUT',
     expiresAt: activeToken.expiresAt,
     isActive: true
   };

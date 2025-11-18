@@ -12,18 +12,30 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import Link from 'next/link'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   BarChart3,
   TrendingUp,
   Users,
   AlertTriangle,
   RefreshCw,
-  Download
+  Download,
+  ArrowRight,
+  Calendar,
+  Clock
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
@@ -312,6 +324,66 @@ export default function AttendanceStatisticsPage() {
         </CardContent>
       </Card>
 
+      {/* 고급 분석 도구 바로가기 */}
+      <Card className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            고급 출퇴근 분석
+          </CardTitle>
+          <CardDescription>
+            더 상세한 패턴 분석 및 인사이트를 확인하세요
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <Link href="/analytics/individual" className="block">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-white hover:bg-blue-50 transition-colors border border-blue-100">
+                <Users className="h-8 w-8 text-blue-600" />
+                <div className="flex-1">
+                  <div className="font-semibold text-sm">개인별 분석</div>
+                  <div className="text-xs text-muted-foreground">직원별 상세 패턴</div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Link>
+
+            <Link href="/analytics/patterns" className="block">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-white hover:bg-blue-50 transition-colors border border-blue-100">
+                <Calendar className="h-8 w-8 text-green-600" />
+                <div className="flex-1">
+                  <div className="font-semibold text-sm">시간대 분석</div>
+                  <div className="text-xs text-muted-foreground">히트맵 시각화</div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Link>
+
+            <Link href="/analytics/anomalies" className="block">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-white hover:bg-blue-50 transition-colors border border-blue-100">
+                <AlertTriangle className="h-8 w-8 text-yellow-600" />
+                <div className="flex-1">
+                  <div className="font-semibold text-sm">이상 징후</div>
+                  <div className="text-xs text-muted-foreground">자동 감지</div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Link>
+
+            <Link href="/analytics/comparison" className="block">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-white hover:bg-blue-50 transition-colors border border-blue-100">
+                <BarChart3 className="h-8 w-8 text-purple-600" />
+                <div className="flex-1">
+                  <div className="font-semibold text-sm">부서별 비교</div>
+                  <div className="text-xs text-muted-foreground">KPI 분석</div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* 직원별 통계 */}
       <Card>
         <CardHeader>
@@ -319,63 +391,62 @@ export default function AttendanceStatisticsPage() {
             <Users className="w-5 h-5" />
             직원별 통계
           </CardTitle>
+          <CardDescription>
+            클릭하여 개인별 상세 분석 보기
+          </CardDescription>
         </CardHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">직원명</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">직급</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">근무일</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">전체 기록</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">출근</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">퇴근</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">의심</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y">
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>직원명</TableHead>
+                <TableHead>직급</TableHead>
+                <TableHead className="text-center">근무일</TableHead>
+                <TableHead className="text-center">전체 기록</TableHead>
+                <TableHead className="text-center">출근</TableHead>
+                <TableHead className="text-center">퇴근</TableHead>
+                <TableHead className="text-center">의심</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {data.byStaff.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                     데이터가 없습니다
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 data.byStaff.map((staff) => (
-                  <tr key={staff.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {staff.name}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {staff.rank}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
-                      {staff.workDays}일
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-semibold">
-                      {staff.totalChecks}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-green-600">
-                      {staff.checkIns}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-blue-600">
-                      {staff.checkOuts}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                  <TableRow key={staff.id} className="hover:bg-muted/50">
+                    <TableCell className="font-medium">{staff.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{staff.rank}</TableCell>
+                    <TableCell className="text-center">{staff.workDays}일</TableCell>
+                    <TableCell className="text-center font-semibold">{staff.totalChecks}</TableCell>
+                    <TableCell className="text-center text-green-600">{staff.checkIns}</TableCell>
+                    <TableCell className="text-center text-blue-600">{staff.checkOuts}</TableCell>
+                    <TableCell className="text-center">
                       {staff.suspicious > 0 ? (
                         <Badge variant="destructive" className="bg-amber-100 text-amber-800">
                           {staff.suspicious}
                         </Badge>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-muted-foreground">-</span>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell>
+                      <Link href={`/analytics/individual/${staff.id}`}>
+                        <Button variant="outline" size="sm">
+                          상세보기
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </CardContent>
       </Card>
     </div>
   )

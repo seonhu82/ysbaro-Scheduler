@@ -94,7 +94,8 @@ export async function GET(request: NextRequest) {
         } : {})
       },
       include: {
-        staff: true
+        staff: true,
+        substituteForStaff: true
       }
     }) : []
 

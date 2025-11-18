@@ -9,6 +9,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { successResponse, errorResponse, unauthorizedResponse, badRequestResponse } from '@/lib/utils/api-response'
 import { getAutoAssignDepartmentNamesWithFallback, getCategoryOrderMap } from '@/lib/utils/department-utils'
+import { updateStaffFairnessScores } from '@/lib/services/fairness-score-update-service'
 
 export async function GET(request: NextRequest) {
   try {
@@ -691,6 +692,19 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('Day schedule saved successfully')
+
+    // 형평성 점수 업데이트 (에러가 발생해도 저장은 성공으로 처리)
+    try {
+      await updateStaffFairnessScores(
+        clinicId,
+        year || dateOnly.getFullYear(),
+        month || (dateOnly.getMonth() + 1)
+      )
+      console.log('✅ 형평성 점수 업데이트 완료')
+    } catch (fairnessError) {
+      console.error('⚠️ 형평성 점수 업데이트 실패 (무시):', fairnessError)
+      // 형평성 점수 업데이트 실패해도 스케줄 저장은 성공으로 처리
+    }
 
     return successResponse({
       message: 'Schedule saved successfully',

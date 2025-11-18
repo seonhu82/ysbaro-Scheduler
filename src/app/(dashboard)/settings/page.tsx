@@ -10,6 +10,7 @@ import {
   Calendar,
   Shield,
   Database,
+  Clock,
   Settings as SettingsIcon,
   ChevronRight,
 } from 'lucide-react'
@@ -50,6 +51,13 @@ const SETTING_CARDS: SettingCard[] = [
     icon: <Shield className="w-8 h-8" />,
     path: '/settings/rules',
     color: 'text-orange-600 bg-orange-100',
+  },
+  {
+    title: '출퇴근 설정',
+    description: '출퇴근 시간, 인증 방법, 의심 패턴 감지를 설정합니다',
+    icon: <Clock className="w-8 h-8" />,
+    path: '/settings/attendance',
+    color: 'text-cyan-600 bg-cyan-100',
   },
   {
     title: '백업 및 복원',

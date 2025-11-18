@@ -1,4 +1,5 @@
-슈퍼 관리자 (시스템 전체)
- - 이메일: superadmin@yonsedental.com
- - 비밀번호: SuperAdmin2025!
+ - Email: iamhu@gmail.com
+  - Password: SuperAdmin2025!
+  - Role: SUPER_ADMIN (시스템 관리자)
+
  

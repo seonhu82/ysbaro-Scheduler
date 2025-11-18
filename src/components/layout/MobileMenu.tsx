@@ -62,7 +62,7 @@ const navigation = [
     ]
   },
   {
-    name: '근태 관리',
+    name: '출퇴근 관리',
     href: '/attendance',
     icon: '⏰',
     roles: ['ADMIN', 'MANAGER'],

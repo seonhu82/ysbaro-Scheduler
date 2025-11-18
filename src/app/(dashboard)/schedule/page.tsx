@@ -26,6 +26,16 @@ interface DepartmentStats {
   withCategory: number
 }
 
+interface DepartmentApiStats {
+  department: string
+  staffCount: number
+  dayShifts: number
+  nightShifts: number
+  offDays: number
+  useAutoAssignment: boolean
+  avgDaysPerStaff: string
+}
+
 export default function ScheduleManagementPage() {
   const { toast } = useToast()
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -36,6 +46,8 @@ export default function ScheduleManagementPage() {
   const [warningsSummary, setWarningsSummary] = useState('')
   const [totalWarnings, setTotalWarnings] = useState(0)
   const [departmentStats, setDepartmentStats] = useState<DepartmentStats[]>([])
+  const [autoAssignDeptStats, setAutoAssignDeptStats] = useState<DepartmentApiStats[]>([])
+  const [manualAssignDeptStats, setManualAssignDeptStats] = useState<DepartmentApiStats[]>([])
 
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth() + 1
@@ -77,6 +89,17 @@ export default function ScheduleManagementPage() {
           } else {
             setTotalWarnings(0)
             setWarningsSummary('')
+          }
+
+          // 부서별 통계 (자동/수동 구분)
+          const byDepartment = summaryResult.data?.byDepartment
+          if (Array.isArray(byDepartment)) {
+            const autoDepts = byDepartment.filter(d => d.useAutoAssignment)
+            const manualDepts = byDepartment.filter(d => !d.useAutoAssignment)
+            setAutoAssignDeptStats(autoDepts)
+            setManualAssignDeptStats(manualDepts)
+            console.log('📊 Auto Assign Depts:', autoDepts)
+            console.log('📊 Manual Assign Depts:', manualDepts)
           }
         }
 
@@ -412,33 +435,109 @@ export default function ScheduleManagementPage() {
         </Card>
       </div>
 
-      {/* 부서별 배치 인원 현황 */}
-      {departmentStats.length > 0 && (
+      {/* 자동 배치 부서별 현황 */}
+      {autoAssignDeptStats.length > 0 && (
         <Card className="mt-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="w-5 h-5" />
-              부서별 배치 인원 현황
+              부서별 배치 현황 (자동 배치)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {departmentStats.map((dept) => (
+              {autoAssignDeptStats.map((dept) => (
                 <div
-                  key={dept.name}
+                  key={dept.department}
                   className="border rounded-lg p-4 hover:bg-gray-50 transition"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                      {dept.name}
+                      {dept.department}
+                    </Badge>
+                    <Badge className="bg-purple-100 text-purple-700 border-purple-200">
+                      자동
                     </Badge>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-2xl font-bold text-blue-600">{dept.withCategory}</p>
-                    <p className="text-lg text-gray-400">/</p>
-                    <p className="text-lg text-gray-600">{dept.total}명</p>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-500">배치된 직원</p>
+                      <p className="text-xl font-bold text-blue-600">{dept.staffCount}명</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="text-gray-500">주간</p>
+                        <p className="font-medium text-green-600">{dept.dayShifts}일</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">야간</p>
+                        <p className="font-medium text-indigo-600">{dept.nightShifts}일</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">오프</p>
+                        <p className="font-medium text-gray-600">{dept.offDays}일</p>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t">
+                      <p className="text-xs text-gray-500">1인 평균 근무일</p>
+                      <p className="text-lg font-bold text-gray-700">{dept.avgDaysPerStaff}일</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">배치인원 / 총인원</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 수동 배치 부서별 현황 */}
+      {manualAssignDeptStats.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              부서별 배치 현황 (수동 배치)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {manualAssignDeptStats.map((dept) => (
+                <div
+                  key={dept.department}
+                  className="border rounded-lg p-4 hover:bg-gray-50 transition"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <Badge variant="outline" className="bg-teal-50 text-teal-700 border-teal-200">
+                      {dept.department}
+                    </Badge>
+                    <Badge className="bg-teal-100 text-teal-700 border-teal-200">
+                      수동
+                    </Badge>
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-500">배치된 직원</p>
+                      <p className="text-xl font-bold text-teal-600">{dept.staffCount}명</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="text-gray-500">주간</p>
+                        <p className="font-medium text-green-600">{dept.dayShifts}일</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">야간</p>
+                        <p className="font-medium text-indigo-600">{dept.nightShifts}일</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">오프</p>
+                        <p className="font-medium text-gray-600">{dept.offDays}일</p>
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t">
+                      <p className="text-xs text-gray-500">1인 평균 근무일</p>
+                      <p className="text-lg font-bold text-gray-700">{dept.avgDaysPerStaff}일</p>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

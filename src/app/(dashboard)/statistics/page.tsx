@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Download, FileSpreadsheet, FileText } from 'lucide-react'
+import { Download, FileSpreadsheet, FileText, Users, TrendingUp, AlertTriangle, BarChart3, ArrowRight } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -51,6 +52,15 @@ interface StatisticsData {
     checkOut: number
     suspicious: number
   }
+  work: {
+    total: number
+    nightShift: number
+    weekend: number
+    dayShift: number
+    off: number
+    annual: number
+  }
+  useHolidayFairness: boolean
   staffDetails?: Array<{
     id: string
     name: string
@@ -65,16 +75,18 @@ interface StatisticsData {
   departments?: Array<{
     name: string
     staffCount: number
-    leaves: number
-    attendance: number
-    fairness: { nightShift: number; weekend: number; holiday: number }
+    annual: number
+    off: number
+    nightShift: number
+    weekend: number
   }>
   categories?: Array<{
     name: string
     staffCount: number
-    leaves: number
-    attendance: number
-    fairness: { nightShift: number; weekend: number; holiday: number }
+    annual: number
+    off: number
+    nightShift: number
+    weekend: number
   }>
   monthlyTrend?: Array<{
     month: number
@@ -163,11 +175,10 @@ export default function StatisticsPage() {
       const deptData = data.departments.map(d => ({
         부서: d.name,
         직원수: d.staffCount,
-        연차사용: d.leaves,
-        출퇴근기록: d.attendance,
-        야간근무: d.fairness.nightShift,
-        주말근무: d.fairness.weekend,
-        공휴일근무: d.fairness.holiday
+        연차: d.annual,
+        오프: d.off,
+        야간근무: d.nightShift,
+        주말근무: d.weekend
       }))
       const deptSheet = XLSX.utils.json_to_sheet(deptData)
       XLSX.utils.book_append_sheet(wb, deptSheet, '부서별 통계')
@@ -178,11 +189,10 @@ export default function StatisticsPage() {
       const catData = data.categories.map(c => ({
         구분: c.name,
         직원수: c.staffCount,
-        연차사용: c.leaves,
-        출퇴근기록: c.attendance,
-        야간근무: c.fairness.nightShift,
-        주말근무: c.fairness.weekend,
-        공휴일근무: c.fairness.holiday
+        연차: c.annual,
+        오프: c.off,
+        야간근무: c.nightShift,
+        주말근무: c.weekend
       }))
       const catSheet = XLSX.utils.json_to_sheet(catData)
       XLSX.utils.book_append_sheet(wb, catSheet, '구분별 통계')
@@ -274,14 +284,14 @@ export default function StatisticsPage() {
 
       autoTable(doc, {
         startY: yPos,
-        head: [['Department', 'Staff', 'Leaves', 'Night Shift', 'Weekend', 'Holiday']],
+        head: [['Department', 'Staff', 'Annual', 'Off', 'Night', 'Weekend']],
         body: data.departments.map(d => [
           d.name,
           d.staffCount,
-          d.leaves,
-          d.fairness.nightShift,
-          d.fairness.weekend,
-          d.fairness.holiday
+          d.annual,
+          d.off,
+          d.nightShift,
+          d.weekend
         ]),
         theme: 'striped'
       })
@@ -302,14 +312,14 @@ export default function StatisticsPage() {
 
       autoTable(doc, {
         startY: yPos,
-        head: [['Category', 'Staff', 'Leaves', 'Night Shift', 'Weekend', 'Holiday']],
+        head: [['Category', 'Staff', 'Annual', 'Off', 'Night', 'Weekend']],
         body: data.categories.map(c => [
           c.name,
           c.staffCount,
-          c.leaves,
-          c.fairness.nightShift,
-          c.fairness.weekend,
-          c.fairness.holiday
+          c.annual,
+          c.off,
+          c.nightShift,
+          c.weekend
         ]),
         theme: 'striped'
       })
@@ -337,17 +347,13 @@ export default function StatisticsPage() {
   }
 
   // 차트 데이터 준비
-  const scheduleChartData = [
-    { name: '임시저장', value: data.schedules.draft, fill: COLORS[0] },
-    { name: '확정', value: data.schedules.confirmed, fill: COLORS[1] },
-    { name: '배포', value: data.schedules.deployed, fill: COLORS[2] }
-  ]
-
-  const leaveChartData = [
-    { name: '대기', value: data.leaves.pending, fill: COLORS[3] },
-    { name: '승인', value: data.leaves.approved, fill: COLORS[1] },
-    { name: '거절', value: data.leaves.rejected, fill: COLORS[0] }
-  ]
+  const shiftDistributionData = [
+    { name: '주간 근무', value: data.work.dayShift, fill: '#10b981' },
+    { name: '야간 근무', value: data.work.nightShift, fill: '#8b5cf6' },
+    { name: '주말 근무', value: data.work.weekend, fill: '#f59e0b' },
+    { name: '오프', value: data.work.off, fill: '#6b7280' },
+    { name: '연차', value: data.work.annual, fill: '#3b82f6' }
+  ].filter(d => d.value > 0)
 
   return (
     <div className="p-6 space-y-6">
@@ -388,67 +394,68 @@ export default function StatisticsPage() {
 
       <div className="text-sm text-gray-600">기간: {data.period}</div>
 
-      {/* 요약 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 요약 카드 - 배치 관련 */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">스케줄</CardTitle>
+            <CardTitle className="text-sm">총 배치</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{data.schedules.total}</div>
+            <div className="text-3xl font-bold">{data.work.total}</div>
             <div className="text-xs text-gray-500 mt-2">
-              확정: {data.schedules.confirmed} / 배포: {data.schedules.deployed}
+              주간: {data.work.dayShift} / 야간: {data.work.nightShift}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">연차 신청</CardTitle>
+            <CardTitle className="text-sm">연차</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{data.leaves.total}</div>
+            <div className="text-3xl font-bold">{data.work.annual}</div>
             <div className="text-xs text-gray-500 mt-2">
-              승인: {data.leaves.approved} / 대기: {data.leaves.pending}
+              전체의 {data.work.total > 0 ? ((data.work.annual / data.work.total) * 100).toFixed(1) : 0}%
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">직원</CardTitle>
+            <CardTitle className="text-sm">오프</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{data.staff.total}</div>
-            <div className="text-xs text-gray-500 mt-2">활성 직원</div>
+            <div className="text-3xl font-bold">{data.work.off}</div>
+            <div className="text-xs text-gray-500 mt-2">
+              전체의 {data.work.total > 0 ? ((data.work.off / data.work.total) * 100).toFixed(1) : 0}%
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">출퇴근 기록</CardTitle>
+            <CardTitle className="text-sm">주말 근무</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{data.attendance.total}</div>
+            <div className="text-3xl font-bold">{data.work.weekend}</div>
             <div className="text-xs text-gray-500 mt-2">
-              출근: {data.attendance.checkIn} / 퇴근: {data.attendance.checkOut}
+              주간+야간의 {(data.work.dayShift + data.work.nightShift) > 0 ? ((data.work.weekend / (data.work.dayShift + data.work.nightShift)) * 100).toFixed(1) : 0}%
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* 차트 섹션 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 스케줄 상태 차트 */}
+      {/* 차트 섹션 - 배치 분석 */}
+      {shiftDistributionData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>스케줄 상태 분포</CardTitle>
+            <CardTitle>근무 타입 분포</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={scheduleChartData}
+                  data={shiftDistributionData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -457,7 +464,7 @@ export default function StatisticsPage() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {scheduleChartData.map((entry, index) => (
+                  {shiftDistributionData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
@@ -466,29 +473,7 @@ export default function StatisticsPage() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
-
-        {/* 연차 신청 상태 차트 */}
-        <Card>
-          <CardHeader>
-            <CardTitle>연차 신청 현황</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={leaveChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#8884d8">
-                  {leaveChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
+      )}
 
       {/* 부서별 통계 */}
       {data.departments && data.departments.length > 0 && (
@@ -503,10 +488,10 @@ export default function StatisticsPage() {
                   <tr className="border-b">
                     <th className="text-left py-2">부서</th>
                     <th className="text-right py-2">직원 수</th>
-                    <th className="text-right py-2">연차 사용</th>
+                    <th className="text-right py-2">연차</th>
+                    <th className="text-right py-2">오프</th>
                     <th className="text-right py-2">야간 근무</th>
                     <th className="text-right py-2">주말 근무</th>
-                    <th className="text-right py-2">공휴일 근무</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -514,10 +499,10 @@ export default function StatisticsPage() {
                     <tr key={idx} className="border-b">
                       <td className="py-2">{dept.name}</td>
                       <td className="text-right">{dept.staffCount}</td>
-                      <td className="text-right">{dept.leaves}</td>
-                      <td className="text-right">{dept.fairness.nightShift}</td>
-                      <td className="text-right">{dept.fairness.weekend}</td>
-                      <td className="text-right">{dept.fairness.holiday}</td>
+                      <td className="text-right">{dept.annual}</td>
+                      <td className="text-right">{dept.off}</td>
+                      <td className="text-right">{dept.nightShift}</td>
+                      <td className="text-right">{dept.weekend}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -540,10 +525,10 @@ export default function StatisticsPage() {
                   <tr className="border-b">
                     <th className="text-left py-2">구분</th>
                     <th className="text-right py-2">직원 수</th>
-                    <th className="text-right py-2">연차 사용</th>
+                    <th className="text-right py-2">연차</th>
+                    <th className="text-right py-2">오프</th>
                     <th className="text-right py-2">야간 근무</th>
                     <th className="text-right py-2">주말 근무</th>
-                    <th className="text-right py-2">공휴일 근무</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -551,10 +536,10 @@ export default function StatisticsPage() {
                     <tr key={idx} className="border-b">
                       <td className="py-2">{cat.name}</td>
                       <td className="text-right">{cat.staffCount}</td>
-                      <td className="text-right">{cat.leaves}</td>
-                      <td className="text-right">{cat.fairness.nightShift}</td>
-                      <td className="text-right">{cat.fairness.weekend}</td>
-                      <td className="text-right">{cat.fairness.holiday}</td>
+                      <td className="text-right">{cat.annual}</td>
+                      <td className="text-right">{cat.off}</td>
+                      <td className="text-right">{cat.nightShift}</td>
+                      <td className="text-right">{cat.weekend}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -165,7 +165,53 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // 6. 직원별 통계
+    // 6. 배치 기반 근무 통계 (StaffAssignment) - 먼저 조회
+    const allAssignments = await prisma.staffAssignment.findMany({
+      where: {
+        staffId: {
+          in: staff.map(s => s.id)
+        },
+        date: {
+          gte: startDate,
+          lte: endDate
+        }
+      },
+      select: {
+        staffId: true,
+        shiftType: true,
+        date: true
+      }
+    })
+
+    const dayShiftCount = allAssignments.filter(a => a.shiftType === 'DAY').length
+    const nightShiftCount = allAssignments.filter(a => a.shiftType === 'NIGHT').length
+    const offCount = allAssignments.filter(a => a.shiftType === 'OFF').length
+    const weekendCount = allAssignments.filter(a => {
+      const day = new Date(a.date).getDay()
+      return day === 0 || day === 6
+    }).length
+
+    // 야간 근무가 있는 날짜들 추출
+    const nightShiftDates = new Set(
+      allAssignments
+        .filter(a => a.shiftType === 'NIGHT')
+        .map(a => a.date.toISOString().split('T')[0])
+    )
+
+    // 연차는 LeaveApplication에서 조회 (status 무관하게 전체)
+    const annualLeaves = leaveApplications.filter(l => l.leaveType === 'ANNUAL')
+    const offLeaves = leaveApplications.filter(l => l.leaveType === 'OFF')
+
+    const workStats = {
+      total: dayShiftCount + nightShiftCount + offCount + annualLeaves.length,
+      dayShift: dayShiftCount,
+      nightShift: nightShiftCount,
+      off: offCount,
+      annual: annualLeaves.length,
+      weekend: weekendCount
+    }
+
+    // 7. 직원별 통계
     const staffDetails = await Promise.all(
       staff.map(async (s) => {
         const staffFull = await prisma.staff.findUnique({
@@ -217,38 +263,63 @@ export async function GET(request: NextRequest) {
       })
     )
 
-    // 7. 부서별 통계
+    // 8. 부서별 통계
     const departments = Array.from(new Set(staff.map(s => s.departmentName).filter(Boolean)))
     const departmentStats = departments.map(deptName => {
-      const deptStaff = staffDetails.filter(s => s.departmentName === deptName)
+      const deptStaffIds = staff.filter(s => s.departmentName === deptName).map(s => s.id)
+      const deptAssignments = allAssignments.filter(a => deptStaffIds.includes(a.staffId))
+      const deptLeaves = leaveApplications.filter(l => deptStaffIds.includes(l.staffId))
+
+      // 야간 근무: NIGHT shiftType이거나, 야간 근무가 있는 날에 배치된 경우
+      const deptNightShift = deptAssignments.filter(a => {
+        if (a.shiftType === 'NIGHT') return true
+        const dateStr = a.date.toISOString().split('T')[0]
+        return nightShiftDates.has(dateStr) && a.shiftType !== 'OFF'
+      }).length
+
       return {
         name: deptName,
-        staffCount: deptStaff.length,
-        leaves: deptStaff.reduce((sum, s) => sum + s.leaves.total, 0),
-        attendance: deptStaff.reduce((sum, s) => sum + s.attendance.total, 0),
-        fairness: {
-          nightShift: deptStaff.reduce((sum, s) => sum + s.fairness.nightShift, 0),
-          weekend: deptStaff.reduce((sum, s) => sum + s.fairness.weekend, 0),
-          holiday: deptStaff.reduce((sum, s) => sum + s.fairness.holiday, 0)
-        }
+        staffCount: deptStaffIds.length,
+        annual: deptLeaves.filter(l => l.leaveType === 'ANNUAL').length,
+        off: deptAssignments.filter(a => a.shiftType === 'OFF').length,
+        nightShift: deptNightShift,
+        weekend: deptAssignments.filter(a => {
+          const day = new Date(a.date).getDay()
+          return day === 0 || day === 6
+        }).length
       }
     })
 
-    // 8. 구분별 통계
+    // 9. 구분별 통계
     const categories = Array.from(new Set(staff.map(s => s.categoryName).filter(Boolean)))
     const categoryStats = categories.map(catName => {
-      const catStaff = staffDetails.filter(s => s.categoryName === catName)
+      const catStaffIds = staff.filter(s => s.categoryName === catName).map(s => s.id)
+      const catAssignments = allAssignments.filter(a => catStaffIds.includes(a.staffId))
+      const catLeaves = leaveApplications.filter(l => catStaffIds.includes(l.staffId))
+
+      // 야간 근무: NIGHT shiftType이거나, 야간 근무가 있는 날에 배치된 경우
+      const catNightShift = catAssignments.filter(a => {
+        if (a.shiftType === 'NIGHT') return true
+        const dateStr = a.date.toISOString().split('T')[0]
+        return nightShiftDates.has(dateStr) && a.shiftType !== 'OFF'
+      }).length
+
       return {
         name: catName,
-        staffCount: catStaff.length,
-        leaves: catStaff.reduce((sum, s) => sum + s.leaves.total, 0),
-        attendance: catStaff.reduce((sum, s) => sum + s.attendance.total, 0),
-        fairness: {
-          nightShift: catStaff.reduce((sum, s) => sum + s.fairness.nightShift, 0),
-          weekend: catStaff.reduce((sum, s) => sum + s.fairness.weekend, 0),
-          holiday: catStaff.reduce((sum, s) => sum + s.fairness.holiday, 0)
-        }
+        staffCount: catStaffIds.length,
+        annual: catLeaves.filter(l => l.leaveType === 'ANNUAL').length,
+        off: catAssignments.filter(a => a.shiftType === 'OFF').length,
+        nightShift: catNightShift,
+        weekend: catAssignments.filter(a => {
+          const day = new Date(a.date).getDay()
+          return day === 0 || day === 6
+        }).length
       }
+    })
+
+    // 10. 형평성 설정 확인
+    const fairnessSettings = await prisma.fairnessSettings.findUnique({
+      where: { clinicId: clinicId }
     })
 
     return successResponse({
@@ -257,6 +328,8 @@ export async function GET(request: NextRequest) {
       leaves: leaveStats,
       staff: staffStats,
       attendance: attendanceStats,
+      work: workStats,
+      useHolidayFairness: fairnessSettings?.useHolidayFairness ?? false,
       staffDetails,
       departments: departmentStats,
       categories: categoryStats,

@@ -303,12 +303,29 @@ export async function GET(request: NextRequest) {
       console.log(`⚠️ Warnings Summary: Total ${totalWarnings}건, 근무미달 ${workDayWarnings}건, 연차 ${annualLeaveWarnings}건`)
     }
 
-    // 부서별 근무 통계 (현재 달에 속한 날짜만)
+    // 부서 정보 조회 (자동/수동 배치 구분)
+    const departments = await prisma.department.findMany({
+      where: {
+        clinicId: session.user.clinicId
+      },
+      select: {
+        name: true,
+        useAutoAssignment: true
+      }
+    })
+
+    const departmentTypeMap = new Map<string, boolean>()
+    departments.forEach(dept => {
+      departmentTypeMap.set(dept.name, dept.useAutoAssignment)
+    })
+
+    // 부서별 근무 통계 (현재 달에 속한 날짜만, 자동/수동 구분)
     const departmentStats = new Map<string, {
       dayShifts: number
       nightShifts: number
       offDays: number
       staffCount: number
+      useAutoAssignment: boolean
     }>()
 
     allStaffAssignments.forEach(assignment => {
@@ -321,7 +338,8 @@ export async function GET(request: NextRequest) {
             dayShifts: 0,
             nightShifts: 0,
             offDays: 0,
-            staffCount: 0
+            staffCount: 0,
+            useAutoAssignment: departmentTypeMap.get(dept) ?? true
           })
         }
 
@@ -356,6 +374,7 @@ export async function GET(request: NextRequest) {
       dayShifts: stats.dayShifts,
       nightShifts: stats.nightShifts,
       offDays: stats.offDays,
+      useAutoAssignment: stats.useAutoAssignment,
       avgDaysPerStaff: stats.staffCount > 0
         ? ((stats.dayShifts + stats.nightShifts) / stats.staffCount).toFixed(1)
         : '0.0'

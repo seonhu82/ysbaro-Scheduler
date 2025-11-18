@@ -87,6 +87,9 @@ model Clinic {
   // 출퇴근 체크 방법 설정 (QR_CODE, BIOMETRIC_FINGERPRINT, BIOMETRIC_FACE)
   attendanceCheckMethods String[] @default(["QR_CODE", "BIOMETRIC_FINGERPRINT", "BIOMETRIC_FACE"])
 
+  // QR 코드 URL 설정 (true: 외부 IP 사용, false: localhost 사용)
+  useExternalUrlForQR Boolean @default(false)
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -115,11 +118,13 @@ model Clinic {
   backups               Backup[]
   notifications         Notification[]
   activityLogs          ActivityLog[]
-  weekInfos             WeekInfo[]
-  qrTokens              QRToken[]
-  attendanceRecords     AttendanceRecord[]
-  leavePeriods          LeavePeriod[]
-  kakaoSettings         KakaoSettings?
+  weekInfos              WeekInfo[]
+  qrTokens                      QRToken[]
+  attendanceRecords             AttendanceRecord[]
+  leavePeriods                  LeavePeriod[]
+  kakaoSettings                 KakaoSettings?
+  attendanceTimeSettings        AttendanceTimeSettings?
+  suspiciousPatternSettings     SuspiciousPatternSettings?
 }
 
 // ============================================
@@ -190,6 +195,15 @@ model DoctorCombination {
   departmentCategoryStaff Json? // 부서별 구분별 필요 인원 {"진료실": {"실팀장": {"count": 2, "minRequired": 1}}}
   doctors                 String[] // ["박원장(상담)", "구원장", "윤원장"] 형태
   hasNightShift           Boolean  @default(false) // 야간 진료 여부
+
+  // 🆕 영업시간 및 출퇴근 시간 설정
+  operatingStartTime    String? // 영업 시작 시간 (HH:mm 형식, 예: "09:00")
+  operatingEndTime      String? // 영업 종료 시간 (예: "18:00")
+  workStartTime         String? // 출근 시간 (예: "08:30")
+  workEndTime           String? // 퇴근 시간 (예: "18:30")
+  nightShiftStartTime   String? // 야근 시작 시간 (예: "18:00")
+  nightShiftEndTime     String? // 야근 종료 시간 (예: "21:00")
+
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -388,6 +402,7 @@ model Staff {
   attendanceRecords     AttendanceRecord[]
   unresolvedIssues      UnresolvedIssue[]
   fairnessAdjustments   FairnessAdjustment[]
+  substitutedBy         StaffAssignment[]    @relation("SubstituteFor") // 이 직원을 대체한 근무들
 
   @@index([clinicId])
   @@index([pinCode])
@@ -495,10 +510,22 @@ model StaffAssignment {
   // 🆕 출퇴근 기록 연결
   attendanceRecords AttendanceRecord[]
 
+  // 🆕 대체 근무 정보
+  isSubstitute         Boolean   @default(false) // 대체 근무 여부
+  substituteForStaffId String? // 누구를 대체했는지
+  substituteForStaff   Staff?    @relation("SubstituteFor", fields: [substituteForStaffId], references: [id], onDelete: SetNull)
+  substitutedAt        DateTime? // 언제 대체되었는지
+
+  // 🆕 자동배치 원본 데이터 보존 (배포 후 수정해도 확인 가능)
+  autoAssignedShiftType ShiftType? // 자동배치 시 원본 근무 타입
+  autoAssignedCategory  String? // 자동배치 시 원본 카테고리
+  autoAssignedAt        DateTime? // 자동배치 실행 시각
+
   @@unique([scheduleId, staffId, date])
   @@index([scheduleId])
   @@index([staffId])
   @@index([date])
+  @@index([substituteForStaffId])
   // 🚀 복합 인덱스 (쿼리 최적화)
   @@index([staffId, date], name: "assignment_staff_date")
   @@index([date, shiftType], name: "assignment_date_shift")
@@ -812,6 +839,59 @@ model SpecialCondition {
   priority    Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// 출퇴근 시간 설정
+model AttendanceTimeSettings {
+  id       String @id @default(cuid())
+  clinicId String @unique
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // 요일별 출퇴근 시간 설정
+  // {
+  //   "MONDAY": { "operatingStart": "09:00", "operatingEnd": "18:00", "workStart": "08:30", "workEnd": "18:30" },
+  //   "TUESDAY": { ... },
+  //   "SATURDAY": { "operatingStart": "09:00", "operatingEnd": "14:00", "workStart": "08:30", "workEnd": "14:30" }
+  // }
+  weekdayTimes Json?
+
+  // 야근 시간 설정 (hasNightShift=true인 조합에 적용)
+  // { "nightShiftStart": "18:00", "nightShiftEnd": "21:00" }
+  nightShiftTime Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 의심 패턴 감지 설정
+model SuspiciousPatternSettings {
+  id       String @id @default(cuid())
+  clinicId String @unique
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  // 지각 허용 시간 (분) - 출근 시간 + N분까지 허용
+  lateThresholdMinutes Int @default(10)
+
+  // 조퇴 기준 시간 (분) - 퇴근 시간 - N분 전에 퇴근 시 조퇴로 간주
+  earlyLeaveThresholdMinutes Int @default(10)
+
+  // 반복 출퇴근 감지 시간 (분) - N분 내에 동일 직원이 다시 출퇴근하면 의심 패턴으로 간주
+  repeatCheckThresholdMinutes Int @default(5)
+
+  // 스케줄 외 출근 감지 활성화
+  detectUnscheduledCheckIn Boolean @default(true)
+
+  // 연속 지각 알림 기준 (일)
+  consecutiveLateThreshold Int @default(3)
+
+  // 연속 조퇴 알림 기준 (일)
+  consecutiveEarlyLeaveThreshold Int @default(3)
+
+  // 알림 활성화
+  enableNotifications Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ============================================
@@ -1133,6 +1213,7 @@ model QRToken {
   clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   token     String    @unique // UUID v4
+  checkType String    @default("IN") // IN or OUT (출근/퇴근)
   expiresAt DateTime // 생성 시간 + 5분
   used      Boolean   @default(false) // 사용 여부
   usedAt    DateTime? // 사용 시간
