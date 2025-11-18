@@ -36,6 +36,7 @@ export default async function AdminLayout({
               <div className="ml-10 flex space-x-8">
                 <NavLink href="/admin/dashboard">대시보드</NavLink>
                 <NavLink href="/admin/users">회원 관리</NavLink>
+                <NavLink href="/admin/tablets">태블릿 관리</NavLink>
                 <NavLink href="/admin/clinics">병원 관리</NavLink>
                 <NavLink href="/admin/logs">시스템 로그</NavLink>
                 <NavLink href="/admin/settings">설정</NavLink>

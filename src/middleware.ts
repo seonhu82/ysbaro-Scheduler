@@ -184,8 +184,9 @@ export async function middleware(request: NextRequest) {
     }
 
     // 초기 설정 완료 확인 (setup/initial 페이지는 제외)
+    // SUPER_ADMIN은 초기 설정 건너뛰기
     if (!pathname.startsWith('/setup/initial') && !pathname.startsWith('/api/setup/initial')) {
-      if (token.setupCompleted === false) {
+      if (token.setupCompleted === false && token.role !== 'SUPER_ADMIN') {
         // API 요청이면 에러 반환
         if (pathname.startsWith('/api/')) {
           return NextResponse.json(

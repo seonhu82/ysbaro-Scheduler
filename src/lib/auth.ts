@@ -78,7 +78,8 @@ export const authConfig: NextAuthConfig = {
             clinicId: user.clinicId || '',
             clinicName: user.clinic?.name || '',
             accountStatus: user.accountStatus,
-            setupCompleted: user.clinic?.setupCompleted ?? false,
+            // SUPER_ADMIN은 clinic이 없어도 초기 설정 건너뛰기
+            setupCompleted: user.role === 'SUPER_ADMIN' ? true : (user.clinic?.setupCompleted ?? false),
           }
         } catch (error) {
           console.error('Auth error:', error)

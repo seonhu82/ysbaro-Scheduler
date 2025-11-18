@@ -11,7 +11,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -35,6 +35,7 @@ import {
   Smile,
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
+import { io, Socket } from 'socket.io-client';
 
 type CheckType = 'IN' | 'OUT' | null;
 type AuthMethod = 'QR_CODE' | 'BIOMETRIC_FINGERPRINT' | 'BIOMETRIC_FACE' | null;
@@ -59,6 +60,7 @@ export default function TabletAttendancePage() {
   const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
   const [availableMethods, setAvailableMethods] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [clinicId, setClinicId] = useState<string | null>(null);
 
   // QR URL 설정
   const [useExternalUrl, setUseExternalUrl] = useState(false);
@@ -87,6 +89,32 @@ export default function TabletAttendancePage() {
 
   // 완료 메시지
   const [completionMessage, setCompletionMessage] = useState<CompletionMessage | null>(null);
+
+  // 기기 진단 모드
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnosticResults, setDiagnosticResults] = useState<{
+    webAuthnSupported: boolean;
+    cameraAvailable: boolean;
+    cameraPermission: string;
+    mediaDevices: MediaDeviceInfo[];
+  } | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+
+  // Socket.io 스트리밍
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const streamIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // URL 파라미터에서 clinicId 읽기
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const clinicIdParam = params.get('clinicId');
+    if (clinicIdParam) {
+      setClinicId(clinicIdParam);
+    }
+  }, []);
 
   // 현재 시간 업데이트
   useEffect(() => {
@@ -131,12 +159,143 @@ export default function TabletAttendancePage() {
     fetchStaffList();
   }, []);
 
-  // 컴포넌트 언마운트 시 polling 정리
+  // Socket.io 연결
+  useEffect(() => {
+    const socketIo = io();
+    setSocket(socketIo);
+
+    socketIo.on('connect', () => {
+      console.log('🔌 Socket connected:', socketIo.id);
+      // 연결되면 clinicId 등록
+      if (clinicId) {
+        socketIo.emit('tablet:register', { clinicId });
+      }
+    });
+
+    socketIo.on('tablet:stream-started', (data: { clinicId: string }) => {
+      console.log('📹 Stream started for clinic:', data.clinicId);
+    });
+
+    // 관리자가 카메라 켜기 요청
+    socketIo.on('tablet:start-camera-request', () => {
+      console.log('📹 Admin requested camera start');
+      startCameraStream();
+    });
+
+    // 관리자가 카메라 끄기 요청
+    socketIo.on('tablet:stop-camera-request', () => {
+      console.log('🛑 Admin requested camera stop');
+      stopCameraStream();
+    });
+
+    socketIo.on('disconnect', () => {
+      console.log('🔌 Socket disconnected');
+    });
+
+    return () => {
+      socketIo.disconnect();
+    };
+  }, []);
+
+  // clinicId 변경 시 소켓에 등록
+  useEffect(() => {
+    if (socket && clinicId) {
+      socket.emit('tablet:register', { clinicId });
+    }
+  }, [socket, clinicId]);
+
+  // 카메라 스트리밍 시작
+  const startCameraStream = async () => {
+    if (!clinicId) {
+      alert('클리닉 ID가 설정되지 않았습니다.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
+      });
+
+      setCameraStream(stream);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+
+      // Socket.io로 스트림 시작 알림
+      if (socket) {
+        socket.emit('tablet:start-stream', { clinicId });
+        setIsStreaming(true);
+
+        // 프레임 캡처 및 전송 시작 (초당 2프레임)
+        streamIntervalRef.current = setInterval(() => {
+          captureAndSendFrame();
+        }, 500);
+      }
+    } catch (error: any) {
+      console.error('카메라 접근 실패:', error);
+      alert(`카메라 접근 실패: ${error.message}\n\n권한을 확인해주세요.`);
+    }
+  };
+
+  // 프레임 캡처 및 전송
+  const captureAndSendFrame = () => {
+    if (!videoRef.current || !canvasRef.current || !socket || !clinicId) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+
+    if (!context) return;
+
+    // 비디오 크기에 맞춰 canvas 크기 설정
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    // 현재 프레임을 canvas에 그리기
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // canvas를 base64 이미지로 변환
+    const frame = canvas.toDataURL('image/jpeg', 0.7);
+
+    // Socket.io로 프레임 전송
+    socket.emit('tablet:frame', { clinicId, frame });
+  };
+
+  // 카메라 스트리밍 중지
+  const stopCameraStream = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    if (streamIntervalRef.current) {
+      clearInterval(streamIntervalRef.current);
+      streamIntervalRef.current = null;
+    }
+
+    if (socket && clinicId) {
+      socket.emit('tablet:stop-stream', { clinicId });
+      setIsStreaming(false);
+    }
+  };
+
+  // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
       if (qrPollingInterval) {
         clearInterval(qrPollingInterval);
       }
+      // 카메라 스트리밍 정리
+      stopCameraStream();
     };
   }, [qrPollingInterval]);
 
@@ -196,7 +355,10 @@ export default function TabletAttendancePage() {
       const response = await fetch('/api/attendance/qr-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checkType: targetCheckType }),
+        body: JSON.stringify({
+          checkType: targetCheckType,
+          clinicId: clinicId // URL에서 받은 clinicId 전달
+        }),
       });
       const result = await response.json();
 
@@ -498,6 +660,94 @@ export default function TabletAttendancePage() {
     }
   };
 
+  // 기기 진단 실행
+  const runDiagnostics = async () => {
+    console.log('🔍 기기 진단 시작...');
+
+    const results = {
+      webAuthnSupported: false,
+      cameraAvailable: false,
+      cameraPermission: 'unknown',
+      mediaDevices: [] as MediaDeviceInfo[],
+    };
+
+    // 1. WebAuthn 지원 확인
+    results.webAuthnSupported = !!(window.PublicKeyCredential && navigator.credentials);
+    console.log('✅ WebAuthn 지원:', results.webAuthnSupported);
+
+    // 2. MediaDevices API 확인
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        results.mediaDevices = devices;
+        results.cameraAvailable = devices.some(device => device.kind === 'videoinput');
+        console.log('📹 감지된 미디어 장치:', devices);
+        console.log('📹 카메라 사용 가능:', results.cameraAvailable);
+      } catch (error) {
+        console.error('❌ 미디어 장치 열거 실패:', error);
+      }
+    }
+
+    // 3. 카메라 권한 확인
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const permission = await navigator.permissions.query({ name: 'camera' as PermissionName });
+        results.cameraPermission = permission.state;
+        console.log('🎥 카메라 권한 상태:', permission.state);
+      } catch (error) {
+        console.error('❌ 카메라 권한 확인 실패:', error);
+        results.cameraPermission = 'unsupported';
+      }
+    }
+
+    setDiagnosticResults(results);
+  };
+
+  // 카메라 테스트
+  const testCamera = async () => {
+    try {
+      console.log('📹 카메라 스트림 요청 중...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
+      });
+
+      console.log('✅ 카메라 스트림 획득 성공');
+      setCameraStream(stream);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (error: any) {
+      console.error('❌ 카메라 접근 실패:', error);
+      alert(`카메라 접근 실패: ${error.message}\n\n권한을 확인해주세요.`);
+    }
+  };
+
+  // 카메라 스트림 정리
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      console.log('🛑 카메라 스트림 정지');
+    }
+  };
+
+  // 진단 모드 정리
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [cameraStream]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
       <div className="max-w-2xl mx-auto">
@@ -788,7 +1038,133 @@ export default function TabletAttendancePage() {
               </div>
             )}
           </CardContent>
+
+          {/* 기기 진단 버튼 */}
+          <div className="p-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDiagnostics(!showDiagnostics);
+                if (!showDiagnostics && !diagnosticResults) {
+                  runDiagnostics();
+                }
+              }}
+              className="w-full"
+            >
+              {showDiagnostics ? '진단 닫기' : '🔧 기기 진단'}
+            </Button>
+          </div>
         </Card>
+
+        {/* 기기 진단 패널 */}
+        {showDiagnostics && (
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                🔍 기기 진단 결과
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {diagnosticResults ? (
+                <>
+                  {/* WebAuthn 지원 */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span className="font-medium">WebAuthn API (생체인식)</span>
+                    <span className={`px-3 py-1 rounded-full text-sm ${diagnosticResults.webAuthnSupported ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {diagnosticResults.webAuthnSupported ? '✅ 지원됨' : '❌ 지원 안됨'}
+                    </span>
+                  </div>
+
+                  {/* 카메라 감지 */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span className="font-medium">카메라 감지</span>
+                    <span className={`px-3 py-1 rounded-full text-sm ${diagnosticResults.cameraAvailable ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {diagnosticResults.cameraAvailable ? '✅ 감지됨' : '❌ 없음'}
+                    </span>
+                  </div>
+
+                  {/* 카메라 권한 */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <span className="font-medium">카메라 권한</span>
+                    <span className={`px-3 py-1 rounded-full text-sm ${
+                      diagnosticResults.cameraPermission === 'granted'
+                        ? 'bg-green-100 text-green-800'
+                        : diagnosticResults.cameraPermission === 'denied'
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {diagnosticResults.cameraPermission === 'granted' && '✅ 허용됨'}
+                      {diagnosticResults.cameraPermission === 'denied' && '❌ 거부됨'}
+                      {diagnosticResults.cameraPermission === 'prompt' && '⚠️ 요청 필요'}
+                      {diagnosticResults.cameraPermission === 'unsupported' && '❌ 미지원'}
+                      {diagnosticResults.cameraPermission === 'unknown' && '❓ 알 수 없음'}
+                    </span>
+                  </div>
+
+                  {/* 미디어 장치 목록 */}
+                  {diagnosticResults.mediaDevices.length > 0 && (
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <h4 className="font-medium mb-2">감지된 미디어 장치 ({diagnosticResults.mediaDevices.length}개)</h4>
+                      <ul className="text-sm space-y-1">
+                        {diagnosticResults.mediaDevices.map((device, index) => (
+                          <li key={index} className="text-gray-700">
+                            {device.kind === 'videoinput' && '📹 '}
+                            {device.kind === 'audioinput' && '🎤 '}
+                            {device.kind === 'audiooutput' && '🔊 '}
+                            {device.label || `${device.kind} #${index + 1}`}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* 카메라 테스트 */}
+                  <div className="space-y-3">
+                    <Button
+                      onClick={cameraStream ? stopCamera : testCamera}
+                      variant={cameraStream ? 'destructive' : 'default'}
+                      className="w-full"
+                    >
+                      {cameraStream ? '🛑 카메라 중지' : '📹 카메라 테스트'}
+                    </Button>
+
+                    {cameraStream && (
+                      <div className="relative rounded-lg overflow-hidden bg-black">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          className="w-full"
+                        />
+                        <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded text-sm">
+                          ● 실시간
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 도움말 */}
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+                    <p className="font-medium text-blue-900 mb-2">💡 문제 해결 방법:</p>
+                    <ul className="list-disc list-inside space-y-1 text-blue-800">
+                      <li>WebAuthn 미지원: 최신 브라우저 사용 (Chrome, Edge, Safari)</li>
+                      <li>카메라 없음: 카메라가 연결되어 있는지 확인</li>
+                      <li>권한 거부됨: 브라우저 설정에서 카메라 권한 허용</li>
+                      <li>HTTPS 필요: 로컬호스트가 아닌 경우 HTTPS 사용 필요</li>
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  진단 실행 중...
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Hidden canvas for frame capture */}
+        <canvas ref={canvasRef} className="hidden" />
       </div>
     </div>
   );

@@ -44,7 +44,8 @@
       "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force\")",
       "Bash(powershell:*)",
       "Bash(timeout /t 5)",
-      "Bash(del nul)"
+      "Bash(del nul)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

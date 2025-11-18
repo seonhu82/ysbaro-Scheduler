@@ -83,6 +83,22 @@ function LoginForm() {
         // 로그인 성공 - 잠시 기다렸다가 초기 설정 체크
         setTimeout(async () => {
           try {
+            // 세션 정보 가져오기
+            const sessionRes = await fetch('/api/auth/session', {
+              credentials: 'include'
+            })
+
+            if (sessionRes.ok) {
+              const sessionData = await sessionRes.json()
+              console.log('Session data:', sessionData)
+
+              // SUPER_ADMIN이면 관리자 대시보드로
+              if (sessionData?.user?.role === 'SUPER_ADMIN') {
+                window.location.href = '/admin/dashboard'
+                return
+              }
+            }
+
             const setupRes = await fetch('/api/setup/initial', {
               credentials: 'include'
             })

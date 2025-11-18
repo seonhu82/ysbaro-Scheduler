@@ -14,6 +14,8 @@ interface User {
     name: string
   } | null
   createdAt: string
+  suspendedReason?: string
+  suspendedUntil?: string
 }
 
 export default function UsersManagement() {
@@ -25,9 +27,17 @@ export default function UsersManagement() {
     search: '',
   })
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
-  const [modalType, setModalType] = useState<'approve' | 'reject' | null>(null)
+  const [modalType, setModalType] = useState<'approve' | 'reject' | 'manage' | null>(null)
   const [selectedRole, setSelectedRole] = useState('STAFF')
   const [rejectionReason, setRejectionReason] = useState('')
+
+  // 상태 관리용
+  const [manageData, setManageData] = useState({
+    accountStatus: 'APPROVED',
+    role: 'STAFF',
+    suspendedReason: '',
+    suspendedUntil: '',
+  })
 
   useEffect(() => {
     fetchUsers()
@@ -100,6 +110,36 @@ export default function UsersManagement() {
       }
     } catch (error) {
       alert('거절 중 오류가 발생했습니다.')
+    }
+  }
+
+  const handleManage = async () => {
+    if (!selectedUser) return
+
+    // 정지 상태인데 사유가 없으면 에러
+    if (manageData.accountStatus === 'SUSPENDED' && !manageData.suspendedReason) {
+      alert('정지 사유를 입력해주세요.')
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/admin/users/${selectedUser.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(manageData),
+      })
+
+      if (res.ok) {
+        alert('회원 정보가 업데이트되었습니다.')
+        fetchUsers()
+        setModalType(null)
+        setSelectedUser(null)
+      } else {
+        const error = await res.json()
+        alert(`업데이트 실패: ${error.error}`)
+      }
+    } catch (error) {
+      alert('업데이트 중 오류가 발생했습니다.')
     }
   }
 
@@ -222,32 +262,56 @@ export default function UsersManagement() {
                       병원: {user.clinic?.name || '미지정'} •{' '}
                       가입: {new Date(user.createdAt).toLocaleDateString('ko-KR')}
                     </div>
+                    {user.accountStatus === 'SUSPENDED' && user.suspendedReason && (
+                      <div className="text-xs text-red-600 mt-1">
+                        정지 사유: {user.suspendedReason}
+                        {user.suspendedUntil && ` (${new Date(user.suspendedUntil).toLocaleDateString('ko-KR')}까지)`}
+                      </div>
+                    )}
                   </div>
 
-                  {user.accountStatus === 'PENDING' && (
-                    <div className="flex gap-2">
+                  <div className="flex gap-2">
+                    {user.accountStatus === 'PENDING' ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user)
+                            setModalType('approve')
+                            setSelectedRole('STAFF')
+                          }}
+                          className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                        >
+                          승인
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user)
+                            setModalType('reject')
+                            setRejectionReason('')
+                          }}
+                          className="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                        >
+                          거절
+                        </button>
+                      </>
+                    ) : (
                       <button
                         onClick={() => {
                           setSelectedUser(user)
-                          setModalType('approve')
-                          setSelectedRole('STAFF')
+                          setModalType('manage')
+                          setManageData({
+                            accountStatus: user.accountStatus,
+                            role: user.role,
+                            suspendedReason: user.suspendedReason || '',
+                            suspendedUntil: user.suspendedUntil || '',
+                          })
                         }}
-                        className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
                       >
-                        승인
+                        관리
                       </button>
-                      <button
-                        onClick={() => {
-                          setSelectedUser(user)
-                          setModalType('reject')
-                          setRejectionReason('')
-                        }}
-                        className="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700"
-                      >
-                        거절
-                      </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -354,6 +418,110 @@ export default function UsersManagement() {
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
               >
                 거절
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 회원 관리 모달 */}
+      {modalType === 'manage' && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">회원 관리</h2>
+            <div className="space-y-4">
+              <div>
+                <div className="text-sm text-gray-600">이름</div>
+                <div className="font-medium">{selectedUser.name}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">이메일</div>
+                <div className="font-medium">{selectedUser.email}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">병원</div>
+                <div className="font-medium">
+                  {selectedUser.clinic?.name || '미지정'}
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  계정 상태
+                </label>
+                <select
+                  value={manageData.accountStatus}
+                  onChange={(e) => setManageData({ ...manageData, accountStatus: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >
+                  <option value="APPROVED">승인</option>
+                  <option value="SUSPENDED">정지</option>
+                  <option value="DELETED">삭제</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  역할
+                </label>
+                <select
+                  value={manageData.role}
+                  onChange={(e) => setManageData({ ...manageData, role: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                >
+                  <option value="STAFF">STAFF (일반 직원)</option>
+                  <option value="MANAGER">MANAGER (관리자)</option>
+                  <option value="ADMIN">ADMIN (시스템 관리자)</option>
+                  <option value="SUPER_ADMIN">SUPER_ADMIN (슈퍼 관리자)</option>
+                </select>
+              </div>
+
+              {manageData.accountStatus === 'SUSPENDED' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      정지 사유 *
+                    </label>
+                    <textarea
+                      value={manageData.suspendedReason}
+                      onChange={(e) => setManageData({ ...manageData, suspendedReason: e.target.value })}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      placeholder="정지 사유를 입력해주세요"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      정지 종료일 (선택)
+                    </label>
+                    <input
+                      type="date"
+                      value={manageData.suspendedUntil}
+                      onChange={(e) => setManageData({ ...manageData, suspendedUntil: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      비워두면 무기한 정지됩니다
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={() => {
+                  setModalType(null)
+                  setSelectedUser(null)
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleManage}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                저장
               </button>
             </div>
           </div>

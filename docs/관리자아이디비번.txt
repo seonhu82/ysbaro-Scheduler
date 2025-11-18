@@ -1,5 +1,5 @@
  - Email: iamhu@gmail.com
-  - Password: SuperAdmin2025!
+  - Password: 0139선후!
   - Role: SUPER_ADMIN (시스템 관리자)
 
  

@@ -83,10 +83,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
+    const body = await request.json();
     let clinicId: string;
 
-    // 인증된 사용자면 세션에서, 아니면 DB에서 첫 번째 클리닉 사용
-    if (session?.user?.clinicId) {
+    // clinicId 우선순위: body > session > DB 첫 번째
+    if (body?.clinicId) {
+      clinicId = body.clinicId;
+    } else if (session?.user?.clinicId) {
       clinicId = session.user.clinicId;
     } else {
       // 공개 접근 (태블릿용): 첫 번째 활성 클리닉 사용
@@ -106,7 +109,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 요청 body에서 checkType 추출
-    const body = await request.json();
     const checkType = (body?.checkType || 'IN') as 'IN' | 'OUT';
 
     // 새 QR 토큰 생성
