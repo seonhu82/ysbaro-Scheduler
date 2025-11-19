@@ -89,8 +89,8 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      // Add custom fields to JWT token
+    async jwt({ token, user, trigger, session }) {
+      // Add custom fields to JWT token on initial sign in
       if (user) {
         token.id = user.id as string
         token.role = (user as any).role
@@ -99,6 +99,36 @@ export const authConfig: NextAuthConfig = {
         token.accountStatus = (user as any).accountStatus
         token.setupCompleted = (user as any).setupCompleted
       }
+
+      // Update token when session is updated (e.g., profile update)
+      if (trigger === 'update' && session) {
+        // Update name and email from session data
+        if (session.name !== undefined) {
+          token.name = session.name
+        }
+        if (session.email !== undefined) {
+          token.email = session.email
+        }
+
+        // Fetch latest user data from database for other fields
+        if (token.id) {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            include: { clinic: true },
+          })
+
+          if (dbUser) {
+            token.name = dbUser.name
+            token.email = dbUser.email
+            token.role = dbUser.role
+            token.clinicId = dbUser.clinicId || ''
+            token.clinicName = dbUser.clinic?.name || ''
+            token.accountStatus = dbUser.accountStatus
+            token.setupCompleted = dbUser.role === 'SUPER_ADMIN' ? true : (dbUser.clinic?.setupCompleted ?? false)
+          }
+        }
+      }
+
       return token
     },
     async session({ session, token }) {
@@ -110,6 +140,9 @@ export const authConfig: NextAuthConfig = {
         (session.user as any).clinicName = token.clinicName as string
         (session.user as any).accountStatus = token.accountStatus as string
         (session.user as any).setupCompleted = token.setupCompleted as boolean
+        // Update name and email from token
+        session.user.name = token.name as string
+        session.user.email = token.email as string
       }
       return session
     },

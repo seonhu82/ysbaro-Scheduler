@@ -16,12 +16,38 @@ export async function GET() {
     // TODO: 실제 알림 설정 구현
     // 현재는 기본값 반환
     const defaultSettings = {
-      scheduleDeployed: true,
-      leaveApproved: true,
-      leaveRejected: true,
-      scheduleChanged: true,
-      email: true,
-      push: false
+      email: {
+        enabled: false,
+        smtpHost: '',
+        smtpPort: 587,
+        smtpUser: '',
+        smtpPassword: '',
+        fromEmail: '',
+        fromName: '연세바로치과'
+      },
+      kakao: {
+        enabled: false,
+        apiKey: '',
+        senderKey: '',
+        templateCodes: {
+          leaveApplication: '',
+          scheduleDeployed: '',
+          fairnessAlert: ''
+        }
+      },
+      webhook: {
+        enabled: false,
+        url: '',
+        secret: ''
+      },
+      notifications: {
+        leaveApplicationSubmitted: true,
+        leaveApplicationApproved: true,
+        leaveApplicationRejected: true,
+        scheduleDeployed: true,
+        fairnessAlert: true,
+        attendanceAnomaly: true
+      }
     }
 
     return NextResponse.json({

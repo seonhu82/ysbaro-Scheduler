@@ -3,9 +3,24 @@
 import { useSession, signOut } from 'next-auth/react'
 import Link from 'next/link'
 import { MobileMenu } from './MobileMenu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { User, Settings, LogOut, ChevronDown } from 'lucide-react'
 
 export function Header() {
   const { data: session } = useSession()
+
+  // 사용자 이름의 첫 글자 추출
+  const getInitials = (name: string) => {
+    return name?.charAt(0).toUpperCase() || 'U'
+  }
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -26,24 +41,51 @@ export function Header() {
           </div>
 
           {session && (
-            <div className="flex items-center space-x-2 md:space-x-4">
-              {/* 사용자 정보 - 모바일에서 숨김 */}
-              <div className="hidden sm:block text-right">
-                <p className="text-sm font-medium text-gray-900">
-                  {session.user.name}
-                </p>
-                <p className="text-xs text-gray-500">{session.user.email}</p>
-              </div>
-              {/* 로그아웃 버튼 */}
-              <button
-                onClick={() => signOut({ callbackUrl: '/login' })}
-                className="px-3 md:px-4 py-2 text-sm text-gray-700 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50 transition min-h-[44px]"
-                aria-label="로그아웃"
-              >
-                <span className="hidden sm:inline">로그아웃</span>
-                <span className="sm:hidden">나가기</span>
-              </button>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center space-x-3 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors outline-none">
+                <Avatar className="h-9 w-9 border-2 border-blue-500">
+                  <AvatarFallback className="bg-blue-500 text-white font-semibold">
+                    {getInitials(session.user.name || '')}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {session.user.name}
+                  </p>
+                  <p className="text-xs text-gray-500">{session.user.email}</p>
+                </div>
+                <ChevronDown className="hidden sm:block h-4 w-4 text-gray-500" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">{session.user.name}</p>
+                    <p className="text-xs text-gray-500">{session.user.email}</p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/profile" className="cursor-pointer">
+                    <User className="mr-2 h-4 w-4" />
+                    <span>내 프로필</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>설정</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => signOut({ callbackUrl: '/login' })}
+                  className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>로그아웃</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
