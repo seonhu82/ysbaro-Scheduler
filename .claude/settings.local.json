@@ -45,7 +45,16 @@
       "Bash(powershell:*)",
       "Bash(timeout /t 5)",
       "Bash(del nul)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(timeout /t 2)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "WebSearch",
+      "Bash(cp:*)",
+      "Bash(unzip:*)",
+      "Bash(xargs:*)",
+      "Bash(git branch:*)"
     ],
     "deny": [],
     "ask": []
